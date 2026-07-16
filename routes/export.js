@@ -100,12 +100,13 @@ router.get('/excel', async (req, res) => {
   ws.autoFilter = { from: { row: headerRowIdx, column: 1 }, to: { row: Math.max(lastDataRow, headerRowIdx), column: totalCols } };
   ws.views = [{ state: 'frozen', ySplit: headerRowIdx }];
 
+  const logoScale = { small: 0.7, medium: 1, large: 1.35 }[co.logoSize] || 1;
   const logoPath = logoAbsPath(state);
   if (logoPath) {
     try {
       const ext = path.extname(logoPath).slice(1).toLowerCase();
       const imgId = wb.addImage({ filename: logoPath, extension: ext === 'jpg' ? 'jpeg' : ext });
-      ws.addImage(imgId, { tl: { col: totalCols - 1.5, row: 0.05 }, ext: { width: 100, height: 40 } });
+      ws.addImage(imgId, { tl: { col: totalCols - 1.5, row: 0.05 }, ext: { width: 100 * logoScale, height: 40 * logoScale } });
     } catch (e) { console.warn('Excel logo embed failed', e.message); }
   }
 
@@ -129,16 +130,17 @@ router.get('/pdf', async (req, res) => {
   const co = state.company;
 
   const pageSize = (co.paperSize || 'A4').toUpperCase() === 'LETTER' ? 'LETTER' : 'A4';
-  const doc = new PDFDocument({ size: pageSize, layout: 'landscape', margin: 30 });
+  const doc = new PDFDocument({ size: pageSize, layout: 'landscape', margin: 30, bufferPages: true });
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="Inventory-Report-${Date.now()}.pdf"`);
   doc.pipe(res);
 
   const pageWidth = doc.page.width;
+  const pdfLogoScale = { small: 0.7, medium: 1, large: 1.35 }[co.logoSize] || 1;
   let textX = 30;
   const logoPath = logoAbsPath(state);
   if (logoPath) {
-    try { doc.image(logoPath, 30, 20, { fit: [70, 30] }); textX = 110; } catch (e) { console.warn('PDF logo embed failed', e.message); }
+    try { doc.image(logoPath, 30, 20, { fit: [70 * pdfLogoScale, 30 * pdfLogoScale] }); textX = 30 + 70 * pdfLogoScale + 10; } catch (e) { console.warn('PDF logo embed failed', e.message); }
   }
   doc.fontSize(15).fillColor('#0B2B36').text(co.name, textX, 22);
   doc.fontSize(9).fillColor('#5B6B70').text('Inventory Report', textX, 40);
@@ -210,11 +212,14 @@ router.get('/pdf', async (req, res) => {
 
   const totalPages = pageNum;
   const range = doc.bufferedPageRange();
+  const savedBottomMargin = doc.page.margins.bottom;
   for (let i = range.start; i < range.start + range.count; i++) {
     doc.switchToPage(i);
+    doc.page.margins.bottom = 0; // allow writing into the margin area without triggering an auto page-break
     doc.fontSize(8).fillColor('#787878')
-      .text(`Page ${i - range.start + 1} of ${range.count}`, doc.page.width - 150, doc.page.height - 30, { width: 120, align: 'right' });
-    if (co.reportFooter) doc.text(co.reportFooter, 30, doc.page.height - 30, { width: 300 });
+      .text(`Page ${i - range.start + 1} of ${range.count}`, doc.page.width - 150, doc.page.height - 25, { width: 120, align: 'right', lineBreak: false });
+    if (co.reportFooter) doc.text(co.reportFooter, 30, doc.page.height - 25, { width: 300, lineBreak: false });
+    doc.page.margins.bottom = savedBottomMargin;
   }
 
   doc.end();

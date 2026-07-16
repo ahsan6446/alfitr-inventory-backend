@@ -6,6 +6,14 @@ const db = require('../lib/db');
 const { requireAuth, requirePermission } = require('../lib/auth');
 
 const router = express.Router();
+
+// Public — deliberately BEFORE requireAuth. Only non-sensitive branding fields are exposed,
+// so the login screen can show the company logo before anyone has signed in.
+router.get('/public', (req, res) => {
+  const { company } = db.get();
+  res.json({ name: company.name, logoPath: company.logoPath, logoSize: company.logoSize });
+});
+
 router.use(requireAuth);
 
 const upload = multer({

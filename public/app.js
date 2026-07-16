@@ -106,6 +106,16 @@ async function loadAll() {
     state.users = usersR.users; state.roles = rolesR.roles; state.permLabels = rolesR.labels;
   }
   state.loaded = true;
+  updateFavicon();
+}
+
+// Swaps the browser tab icon to the uploaded company logo, once available.
+// Falls back to the default "AF" mark (set in index.html) if no logo has been uploaded.
+const DEFAULT_FAVICON = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23F9893D'/%3E%3Ctext x='32' y='43' font-family='Arial, sans-serif' font-size='28' font-weight='800' fill='white' text-anchor='middle'%3EAF%3C/text%3E%3C/svg%3E";
+function updateFavicon() {
+  const favicon = document.getElementById('favicon');
+  if (!favicon) return;
+  favicon.href = (state.company && state.company.logoPath) ? state.company.logoPath : DEFAULT_FAVICON;
 }
 
 function visibleItems() {

@@ -147,7 +147,7 @@ tr:hover td{background:#FAFCFC;}
 /* Delivery note print doc */
 .dn-doc{background:#fff;padding:0;}
 .dn-head{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid var(--teal);padding-bottom:16px;margin-bottom:20px;}
-.dn-logo{max-height:52px;max-width:150px;object-fit:contain;}
+.dn-logo{max-width:220px;object-fit:contain;}
 .dn-company{font-size:18px;font-weight:800;color:var(--teal);}
 .dn-company-sub{font-size:11.5px;color:var(--ink-soft);margin-top:2px;}
 .dn-title-block{text-align:right;}
@@ -183,8 +183,7 @@ tr:hover td{background:#FAFCFC;}
 /* ---- Login screen ---- */
 .login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(160deg,var(--navy-deep),var(--teal) 140%);}
 .login-card{background:#fff;border-radius:16px;padding:36px 34px;width:100%;max-width:380px;box-shadow:0 24px 60px rgba(0,0,0,.3);}
-.login-logo{display:flex;justify-content:center;margin-bottom:14px;}
-.login-logo img{max-height:56px;max-width:220px;object-fit:contain;}
+.login-logo{display:block;margin:0 auto 14px;max-width:220px;object-fit:contain;}
 .login-title{text-align:center;font-size:17px;font-weight:800;margin-bottom:2px;}
 .login-sub{text-align:center;font-size:12.5px;color:var(--ink-soft);margin-bottom:22px;}
 .login-err{background:var(--red-bg);color:var(--red);font-size:12.5px;padding:8px 12px;border-radius:8px;margin-bottom:12px;}
@@ -193,7 +192,7 @@ tr:hover td{background:#FAFCFC;}
 .app-header{display:flex;align-items:center;justify-content:space-between;background:#fff;border-bottom:1px solid var(--border);
   padding:10px 22px;gap:14px;flex-wrap:wrap;}
 .app-header-left{display:flex;align-items:center;gap:12px;min-width:0;}
-.app-header-logo{max-height:34px;max-width:150px;object-fit:contain;}
+.app-header-logo{max-width:160px;object-fit:contain;}
 .app-header-name{font-weight:800;font-size:14.5px;color:var(--navy-deep);white-space:nowrap;}
 .app-header-right{display:flex;align-items:center;gap:14px;}
 .user-badge{display:flex;align-items:center;gap:9px;}

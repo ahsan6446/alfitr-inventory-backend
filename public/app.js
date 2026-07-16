@@ -53,6 +53,7 @@ const state = {
   user: null, permissions: {}, company: {}, branches: [], brands: [], units: [],
   items: [], movements: [], clients: [], dns: [], users: [], roles: {}, permLabels: [],
   loaded: false, modal: null, toast: null,
+  publicBranding: null,
 };
 
 function can(permKey) { return !!state.permissions[permKey]; }
@@ -74,6 +75,17 @@ function statusBadge(status) {
 }
 function itemLabel(item) { return item ? `${item.brand} | ${item.partNo || '—'} | ${item.description}` : ''; }
 function findItem(id) { return state.items.find(i => i.id === id); }
+
+// Maps the Settings > "Logo Display Size" choice to an actual pixel height, used everywhere
+// the logo appears (header, login screen, Delivery Notes, printed reports).
+function logoSizePx(size) {
+  return { small: 40, medium: 64, large: 96 }[size] || 64;
+}
+// The top navbar is a thin fixed-height bar, so it uses a smaller scale than print documents
+// even when "Large" is selected — otherwise a big logo would break the header's layout.
+function headerLogoSizePx(size) {
+  return { small: 22, medium: 30, large: 38 }[size] || 30;
+}
 
 function showToast(msg, type) {
   state.toast = { msg, type };
@@ -165,10 +177,15 @@ function render() {
 }
 
 function renderLoginScreen() {
+  const b = state.publicBranding;
+  const logoHtml = (b && b.logoPath)
+    ? `<img src="${b.logoPath}" class="login-logo" style="height:${logoSizePx(b.logoSize)}px;max-width:220px;object-fit:contain;margin-bottom:14px;" alt="${b.name || ''} logo">`
+    : '';
   return `
   <div class="login-wrap">
     <div class="login-card">
-      <div class="login-title">Al Fitr Inventory &amp; Delivery</div>
+      ${logoHtml}
+      <div class="login-title">${(b && b.name) || 'Al Fitr Inventory & Delivery'}</div>
       <div class="login-sub">Sign in to continue</div>
       <div id="loginErr"></div>
       <div class="field"><label>Username</label><input id="loginUsername" autocomplete="username" placeholder="e.g. admin"></div>
@@ -177,6 +194,12 @@ function renderLoginScreen() {
       <p class="muted" style="text-align:center;margin-top:16px;font-size:11.5px;">First time? Default is <strong>admin</strong> / <strong>admin123</strong> — you'll be asked to change it.</p>
     </div>
   </div>`;
+}
+async function loadPublicBranding() {
+  try {
+    const res = await fetch('/api/company/public');
+    if (res.ok) { state.publicBranding = await res.json(); render(); }
+  } catch (e) { /* non-fatal — login screen just shows the text fallback */ }
 }
 function attachLoginHandlers() {
   const btn = document.getElementById('loginBtn');
@@ -210,7 +233,7 @@ function renderAppHeader() {
   return `
   <div class="app-header no-print">
     <div class="app-header-left">
-      ${co.logoPath ? `<img src="${co.logoPath}" class="app-header-logo" alt="logo">` : `<div class="brand-mark" style="width:30px;height:30px;font-size:12px;">${userInitials(co.name)}</div>`}
+      ${co.logoPath ? `<img src="${co.logoPath}" class="app-header-logo" style="height:${headerLogoSizePx(co.logoSize)}px;max-width:160px;object-fit:contain;" alt="logo">` : `<div class="brand-mark" style="width:30px;height:30px;font-size:12px;">${userInitials(co.name)}</div>`}
       <div class="app-header-name">${co.name || ''} <span class="muted" style="font-weight:500;">— Inventory &amp; Delivery</span></div>
     </div>
     <div class="app-header-right">
@@ -862,7 +885,7 @@ function renderDnView(dn) {
   <div id="printArea" class="dn-doc">
     <div class="dn-head">
       <div style="display:flex;gap:14px;align-items:flex-start;">
-        ${co.logoPath ? `<img src="${co.logoPath}" class="dn-logo" alt="${co.name} logo">` : ''}
+        ${co.logoPath ? `<img src="${co.logoPath}" class="dn-logo" style="height:${logoSizePx(co.logoSize)}px;max-width:220px;object-fit:contain;" alt="${co.name} logo">` : ''}
         <div>
           <div class="dn-company">${co.name}</div>
           <div class="dn-company-sub">${contactLine}</div>
@@ -932,7 +955,7 @@ function renderInventoryReportView() {
   <div id="printArea" class="dn-doc">
     <div class="dn-head">
       <div style="display:flex;gap:14px;align-items:flex-start;">
-        ${co.logoPath ? `<img src="${co.logoPath}" class="dn-logo" alt="logo">` : ''}
+        ${co.logoPath ? `<img src="${co.logoPath}" class="dn-logo" style="height:${logoSizePx(co.logoSize)}px;max-width:220px;object-fit:contain;" alt="logo">` : ''}
         <div>
           <div class="dn-company">${co.name}</div>
           <div class="dn-company-sub">${[co.address, co.phone, co.email].filter(Boolean).join(' · ')}</div>
@@ -1386,6 +1409,8 @@ function attachSettingsHandlers() {
   render();
   if (authToken) {
     try { await loadAll(); } catch (e) { console.error(e); }
+  } else {
+    loadPublicBranding();
   }
   render();
 })();

@@ -28,8 +28,12 @@ const upload = multer({
 });
 
 router.get('/', (req, res) => {
-  const { company, dnCounter } = db.get();
-  res.json({ company, nextDnPreview: (company.dnPrefix || 'DN-') + String(dnCounter + 1).padStart(company.dnPadding || 6, '0') });
+  const { company, dnCounter, quotationCounter } = db.get();
+  res.json({
+    company,
+    nextDnPreview: (company.dnPrefix || 'DN-') + String(dnCounter + 1).padStart(company.dnPadding || 6, '0'),
+    nextQuotationCounter: quotationCounter + 1,
+  });
 });
 
 router.put('/', requirePermission('manageInventory'), async (req, res) => {
@@ -38,6 +42,27 @@ router.put('/', requirePermission('manageInventory'), async (req, res) => {
   for (const f of fields) if (req.body && f in req.body) state.company[f] = req.body[f];
   await db.persist();
   res.json({ company: state.company });
+});
+
+// Quotation numbering — lets Ahsan continue Al Fitr's existing real reference sequence
+// (e.g. their last real number was 20409, so this gets set to 20409 to continue from 20410).
+router.put('/quotation-counter', requirePermission('manageQuotations'), async (req, res) => {
+  const state = db.get();
+  const value = Number(req.body && req.body.value);
+  if (!Number.isFinite(value) || value < 0) return res.status(400).json({ error: 'Enter a valid number.' });
+  state.quotationCounter = value;
+  await db.persist();
+  res.json({ quotationCounter: state.quotationCounter });
+});
+
+// Named quotation approvers — approval is by specific person, not by role.
+router.put('/quotation-approvers', requirePermission('manageUsers'), async (req, res) => {
+  const state = db.get();
+  const ids = Array.isArray(req.body && req.body.userIds) ? req.body.userIds : [];
+  const validIds = ids.filter(id => state.users.some(u => u.id === id));
+  state.company.quotationApprovers = validIds;
+  await db.persist();
+  res.json({ quotationApprovers: state.company.quotationApprovers });
 });
 
 // Logo upload — stored as a static file (not base64-in-JSON) and served at /uploads/<name>.

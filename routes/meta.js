@@ -28,5 +28,6 @@ function listRoutes(key) {
 listRoutes('branches');
 listRoutes('brands');
 listRoutes('units');
+listRoutes('quotationCategories');
 
 module.exports = router;

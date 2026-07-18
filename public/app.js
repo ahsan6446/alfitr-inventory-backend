@@ -54,6 +54,8 @@ const state = {
   items: [], movements: [], clients: [], dns: [], users: [], roles: {}, permLabels: [],
   loaded: false, modal: null, toast: null,
   publicBranding: null,
+  quotations: [], jobOrders: [], exclusionsLibrary: [], quotationCategories: [], quotationApprovers: [],
+  nextQuotationCounter: null, quoteFilter: 'All',
 };
 
 function can(permKey) { return !!state.permissions[permKey]; }
@@ -75,6 +77,42 @@ function statusBadge(status) {
 }
 function itemLabel(item) { return item ? `${item.brand} | ${item.partNo || '—'} | ${item.description}` : ''; }
 function findItem(id) { return state.items.find(i => i.id === id); }
+
+/* ---------------- Quotation helpers ---------------- */
+const QUOTE_TYPE_LABEL = { PR: 'Project', SUP: 'Supply Only', AMC: 'AMC Contract', FO: 'Fit-Out' };
+const QUOTE_TYPE_PREFIX = { PR: 'PR', SUP: 'SUP', AMC: 'AMC', FO: 'FO' };
+function quoteStatusBadge(status) {
+  const map = {
+    Draft: 'badge-draft', PendingApproval: 'badge-low', Approved: 'badge-in', Rejected: 'badge-out',
+    Sent: 'badge-issued', Accepted: 'badge-in', Declined: 'badge-out', Expired: 'badge-out',
+  };
+  return `<span class="badge ${map[status] || 'badge-draft'}">${status === 'PendingApproval' ? 'Pending Approval' : status}</span>`;
+}
+function isQuotationApprover() {
+  if (!state.user) return false;
+  if (state.user.role === 'Super Admin') return true;
+  return state.quotationApprovers.some(a => a.id === state.user.id);
+}
+function lineTotal(l) { return Number(l.qty || 0) * Number(l.unitPrice || 0); }
+function calcQuoteTotals(q) {
+  const source = (q.type === 'AMC') ? ((q.amc && q.amc.services) || []) : (q.lineItems || []);
+  const subtotal = source.reduce((s, l) => s + lineTotal(l), 0);
+  const discount = Number(q.discount || 0);
+  const taxable = Math.max(0, subtotal - discount);
+  const vat = q.showVat === false ? 0 : taxable * 0.05;
+  const total = taxable + vat;
+  return { subtotal, discount, taxable, vat, total };
+}
+function groupLinesByCategory(lineItems) {
+  const groups = []; const byCat = new Map();
+  for (const l of lineItems || []) {
+    const cat = l.category || 'General';
+    if (!byCat.has(cat)) { const g = { category: cat, lines: [], subtotal: 0 }; byCat.set(cat, g); groups.push(g); }
+    const g = byCat.get(cat); g.lines.push(l); g.subtotal += lineTotal(l);
+  }
+  return groups;
+}
+function findQuote(id) { return state.quotations.find(q => q.id === id); }
 
 // Maps the Settings > "Logo Display Size" choice to an actual pixel height, used everywhere
 // the logo appears (header, login screen, Delivery Notes, printed reports).
@@ -99,7 +137,7 @@ async function loadAll() {
   const me = await api('GET', '/api/auth/me');
   state.user = me.user; state.permissions = me.permissions;
 
-  const [company, branchesR, brandsR, unitsR, itemsR, movementsR, clientsR, dnsR] = await Promise.all([
+  const [company, branchesR, brandsR, unitsR, itemsR, movementsR, clientsR, dnsR, quotCatR, exclR, quotesR, joR] = await Promise.all([
     api('GET', '/api/company'),
     api('GET', '/api/meta/branches'),
     api('GET', '/api/meta/brands'),
@@ -108,14 +146,24 @@ async function loadAll() {
     api('GET', '/api/movements'),
     api('GET', '/api/clients'),
     api('GET', '/api/dns'),
+    api('GET', '/api/meta/quotationCategories'),
+    api('GET', '/api/exclusions'),
+    api('GET', '/api/quotations'),
+    api('GET', '/api/job-orders'),
   ]);
-  state.company = company.company; state.nextDnPreview = company.nextDnPreview;
+  state.company = company.company; state.nextDnPreview = company.nextDnPreview; state.nextQuotationCounter = company.nextQuotationCounter;
   state.branches = branchesR.branches; state.brands = brandsR.brands; state.units = unitsR.units;
   state.items = itemsR.items; state.movements = movementsR.movements; state.clients = clientsR.clients; state.dns = dnsR.dns;
+  state.quotationCategories = quotCatR.quotationCategories; state.exclusionsLibrary = exclR.exclusions;
+  state.quotations = quotesR.quotations; state.jobOrders = joR.jobOrders;
 
   if (can('manageUsers')) {
     const [usersR, rolesR] = await Promise.all([api('GET', '/api/users'), api('GET', '/api/users/roles/all')]);
     state.users = usersR.users; state.roles = rolesR.roles; state.permLabels = rolesR.labels;
+  }
+  if (can('manageQuotations')) {
+    const approversR = await api('GET', '/api/quotations/approvers-list');
+    state.quotationApprovers = approversR.approvers;
   }
   state.loaded = true;
   updateFavicon();
@@ -262,6 +310,8 @@ function renderSidebar() {
       ${navItem('inventory', 'Inventory')}
       ${navItem('movements', 'Stock Movements')}
       ${navItem('dns', 'Delivery Notes')}
+      ${navItem('quotations', 'Quotations')}
+      ${navItem('jobOrders', 'Job Orders')}
       ${navItem('clients', 'Clients')}
       ${navItem('settings', 'Settings')}
     </div>
@@ -278,6 +328,8 @@ function renderTopbar() {
     inventory: ['Inventory', 'Stock levels, items and reorder status'],
     movements: ['Stock Movements', 'IN / OUT / ADJUSTMENT log'],
     dns: ['Delivery Notes', 'Create, issue and print delivery notes'],
+    quotations: ['Quotations', 'Create, approve, send and track quotations'],
+    jobOrders: ['Job Orders', 'Jobs created from accepted quotations'],
     clients: ['Clients', 'Company directory used on delivery notes'],
     settings: ['Settings', 'Branches, brands, units, security and company details'],
   };
@@ -300,6 +352,8 @@ function renderPage() {
   if (state.tab === 'inventory') return renderInventory();
   if (state.tab === 'movements') return renderMovements();
   if (state.tab === 'dns') return renderDns();
+  if (state.tab === 'quotations') return renderQuotations();
+  if (state.tab === 'jobOrders') return renderJobOrders();
   if (state.tab === 'clients') return renderClients();
   if (state.tab === 'settings') return renderSettings();
   return '';
@@ -510,6 +564,490 @@ function renderClients() {
   </div>`;
 }
 
+/* ---------------- Quotations ---------------- */
+function renderQuotations() {
+  let list = [...state.quotations];
+  if (state.quoteFilter !== 'All') list = list.filter(q => q.status === state.quoteFilter);
+  list.sort((a, b) => b.createdAt - a.createdAt);
+  const pendingForMe = isQuotationApprover() ? state.quotations.filter(q => q.status === 'PendingApproval').length : 0;
+  return `
+  <div class="toolbar">
+    <select id="quoteStatusFilter" style="max-width:190px;">
+      <option ${state.quoteFilter === 'All' ? 'selected' : ''} value="All">All Statuses</option>
+      <option ${state.quoteFilter === 'Draft' ? 'selected' : ''} value="Draft">Draft</option>
+      <option ${state.quoteFilter === 'PendingApproval' ? 'selected' : ''} value="PendingApproval">Pending Approval</option>
+      <option ${state.quoteFilter === 'Approved' ? 'selected' : ''} value="Approved">Approved</option>
+      <option ${state.quoteFilter === 'Sent' ? 'selected' : ''} value="Sent">Sent</option>
+      <option ${state.quoteFilter === 'Accepted' ? 'selected' : ''} value="Accepted">Accepted</option>
+      <option ${state.quoteFilter === 'Declined' ? 'selected' : ''} value="Declined">Declined</option>
+      <option ${state.quoteFilter === 'Rejected' ? 'selected' : ''} value="Rejected">Rejected (internal)</option>
+    </select>
+    <div style="flex:1"></div>
+    ${pendingForMe > 0 ? `<span class="tag" style="background:var(--amber-bg);color:var(--amber);">${pendingForMe} awaiting your approval</span>` : ''}
+    ${can('manageQuotations') ? `<button class="btn btn-primary" id="newQuoteBtn">+ New Quotation</button>` : ''}
+  </div>
+  <div class="card">
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Quote #</th><th>Type</th><th>Client</th><th>Subject</th><th>Date</th><th>Total</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+      ${list.length === 0 ? `<tr><td colspan="8"><div class="empty"><div class="big">📋</div>No quotations match.</div></td></tr>` :
+        list.map(q => `
+        <tr>
+          <td style="font-family:var(--mono);font-weight:700;font-size:12px;">${q.quotationNumber || '<span class="muted">(draft)</span>'}</td>
+          <td><span class="tag">${QUOTE_TYPE_LABEL[q.type]}</span></td>
+          <td>${q.clientCompany}</td>
+          <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${q.subject || q.siteDetail || '—'}</td>
+          <td>${fmtDate(q.date)}</td>
+          <td style="font-family:var(--mono);">${state.company.currency} ${fmtMoney(q.totals.total)}</td>
+          <td>${quoteStatusBadge(q.status)}</td>
+          <td><button class="btn btn-outline btn-sm" data-view-quote="${q.id}">Open</button></td>
+        </tr>`).join('')}
+      </tbody>
+    </table></div>
+  </div>`;
+}
+
+/* ---------------- Job Orders ---------------- */
+function renderJobOrders() {
+  const list = [...state.jobOrders].sort((a, b) => b.createdAt - a.createdAt);
+  return `
+  <div class="card">
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Job Order #</th><th>From Quote</th><th>Type</th><th>Client</th><th>Subject / Site</th><th>Value</th><th>Status</th></tr></thead>
+      <tbody>
+      ${list.length === 0 ? `<tr><td colspan="7"><div class="empty"><div class="big">🛠️</div>No job orders yet. These are created from accepted quotations.</div></td></tr>` :
+        list.map(jo => `
+        <tr>
+          <td style="font-family:var(--mono);font-weight:700;">${jo.jobOrderNumber}</td>
+          <td style="font-family:var(--mono);font-size:12px;">${jo.quotationNumber || '—'}</td>
+          <td><span class="tag">${QUOTE_TYPE_LABEL[jo.type]}</span></td>
+          <td>${jo.clientCompany}</td>
+          <td>${jo.subject || jo.siteDetail || '—'}</td>
+          <td style="font-family:var(--mono);">${state.company.currency} ${fmtMoney(jo.value)}</td>
+          <td><span class="badge badge-in">${jo.status}</span></td>
+        </tr>`).join('')}
+      </tbody>
+    </table></div>
+  </div>
+  <div class="shared-note">Job Orders are created automatically when you convert an accepted quotation. Material requests, procurement, and completion reports build on top of this in the next phase.</div>
+  `;
+}
+
+/* ---------------- Quotation view / print ---------------- */
+function renderQuoteView(q) {
+  const doc = q.type === 'AMC' ? renderAmcQuoteDoc(q) : renderStandardQuoteDoc(q);
+  return `
+  <div id="printArea" class="dn-doc">${doc}</div>
+  ${renderQuoteActionBar(q)}
+  `;
+}
+
+function quoteDocHeader(q) {
+  const co = state.company;
+  return `
+  <div class="dn-head">
+    <div style="display:flex;gap:14px;align-items:center;">
+      ${co.logoPath ? `<img src="${co.logoPath}" class="dn-logo" style="height:${logoSizePx(co.logoSize)}px;max-width:220px;object-fit:contain;" alt="${co.name} logo">` : ''}
+      <div>
+        <div class="dn-company">${co.name}</div>
+        <div class="dn-company-sub">${[co.address, co.phone, co.email].filter(Boolean).join(' · ')}</div>
+      </div>
+    </div>
+    <div class="dn-title-block">
+      <div class="dn-title">QUOTATION</div>
+      <div class="dn-num">${q.quotationNumber || '(not yet sent)'}</div>
+      <div class="muted">${q.status === 'PendingApproval' ? 'PENDING APPROVAL' : q.status.toUpperCase()}</div>
+    </div>
+  </div>
+  <div class="dn-meta">
+    <div><div class="k">Ref No</div><div class="v">${q.quotationNumber || '—'}</div></div>
+    <div><div class="k">Date</div><div class="v">${fmtDate(q.date)}</div></div>
+    <div><div class="k">Client</div><div class="v">${q.clientCompany}</div></div>
+    <div><div class="k">Attn</div><div class="v">${q.clientAttn || '—'}</div></div>
+    <div><div class="k">Contact</div><div class="v">${q.clientContact || '—'}</div></div>
+    <div><div class="k">Email</div><div class="v">${q.clientEmail || '—'}</div></div>
+  </div>
+  ${q.subject ? `<div style="margin:10px 0;"><strong>Subject:</strong> ${q.subject}</div>` : ''}
+  ${q.siteDetail ? `<div style="margin-bottom:14px;"><strong>Site Detail:</strong> ${q.siteDetail}</div>` : ''}
+  ${q.sitesCovered && q.sitesCovered.length ? `
+  <div style="margin-bottom:14px;">
+    <strong>Sites Covered:</strong>
+    <table class="dn-table" style="margin-top:6px;"><thead><tr><th>#</th><th>Site</th><th>Reference</th><th>Notes</th></tr></thead>
+    <tbody>${q.sitesCovered.map((s,i)=>`<tr><td>${i+1}</td><td>${s.name}</td><td>${s.reference||'—'}</td><td>${s.notes||'—'}</td></tr>`).join('')}</tbody></table>
+  </div>` : ''}
+  <p>Dear Sir,</p>
+  <p>We thank you for your enquiry. We have pleasure to submit our quotation as follows.</p>
+  `;
+}
+
+function quoteDocFooter(q) {
+  const t = calcQuoteTotals(q.type === 'AMC' ? { ...q, lineItems: q.amc.services } : q);
+  const cur = state.company.currency;
+  return `
+  <table class="dn-table" style="margin-top:10px;">
+    <tr><td style="text-align:right;width:80%;">Subtotal</td><td style="text-align:right;">${cur} ${fmtMoney(t.subtotal)}</td></tr>
+    ${t.discount > 0 ? `<tr><td style="text-align:right;">Discount</td><td style="text-align:right;">- ${cur} ${fmtMoney(t.discount)}</td></tr>` : ''}
+    <tr><td style="text-align:right;">VAT (5%)</td><td style="text-align:right;">${cur} ${fmtMoney(t.vat)}</td></tr>
+    <tr style="font-weight:700;"><td style="text-align:right;">Total</td><td style="text-align:right;">${cur} ${fmtMoney(t.total)}</td></tr>
+  </table>
+  <div class="grid2" style="margin-top:16px;">
+    <div><strong>Payment Terms:</strong> ${q.paymentTerms || 'TBD'}</div>
+    <div><strong>Validity:</strong> ${q.validityDays || 15} Days</div>
+  </div>
+  ${q.exclusions && q.exclusions.length ? `
+  <div style="margin-top:14px;">
+    <strong>Exclusions:</strong>
+    <ul style="margin:6px 0 0;padding-left:20px;font-size:13px;">${q.exclusions.map(e => `<li style="margin-bottom:4px;">${e}</li>`).join('')}</ul>
+  </div>` : ''}
+  ${q.notes ? `<div style="margin-top:14px;"><strong>Notes:</strong> ${q.notes}</div>` : ''}
+  <div class="dn-sign" style="margin-top:40px;">
+    <div>
+      <div style="margin-bottom:36px;">Regards,</div>
+      <div class="sign-line">${q.preparedByName || ''}</div>
+    </div>
+  </div>
+  `;
+}
+
+function renderStandardQuoteDoc(q) {
+  const showGrouped = q.type === 'PR' || q.type === 'FO';
+  const groups = groupLinesByCategory(q.lineItems);
+  const cur = state.company.currency;
+  return `
+  ${quoteDocHeader(q)}
+  ${showGrouped && groups.length > 1 ? `
+    <div style="text-align:center;font-weight:700;margin:14px 0 6px;">ARTICLE 1: SUMMARY</div>
+    <table class="dn-table">
+      <thead><tr><th>Description</th><th style="text-align:right;">Total (${cur})</th></tr></thead>
+      <tbody>${groups.map(g => `<tr><td>${g.category}</td><td style="text-align:right;">${fmtMoney(g.subtotal)}</td></tr>`).join('')}</tbody>
+    </table>
+    <div style="text-align:center;font-weight:700;margin:18px 0 6px;">ARTICLE 2: BILL OF QUANTITY</div>
+  ` : ''}
+  ${groups.map(g => `
+    ${showGrouped && groups.length > 1 ? `<div style="background:#F3F5F6;font-weight:700;padding:6px 10px;margin-top:10px;">${g.category}</div>` : ''}
+    <table class="dn-table">
+      <thead><tr><th>Description</th><th>Brand</th><th>Unit</th><th style="text-align:right;">Qty</th><th style="text-align:right;">Unit Price</th><th style="text-align:right;">Total</th></tr></thead>
+      <tbody>${g.lines.map(l => `<tr><td>${l.description}</td><td>${l.brand||'—'}</td><td>${l.unit}</td><td style="text-align:right;">${l.qty}</td><td style="text-align:right;">${fmtMoney(l.unitPrice)}</td><td style="text-align:right;">${fmtMoney(lineTotal(l))}</td></tr>`).join('')}</tbody>
+    </table>
+  `).join('')}
+  ${quoteDocFooter(q)}
+  `;
+}
+
+function renderAmcQuoteDoc(q) {
+  const amc = q.amc || {};
+  const cur = state.company.currency;
+  return `
+  ${quoteDocHeader(q)}
+  ${amc.scopeOfAgreement ? `<div style="margin-bottom:14px;"><strong>Scope of Agreement:</strong> ${amc.scopeOfAgreement}</div>` : ''}
+  <div class="grid3" style="margin-bottom:14px;">
+    <div><strong>Contract Period:</strong> ${fmtDate(amc.contractStart)} to ${fmtDate(amc.contractEnd)}</div>
+    <div><strong>Maintenance Visits:</strong> ${amc.maintenanceSchedule || 'Quarterly'}</div>
+  </div>
+  <table class="dn-table">
+    <thead><tr><th>Description</th><th style="text-align:right;">Qty</th><th style="text-align:right;">Unit Price</th><th style="text-align:right;">Total</th></tr></thead>
+    <tbody>${(amc.services || []).map(s => `<tr><td>${s.description}</td><td style="text-align:right;">${s.qty}</td><td style="text-align:right;">${fmtMoney(s.unitPrice)}</td><td style="text-align:right;">${fmtMoney(lineTotal(s))}</td></tr>`).join('')}</tbody>
+  </table>
+  ${amc.manpower && amc.manpower.length ? `
+  <div style="margin-top:14px;"><strong>Manpower Details:</strong>
+  <table class="dn-table"><thead><tr><th>Role</th><th style="text-align:right;">Qty</th></tr></thead>
+  <tbody>${amc.manpower.map(m => `<tr><td>${m.role}</td><td style="text-align:right;">${m.qty}</td></tr>`).join('')}</tbody></table>
+  </div>` : ''}
+  ${quoteDocFooter(q)}
+  `;
+}
+
+function renderQuoteActionBar(q) {
+  const buttons = [];
+  const canManage = can('manageQuotations');
+  buttons.push(`<button class="btn btn-teal" id="printQuoteBtn">Print / Save PDF</button>`);
+
+  if (q.status === 'Draft' && canManage) {
+    buttons.unshift(`<button class="btn btn-outline" id="editQuoteBtn">Edit</button>`);
+    buttons.unshift(`<button class="btn btn-primary" id="submitQuoteBtn">Submit for Approval</button>`);
+  }
+  if (q.status === 'Rejected') {
+    buttons.unshift(`<span class="muted" style="align-self:center;font-size:12px;">Rejected: ${q.rejectionReason || 'No reason given'}</span>`);
+    if (canManage) buttons.unshift(`<button class="btn btn-outline" id="editQuoteBtn">Edit & Resubmit</button>`);
+  }
+  if (q.status === 'PendingApproval' && isQuotationApprover()) {
+    buttons.unshift(`<button class="btn btn-danger" id="rejectQuoteBtn">Reject</button>`);
+    buttons.unshift(`<button class="btn btn-primary" id="approveQuoteBtn">Approve</button>`);
+  }
+  if (q.status === 'Approved' && canManage) {
+    buttons.unshift(`<button class="btn btn-primary" id="sendQuoteBtn">Send to Client</button>`);
+  }
+  if (q.status === 'Sent' && canManage) {
+    buttons.unshift(`<button class="btn btn-danger" id="declineQuoteBtn">Client Declined</button>`);
+    buttons.unshift(`<button class="btn btn-primary" id="acceptQuoteBtn">Client Accepted</button>`);
+  }
+  if (q.status === 'Accepted' && canManage) {
+    if (q.jobOrderId) {
+      const jo = state.jobOrders.find(j => j.id === q.jobOrderId);
+      buttons.unshift(`<span class="badge badge-in" style="align-self:center;">Job Order ${jo ? jo.jobOrderNumber : ''} created</span>`);
+    } else {
+      buttons.unshift(`<button class="btn btn-primary" id="convertQuoteBtn">Convert to Job Order</button>`);
+    }
+  }
+  if (q.status === 'Declined') {
+    buttons.unshift(`<span class="muted" style="align-self:center;font-size:12px;">${q.clientDecisionNote || 'Client declined this quotation.'}</span>`);
+  }
+
+  return `<div class="no-print" style="display:flex;justify-content:flex-end;gap:8px;margin-top:20px;flex-wrap:wrap;">
+    <button class="btn btn-ghost" id="modalCancel">Close</button>
+    ${buttons.join('')}
+  </div>`;
+}
+
+function renderExclusionsLibrary() {
+  return `
+  <div class="tbl-wrap"><table>
+    <thead><tr><th>Text</th><th>Category</th><th></th></tr></thead>
+    <tbody>
+    ${state.exclusionsLibrary.length === 0 ? `<tr><td colspan="3"><div class="empty">No saved exclusions yet.</div></td></tr>` :
+      state.exclusionsLibrary.map(e => `<tr><td style="font-size:13px;">${e.text}</td><td>${e.category}</td><td><button class="btn btn-ghost btn-sm removeLibExclBtn" data-id="${e.id}">Remove</button></td></tr>`).join('')}
+    </tbody>
+  </table></div>
+  <div class="field" style="margin-top:14px;"><label>Add New Exclusion / Term</label>
+    <div style="display:flex;gap:8px;"><input id="newLibExclText" style="flex:1;" placeholder="Type a reusable exclusion or term..."><button class="btn btn-primary btn-sm" id="addLibExclBtn">Add</button></div>
+  </div>
+  <div style="display:flex;justify-content:flex-end;margin-top:14px;"><button class="btn btn-ghost" id="modalCancel">Close</button></div>
+  `;
+}
+
+/* ---------------- Quotation form ---------------- */
+function renderQuoteForm(payload) {
+  if (!payload.type) return renderQuoteTypeChooser();
+  if (payload.type === 'AMC') return renderAmcQuoteForm(payload);
+  return renderStandardQuoteForm(payload);
+}
+
+function renderQuoteTypeChooser() {
+  const opts = [
+    ['PR', 'Project', 'Multi-system installs — grouped BOQ by category (Fire Alarm, PAVA, EML...)'],
+    ['SUP', 'Supply Only', 'Simple flat quote for material supply'],
+    ['FO', 'Fit-Out', 'Fit-out jobs — same grouped BOQ structure as Project'],
+    ['AMC', 'AMC Contract', 'Annual maintenance contract with clauses, manpower & maintenance schedule'],
+  ];
+  return `
+  <div class="grid2">
+    ${opts.map(([type, label, desc]) => `
+      <div class="type-choice-card" data-choose-quote-type="${type}">
+        <div style="font-weight:700;font-size:15px;margin-bottom:6px;">${label}</div>
+        <div class="muted" style="font-size:12px;">${desc}</div>
+        <div class="muted" style="font-size:11px;font-family:var(--mono);margin-top:8px;">AF/${type}/xxxxx/yy</div>
+      </div>`).join('')}
+  </div>
+  <div style="display:flex;justify-content:flex-end;margin-top:16px;">
+    <button class="btn btn-ghost" id="modalCancel">Cancel</button>
+  </div>
+  `;
+}
+
+function renderSitesCoveredEditor(payload) {
+  const sites = payload.sitesCovered || [];
+  return `
+  <label>Sites Covered <span class="muted" style="font-weight:500;text-transform:none;">(optional — add every building/site this quote covers)</span></label>
+  <div id="sitesCoveredList">
+    ${sites.map((s, idx) => `
+      <div class="grid3" style="margin-bottom:6px;align-items:end;" data-site-row="${idx}">
+        <div class="field" style="margin-bottom:0;"><input class="siteNameInput" data-idx="${idx}" placeholder="Site / building name" value="${s.name || ''}"></div>
+        <div class="field" style="margin-bottom:0;"><input class="siteRefInput" data-idx="${idx}" placeholder="Reference / ID (optional)" value="${s.reference || ''}"></div>
+        <div style="display:flex;gap:6px;"><input class="siteNotesInput" data-idx="${idx}" placeholder="Notes (optional)" value="${s.notes || ''}" style="flex:1;"><button class="btn btn-ghost btn-sm removeSiteBtn" data-idx="${idx}" style="padding:6px 9px;">✕</button></div>
+      </div>`).join('')}
+  </div>
+  <button class="btn btn-ghost btn-sm" id="addSiteBtn" type="button" style="margin-bottom:14px;">+ Add Site</button>
+  `;
+}
+
+function renderExclusionsPicker(payload) {
+  const selected = payload.exclusions || [];
+  return `
+  <label>Exclusions & Terms</label>
+  <div id="exclusionsSelected" style="margin-bottom:8px;">
+    ${selected.length === 0 ? `<span class="muted" style="font-size:12px;">None added yet.</span>` :
+      selected.map((text, idx) => `<span class="excl-pill">${text}<button type="button" class="removeExclBtn" data-idx="${idx}">✕</button></span>`).join('')}
+  </div>
+  <div style="display:flex;gap:8px;margin-bottom:14px;">
+    <select id="exclusionLibraryPick" style="flex:1;">
+      <option value="">— Add from saved library —</option>
+      ${state.exclusionsLibrary.filter(e => !selected.includes(e.text)).map(e => `<option value="${e.id}">${e.text.slice(0, 80)}${e.text.length > 80 ? '…' : ''}</option>`).join('')}
+    </select>
+    <button class="btn btn-ghost btn-sm" id="addExclFromLibBtn" type="button">Add</button>
+  </div>
+  <div style="display:flex;gap:8px;margin-bottom:14px;">
+    <input id="customExclusionInput" placeholder="Or type a one-off exclusion / term and press Add" style="flex:1;">
+    <button class="btn btn-ghost btn-sm" id="addCustomExclBtn" type="button">Add</button>
+  </div>
+  `;
+}
+
+function renderQuoteTotalsBox(payload) {
+  const t = calcQuoteTotals(payload);
+  const cur = state.company.currency;
+  return `
+  <div class="card" id="quoteTotalsBox" style="background:#FAFCFC;">
+    <div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0;"><span class="muted">Subtotal</span><span id="totSubtotal">${cur} ${fmtMoney(t.subtotal)}</span></div>
+    <div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0;align-items:center;">
+      <span class="muted">Discount</span>
+      <input type="number" id="quoteDiscount" value="${payload.discount || 0}" style="width:120px;text-align:right;">
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0;"><span class="muted">Taxable</span><span id="totTaxable">${cur} ${fmtMoney(t.taxable)}</span></div>
+    <div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0;"><span class="muted">VAT (5%)</span><span id="totVat">${cur} ${fmtMoney(t.vat)}</span></div>
+    <div style="display:flex;justify-content:space-between;font-size:15px;font-weight:700;padding:6px 0 0;border-top:1px solid var(--border);margin-top:4px;"><span>Total</span><span id="totTotal">${cur} ${fmtMoney(t.total)}</span></div>
+  </div>`;
+}
+
+function renderStandardQuoteForm(payload) {
+  const isEdit = !!payload.id;
+  const lines = payload.lineItems || [];
+  return `
+  <div class="muted" style="margin-bottom:10px;font-size:12px;">Type: <strong>${QUOTE_TYPE_LABEL[payload.type]}</strong> &nbsp;·&nbsp; Number assigned when sent: <span style="font-family:var(--mono)">AF/${QUOTE_TYPE_PREFIX[payload.type]}/${state.nextQuotationCounter || '…'}/${String(new Date().getFullYear()).slice(-2)}</span></div>
+  <div class="grid2">
+    <div class="field">
+      <label>Client</label>
+      <select id="quoteClientPick">
+        <option value="">— Select saved client (optional) —</option>
+        ${[...state.clients].sort((a,b)=>a.companyName.localeCompare(b.companyName)).map(c => `<option value="${c.id}" ${payload.clientId === c.id ? 'selected' : ''}>${c.companyName}</option>`).join('')}
+      </select>
+    </div>
+    <div class="field"><label>Client Company Name</label><input id="quoteClientCompany" value="${payload.clientCompany || ''}" placeholder="M/S. Client Name"></div>
+  </div>
+  <div class="grid3">
+    <div class="field"><label>Attn</label><input id="quoteClientAttn" value="${payload.clientAttn || ''}"></div>
+    <div class="field"><label>Contact</label><input id="quoteClientContact" value="${payload.clientContact || ''}"></div>
+    <div class="field"><label>Email</label><input id="quoteClientEmail" type="email" value="${payload.clientEmail || ''}"></div>
+  </div>
+  <div class="grid3">
+    <div class="field"><label>PO Box</label><input id="quoteClientPoBox" value="${payload.clientPoBox || ''}"></div>
+    <div class="field"><label>Date</label><input id="quoteDate" type="date" value="${payload.date || new Date().toISOString().slice(0,10)}"></div>
+    <div class="field"><label>Validity (days)</label><input id="quoteValidityDays" type="number" value="${payload.validityDays ?? 15}"></div>
+  </div>
+  <div class="field"><label>Subject</label><input id="quoteSubject" value="${payload.subject || ''}" placeholder="QUOTATION FOR ..."></div>
+  <div class="field"><label>Site Detail</label><input id="quoteSiteDetail" value="${payload.siteDetail || ''}"></div>
+
+  ${renderSitesCoveredEditor(payload)}
+
+  <label>Line Items</label>
+  <div id="quoteLinesList">
+    ${lines.length === 0 ? `<p class="muted" style="font-size:12px;">No items yet — add one below.</p>` : ''}
+    ${lines.map((l, idx) => renderQuoteLineCard(l, idx)).join('')}
+  </div>
+  <button class="btn btn-ghost btn-sm" id="addQuoteLineBtn" type="button" style="margin-bottom:16px;">+ Add Line Item</button>
+
+  <div class="field"><label>Payment Terms</label><input id="quotePaymentTerms" value="${payload.paymentTerms || ''}" placeholder="e.g. 50% Advance, 50% Before Delivery"></div>
+  ${renderExclusionsPicker(payload)}
+  <div class="field"><label>Notes</label><textarea id="quoteNotes" rows="2">${payload.notes || ''}</textarea></div>
+
+  ${renderQuoteTotalsBox(payload)}
+
+  <div style="display:flex;justify-content:space-between;margin-top:14px;">
+    <div>${isEdit ? `<button class="btn btn-danger" id="deleteQuoteBtn" type="button">Delete Draft</button>` : ''}</div>
+    <div style="display:flex;gap:8px;"><button class="btn btn-ghost" id="modalCancel">Cancel</button><button class="btn btn-primary" id="saveQuoteDraftBtn">Save Draft</button></div>
+  </div>
+  `;
+}
+
+function renderQuoteLineCard(l, idx) {
+  return `
+  <div class="quote-line-card" data-quote-line="${idx}">
+    <div class="quote-line-top">
+      <div><label>Description</label><input class="qlDescription" data-idx="${idx}" value="${l.description || ''}" placeholder="Item description"></div>
+      <div><label>Category</label>
+        <select class="qlCategory" data-idx="${idx}">
+          ${state.quotationCategories.map(c => `<option ${l.category === c ? 'selected' : ''}>${c}</option>`).join('')}
+        </select>
+      </div>
+      <div style="display:flex;align-items:flex-end;"><button class="btn btn-ghost btn-sm removeQuoteLineBtn" data-idx="${idx}" style="padding:6px 9px;">✕</button></div>
+    </div>
+    <div class="quote-line-bottom">
+      <div><label>From Inventory</label>
+        <select class="qlInventoryPick" data-idx="${idx}">
+          <option value="">— custom line —</option>
+          ${state.items.map(it => `<option value="${it.id}" ${l.itemId === it.id ? 'selected' : ''}>${itemLabel(it)}</option>`).join('')}
+        </select>
+      </div>
+      <div><label>Brand</label><input class="qlBrand" data-idx="${idx}" value="${l.brand || ''}"></div>
+      <div><label>Unit</label>
+        <select class="qlUnit" data-idx="${idx}">${state.units.map(u => `<option ${l.unit === u ? 'selected' : ''}>${u}</option>`).join('')}</select>
+      </div>
+      <div><label>Qty</label><input class="qlQty" data-idx="${idx}" type="number" value="${l.qty ?? ''}"></div>
+      <div><label>Unit Price</label><input class="qlPrice" data-idx="${idx}" type="number" value="${l.unitPrice ?? ''}"></div>
+      <div><label>Line Total</label><input class="qlLineTotal" value="${state.company.currency} ${fmtMoney(lineTotal(l))}" disabled></div>
+    </div>
+  </div>`;
+}
+
+function renderAmcQuoteForm(payload) {
+  const isEdit = !!payload.id;
+  const amc = payload.amc || { services: [], manpower: [], scopeOfAgreement: '', contractStart: '', contractEnd: '', maintenanceSchedule: 'Quarterly' };
+  return `
+  <div class="muted" style="margin-bottom:10px;font-size:12px;">Type: <strong>AMC Contract</strong> &nbsp;·&nbsp; Number assigned when sent: <span style="font-family:var(--mono)">AF/AMC/${state.nextQuotationCounter || '…'}/${String(new Date().getFullYear()).slice(-2)}</span></div>
+  <div class="grid2">
+    <div class="field">
+      <label>Client</label>
+      <select id="quoteClientPick">
+        <option value="">— Select saved client (optional) —</option>
+        ${[...state.clients].sort((a,b)=>a.companyName.localeCompare(b.companyName)).map(c => `<option value="${c.id}" ${payload.clientId === c.id ? 'selected' : ''}>${c.companyName}</option>`).join('')}
+      </select>
+    </div>
+    <div class="field"><label>Client Company Name</label><input id="quoteClientCompany" value="${payload.clientCompany || ''}"></div>
+  </div>
+  <div class="grid3">
+    <div class="field"><label>Attn</label><input id="quoteClientAttn" value="${payload.clientAttn || ''}"></div>
+    <div class="field"><label>Contact</label><input id="quoteClientContact" value="${payload.clientContact || ''}"></div>
+    <div class="field"><label>Email</label><input id="quoteClientEmail" type="email" value="${payload.clientEmail || ''}"></div>
+  </div>
+  <div class="field"><label>Subject</label><input id="quoteSubject" value="${payload.subject || ''}" placeholder="QUOTATION FOR ANNUAL MAINTENANCE CONTRACT..."></div>
+  <div class="field"><label>Site Detail</label><input id="quoteSiteDetail" value="${payload.siteDetail || ''}"></div>
+
+  ${renderSitesCoveredEditor(payload)}
+
+  <div class="field"><label>Scope of Agreement</label><textarea id="amcScope" rows="3">${amc.scopeOfAgreement}</textarea></div>
+  <div class="grid3">
+    <div class="field"><label>Contract Start</label><input id="amcStart" type="date" value="${amc.contractStart}"></div>
+    <div class="field"><label>Contract End</label><input id="amcEnd" type="date" value="${amc.contractEnd}"></div>
+    <div class="field"><label>Maintenance Visits</label>
+      <select id="amcSchedule">
+        ${['Quarterly','Semi-Annual','Annual','Monthly'].map(o => `<option ${amc.maintenanceSchedule === o ? 'selected' : ''}>${o}</option>`).join('')}
+      </select>
+    </div>
+  </div>
+
+  <label>Services / Pricing</label>
+  <div id="amcServicesList">
+    ${(amc.services || []).map((s, idx) => `
+      <div class="grid4" style="margin-bottom:6px;align-items:end;">
+        <div class="field" style="margin-bottom:0;grid-column:span 2;"><input class="amcSvcDesc" data-idx="${idx}" value="${s.description || ''}" placeholder="Service description"></div>
+        <div class="field" style="margin-bottom:0;"><input class="amcSvcQty" data-idx="${idx}" type="number" value="${s.qty ?? ''}" placeholder="Qty"></div>
+        <div style="display:flex;gap:6px;"><input class="amcSvcPrice" data-idx="${idx}" type="number" value="${s.unitPrice ?? ''}" placeholder="Unit Price" style="flex:1;"><button class="btn btn-ghost btn-sm removeAmcSvcBtn" data-idx="${idx}" style="padding:6px 9px;">✕</button></div>
+      </div>`).join('')}
+  </div>
+  <button class="btn btn-ghost btn-sm" id="addAmcSvcBtn" type="button" style="margin-bottom:14px;">+ Add Service Line</button>
+
+  <label>Manpower</label>
+  <div id="amcManpowerList">
+    ${(amc.manpower || []).map((m, idx) => `
+      <div class="grid3" style="margin-bottom:6px;align-items:end;">
+        <div class="field" style="margin-bottom:0;grid-column:span 2;"><input class="amcMpRole" data-idx="${idx}" value="${m.role || ''}" placeholder="e.g. Supervisor, Technician"></div>
+        <div style="display:flex;gap:6px;"><input class="amcMpQty" data-idx="${idx}" type="number" value="${m.qty ?? ''}" placeholder="Qty" style="flex:1;"><button class="btn btn-ghost btn-sm removeAmcMpBtn" data-idx="${idx}" style="padding:6px 9px;">✕</button></div>
+      </div>`).join('')}
+  </div>
+  <button class="btn btn-ghost btn-sm" id="addAmcMpBtn" type="button" style="margin-bottom:16px;">+ Add Manpower Line</button>
+
+  <div class="field"><label>Payment Terms</label><input id="quotePaymentTerms" value="${payload.paymentTerms || ''}" placeholder="e.g. Client will pay advance on quarterly basis"></div>
+  ${renderExclusionsPicker(payload)}
+  <div class="field"><label>Notes</label><textarea id="quoteNotes" rows="2">${payload.notes || ''}</textarea></div>
+
+  ${renderQuoteTotalsBox({ ...payload, lineItems: amc.services })}
+
+  <div style="display:flex;justify-content:space-between;margin-top:14px;">
+    <div>${isEdit ? `<button class="btn btn-danger" id="deleteQuoteBtn" type="button">Delete Draft</button>` : ''}</div>
+    <div style="display:flex;gap:8px;"><button class="btn btn-ghost" id="modalCancel">Cancel</button><button class="btn btn-primary" id="saveQuoteDraftBtn">Save Draft</button></div>
+  </div>
+  `;
+}
+
 /* ---------------- Settings ---------------- */
 function renderSettings() {
   const co = state.company;
@@ -603,11 +1141,53 @@ function renderSettings() {
     </div>
   </div>
 
+  ${can('manageQuotations') ? renderQuotationSettings() : ''}
+
   ${can('manageUsers') ? renderUsersRolesSettings() : `<div class="card"><div class="card-title" style="margin-bottom:6px;">Users &amp; Roles</div><p class="muted" style="margin:0;">Only Super Admin can manage users, roles and permissions.</p></div>`}
 
   <div class="shared-note">Pricing visibility, negative-stock rules and user permissions here are enforced by the server on every request — not just hidden in this screen.</div>
   `;
 }
+
+function renderQuotationSettings() {
+  const approverIds = new Set((state.company.quotationApprovers || []));
+  return `
+  <div class="grid2" style="align-items:start;">
+    <div class="card">
+      <div class="card-title" style="margin-bottom:12px;">Quotation Numbering</div>
+      <div class="field"><label>Continue From Number</label><input id="setQuoteCounter" type="number" value="${state.nextQuotationCounter ? state.nextQuotationCounter - 1 : 20409}"></div>
+      <p class="muted" style="margin-top:-6px;">Next quotation will be numbered like <strong>AF/PR/${state.nextQuotationCounter || ''}/${String(new Date().getFullYear()).slice(-2)}</strong> (prefix depends on type: PR / SUP / AMC / FO).</p>
+      <button class="btn btn-teal btn-sm" id="saveQuoteCounterBtn">Save</button>
+    </div>
+    <div class="card">
+      <div class="card-title" style="margin-bottom:12px;">Quotation Categories</div>
+      <div id="quoteCategoryList">${state.quotationCategories.map(c => `<span class="tag">${c} <span data-del-quotecat="${c}" style="cursor:pointer;color:var(--red);">✕</span></span>`).join(' ')}</div>
+      <div class="field" style="margin-top:12px;"><label>Add Category</label>
+        <div style="display:flex;gap:8px;"><input id="newQuoteCatInput" placeholder="e.g. CCTV System"><button class="btn btn-ghost btn-sm" id="addQuoteCatBtn">Add</button></div>
+      </div>
+    </div>
+  </div>
+  <div class="grid2" style="align-items:start;">
+    <div class="card">
+      <div class="card-title" style="margin-bottom:12px;">Quotation Approvers</div>
+      <p class="muted" style="margin-top:0;">Only these people (and Super Admin, always) can approve a quotation before it's sent.</p>
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        ${state.users.filter(u => u.active !== false).map(u => `
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500;color:var(--ink);text-transform:none;letter-spacing:0;">
+            <input type="checkbox" class="approverCheck" data-uid="${u.id}" ${approverIds.has(u.id) ? 'checked' : ''} style="width:auto;"> ${u.name} <span class="muted">(${u.role})</span>
+          </label>`).join('')}
+      </div>
+      <button class="btn btn-teal btn-sm" id="saveApproversBtn" style="margin-top:12px;">Save Approvers</button>
+    </div>
+    <div class="card">
+      <div class="card-title" style="margin-bottom:12px;">Exclusions &amp; Terms Library</div>
+      <p class="muted" style="margin-top:0;">${state.exclusionsLibrary.length} saved exclusion/term snippets, reusable across every quotation instead of retyping.</p>
+      <button class="btn btn-outline btn-sm" id="openExclusionsLibBtn">Manage Library</button>
+    </div>
+  </div>
+  `;
+}
+
 
 function renderUsersRolesSettings() {
   return `
@@ -660,6 +1240,9 @@ function renderModal() {
   if (type === 'newDn') return modalWrap(renderDnForm(payload), 'New Delivery Note', true);
   if (type === 'viewDn') return modalWrap(renderDnView(payload), '', true);
   if (type === 'invReport') return modalWrap(renderInventoryReportView(), '', true);
+  if (type === 'newQuote') return modalWrap(renderQuoteForm(payload), payload.id ? 'Edit Quotation' : 'New Quotation', true);
+  if (type === 'viewQuote') return modalWrap(renderQuoteView(payload), '', true);
+  if (type === 'exclusionsLib') return modalWrap(renderExclusionsLibrary(payload), 'Exclusions & Terms Library');
   return '';
 }
 function modalWrap(inner, title, wide) {
@@ -884,7 +1467,7 @@ function renderDnView(dn) {
   return `
   <div id="printArea" class="dn-doc">
     <div class="dn-head">
-      <div style="display:flex;gap:14px;align-items:flex-start;">
+      <div style="display:flex;gap:14px;align-items:center;">
         ${co.logoPath ? `<img src="${co.logoPath}" class="dn-logo" style="height:${logoSizePx(co.logoSize)}px;max-width:220px;object-fit:contain;" alt="${co.name} logo">` : ''}
         <div>
           <div class="dn-company">${co.name}</div>
@@ -954,7 +1537,7 @@ function renderInventoryReportView() {
   return `
   <div id="printArea" class="dn-doc">
     <div class="dn-head">
-      <div style="display:flex;gap:14px;align-items:flex-start;">
+      <div style="display:flex;gap:14px;align-items:center;">
         ${co.logoPath ? `<img src="${co.logoPath}" class="dn-logo" style="height:${logoSizePx(co.logoSize)}px;max-width:220px;object-fit:contain;" alt="logo">` : ''}
         <div>
           <div class="dn-company">${co.name}</div>
@@ -1050,6 +1633,17 @@ function attachHandlers() {
     openModal('client', { ...state.clients.find(c => c.id === e.currentTarget.getAttribute('data-edit-client')) });
   }));
 
+  const newQuoteBtn = document.getElementById('newQuoteBtn');
+  if (newQuoteBtn) newQuoteBtn.addEventListener('click', () => openModal('newQuote', {}));
+  const quoteStatusFilter = document.getElementById('quoteStatusFilter');
+  if (quoteStatusFilter) quoteStatusFilter.addEventListener('change', e => { state.quoteFilter = e.target.value; render(); });
+  document.querySelectorAll('[data-view-quote]').forEach(b => b.addEventListener('click', e => {
+    openModal('viewQuote', findQuote(e.currentTarget.getAttribute('data-view-quote')));
+  }));
+  document.querySelectorAll('[data-choose-quote-type]').forEach(b => b.addEventListener('click', e => {
+    openModal('newQuote', { type: e.currentTarget.getAttribute('data-choose-quote-type'), lineItems: [], sitesCovered: [], exclusions: [] });
+  }));
+
   const openChangePwdBtn = document.getElementById('openChangePwdBtn');
   if (openChangePwdBtn) openChangePwdBtn.addEventListener('click', () => openModal('changePwd', {}));
 
@@ -1069,6 +1663,9 @@ function attachHandlers() {
   attachClientFormHandlers();
   attachUserFormHandlers();
   attachPwdFormHandlers();
+  attachQuoteFormHandlers();
+  attachQuoteViewHandlers();
+  attachExclusionsLibraryHandlers();
 }
 
 function renderInventoryOnly() {
@@ -1319,6 +1916,387 @@ function attachPwdFormHandlers() {
   });
 }
 
+/* ---- Quotation form handlers ---- */
+function currentQuotePayload() {
+  return state.modal.payload;
+}
+
+function readStandardLinesFromDom() {
+  const cards = document.querySelectorAll('[data-quote-line]');
+  const lines = [];
+  cards.forEach(card => {
+    const idx = card.getAttribute('data-quote-line');
+    const desc = card.querySelector('.qlDescription').value;
+    const category = card.querySelector('.qlCategory').value;
+    const itemId = card.querySelector('.qlInventoryPick').value || null;
+    const brand = card.querySelector('.qlBrand').value;
+    const unit = card.querySelector('.qlUnit').value;
+    const qty = Number(card.querySelector('.qlQty').value || 0);
+    const unitPrice = Number(card.querySelector('.qlPrice').value || 0);
+    lines.push({ description: desc, category, itemId, brand, unit, qty, unitPrice });
+  });
+  return lines;
+}
+function readSitesFromDom() {
+  const rows = document.querySelectorAll('[data-site-row]');
+  const sites = [];
+  rows.forEach(row => {
+    const idx = row.getAttribute('data-site-row');
+    const name = row.querySelector('.siteNameInput').value;
+    const reference = row.querySelector('.siteRefInput').value;
+    const notes = row.querySelector('.siteNotesInput').value;
+    if (name.trim()) sites.push({ id: uid('site'), name, reference, notes });
+  });
+  return sites;
+}
+function readAmcServicesFromDom() {
+  const rows = document.querySelectorAll('#amcServicesList > div');
+  const services = [];
+  rows.forEach(row => {
+    const description = row.querySelector('.amcSvcDesc')?.value;
+    const qty = Number(row.querySelector('.amcSvcQty')?.value || 0);
+    const unitPrice = Number(row.querySelector('.amcSvcPrice')?.value || 0);
+    if (description !== undefined) services.push({ description, qty, unitPrice });
+  });
+  return services;
+}
+function readAmcManpowerFromDom() {
+  const rows = document.querySelectorAll('#amcManpowerList > div');
+  const manpower = [];
+  rows.forEach(row => {
+    const role = row.querySelector('.amcMpRole')?.value;
+    const qty = Number(row.querySelector('.amcMpQty')?.value || 0);
+    if (role !== undefined) manpower.push({ role, qty });
+  });
+  return manpower;
+}
+
+// Pulls every editable field out of the current DOM into the modal payload — called before
+// any add/remove-row action or save, so in-progress edits are never lost on re-render.
+function syncQuoteFormIntoPayload() {
+  const p = state.modal.payload;
+  if (!p.type) return;
+  p.clientId = val('quoteClientPick') || p.clientId || null;
+  p.clientCompany = val('quoteClientCompany');
+  p.clientAttn = val('quoteClientAttn');
+  p.clientContact = val('quoteClientContact');
+  p.clientEmail = val('quoteClientEmail');
+  p.clientPoBox = val('quoteClientPoBox');
+  p.subject = val('quoteSubject');
+  p.siteDetail = val('quoteSiteDetail');
+  p.date = val('quoteDate') || p.date;
+  p.validityDays = Number(val('quoteValidityDays') || 15);
+  p.sitesCovered = readSitesFromDom();
+  p.paymentTerms = val('quotePaymentTerms');
+  p.notes = val('quoteNotes');
+  p.discount = Number(val('quoteDiscount') || 0);
+  if (p.type === 'AMC') {
+    p.amc = p.amc || {};
+    p.amc.scopeOfAgreement = val('amcScope');
+    p.amc.contractStart = val('amcStart');
+    p.amc.contractEnd = val('amcEnd');
+    p.amc.maintenanceSchedule = val('amcSchedule') || 'Quarterly';
+    p.amc.services = readAmcServicesFromDom();
+    p.amc.manpower = readAmcManpowerFromDom();
+  } else {
+    p.lineItems = readStandardLinesFromDom();
+  }
+}
+
+// Recomputes and patches ONLY the line-total and totals-box numbers directly in the DOM,
+// reading current input values live. Deliberately does not call render() or touch payload —
+// this runs on every keystroke, so it must never replace any DOM node the user might be
+// focused in or tabbing through.
+function updateQuoteLiveTotals() {
+  const cur = state.company.currency;
+  let subtotal = 0;
+  document.querySelectorAll('.quote-line-card').forEach(card => {
+    const qty = Number(card.querySelector('.qlQty')?.value || 0);
+    const price = Number(card.querySelector('.qlPrice')?.value || 0);
+    const t = qty * price;
+    subtotal += t;
+    const totalField = card.querySelector('.qlLineTotal');
+    if (totalField) totalField.value = `${cur} ${fmtMoney(t)}`;
+  });
+  document.querySelectorAll('#amcServicesList > div').forEach(row => {
+    const qty = Number(row.querySelector('.amcSvcQty')?.value || 0);
+    const price = Number(row.querySelector('.amcSvcPrice')?.value || 0);
+    subtotal += qty * price;
+  });
+  const discount = Number(document.getElementById('quoteDiscount')?.value || 0);
+  const taxable = Math.max(0, subtotal - discount);
+  const showVat = state.modal.payload.showVat !== false;
+  const vat = showVat ? taxable * 0.05 : 0;
+  const total = taxable + vat;
+  const setText = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+  setText('totSubtotal', `${cur} ${fmtMoney(subtotal)}`);
+  setText('totTaxable', `${cur} ${fmtMoney(taxable)}`);
+  setText('totVat', `${cur} ${fmtMoney(vat)}`);
+  setText('totTotal', `${cur} ${fmtMoney(total)}`);
+}
+
+function attachQuoteFormHandlers() {
+  if (!state.modal || (state.modal.type !== 'newQuote')) return;
+  const p = state.modal.payload;
+  if (!p.type) return; // type-chooser screen, nothing to wire yet
+
+  // Client quick-fill
+  const clientPick = document.getElementById('quoteClientPick');
+  if (clientPick) clientPick.addEventListener('change', e => {
+    syncQuoteFormIntoPayload();
+    const c = state.clients.find(cl => cl.id === e.target.value);
+    if (c) { p.clientId = c.id; p.clientCompany = c.companyName; p.clientAttn = c.contactPerson; p.clientContact = c.phone; p.clientEmail = c.email; }
+    render();
+  });
+
+  // Sites Covered
+  const addSiteBtn = document.getElementById('addSiteBtn');
+  if (addSiteBtn) addSiteBtn.addEventListener('click', () => {
+    syncQuoteFormIntoPayload();
+    p.sitesCovered = [...(p.sitesCovered || []), { id: uid('site'), name: '', reference: '', notes: '' }];
+    render();
+  });
+  document.querySelectorAll('.removeSiteBtn').forEach(b => b.addEventListener('click', e => {
+    syncQuoteFormIntoPayload();
+    const idx = Number(e.currentTarget.getAttribute('data-idx'));
+    p.sitesCovered.splice(idx, 1);
+    render();
+  }));
+
+  // Standard line items (SUP / PR / FO)
+  const addLineBtn = document.getElementById('addQuoteLineBtn');
+  if (addLineBtn) addLineBtn.addEventListener('click', () => {
+    syncQuoteFormIntoPayload();
+    p.lineItems = [...(p.lineItems || []), { description: '', category: state.quotationCategories[0], unit: state.units[0], qty: 1, unitPrice: 0 }];
+    render();
+  });
+  document.querySelectorAll('.removeQuoteLineBtn').forEach(b => b.addEventListener('click', e => {
+    syncQuoteFormIntoPayload();
+    const idx = Number(e.currentTarget.getAttribute('data-idx'));
+    p.lineItems.splice(idx, 1);
+    render();
+  }));
+  document.querySelectorAll('.qlInventoryPick').forEach(sel => sel.addEventListener('change', e => {
+    syncQuoteFormIntoPayload();
+    const idx = Number(e.currentTarget.getAttribute('data-idx'));
+    const it = findItem(e.target.value);
+    if (it) {
+      p.lineItems[idx].itemId = it.id; p.lineItems[idx].description = it.description;
+      p.lineItems[idx].brand = it.brand; p.lineItems[idx].unit = it.unit;
+      if (can('viewPricing') && it.price) p.lineItems[idx].unitPrice = it.price;
+    } else { p.lineItems[idx].itemId = null; }
+    render();
+  }));
+  // Qty/price/discount are live-typed fields — updating totals here must NEVER trigger a full
+  // render(), or a mid-render DOM swap can steal focus and drop keystrokes (verified bug: Tab
+  // navigation between fields lost input when this used to sync+render on every change).
+  // Instead we recompute and patch just the numbers that need to move, in place.
+  document.querySelectorAll('.qlQty, .qlPrice').forEach(el => {
+    el.addEventListener('input', updateQuoteLiveTotals);
+  });
+  document.querySelectorAll('.qlDescription, .qlBrand, .qlCategory, .qlUnit').forEach(el => {
+    el.addEventListener('change', () => { syncQuoteFormIntoPayload(); }); // sync only, no re-render needed — nothing else depends on these
+  });
+
+  // AMC services
+  const addAmcSvcBtn = document.getElementById('addAmcSvcBtn');
+  if (addAmcSvcBtn) addAmcSvcBtn.addEventListener('click', () => {
+    syncQuoteFormIntoPayload();
+    p.amc.services = [...(p.amc.services || []), { description: '', qty: 1, unitPrice: 0 }];
+    render();
+  });
+  document.querySelectorAll('.removeAmcSvcBtn').forEach(b => b.addEventListener('click', e => {
+    syncQuoteFormIntoPayload();
+    const idx = Number(e.currentTarget.getAttribute('data-idx'));
+    p.amc.services.splice(idx, 1);
+    render();
+  }));
+  document.querySelectorAll('.amcSvcQty, .amcSvcPrice').forEach(el => {
+    el.addEventListener('input', updateQuoteLiveTotals);
+  });
+  document.querySelectorAll('.amcSvcDesc').forEach(el => {
+    el.addEventListener('change', () => { syncQuoteFormIntoPayload(); });
+  });
+
+  // AMC manpower
+  const addAmcMpBtn = document.getElementById('addAmcMpBtn');
+  if (addAmcMpBtn) addAmcMpBtn.addEventListener('click', () => {
+    syncQuoteFormIntoPayload();
+    p.amc.manpower = [...(p.amc.manpower || []), { role: '', qty: 1 }];
+    render();
+  });
+  document.querySelectorAll('.removeAmcMpBtn').forEach(b => b.addEventListener('click', e => {
+    syncQuoteFormIntoPayload();
+    const idx = Number(e.currentTarget.getAttribute('data-idx'));
+    p.amc.manpower.splice(idx, 1);
+    render();
+  }));
+
+  // Exclusions
+  const addExclFromLibBtn = document.getElementById('addExclFromLibBtn');
+  if (addExclFromLibBtn) addExclFromLibBtn.addEventListener('click', () => {
+    syncQuoteFormIntoPayload();
+    const id = val('exclusionLibraryPick');
+    const item = state.exclusionsLibrary.find(e => e.id === id);
+    if (item && !p.exclusions.includes(item.text)) p.exclusions = [...p.exclusions, item.text];
+    render();
+  });
+  const addCustomExclBtn = document.getElementById('addCustomExclBtn');
+  if (addCustomExclBtn) addCustomExclBtn.addEventListener('click', () => {
+    syncQuoteFormIntoPayload();
+    const text = val('customExclusionInput').trim();
+    if (text) p.exclusions = [...p.exclusions, text];
+    render();
+  });
+  document.querySelectorAll('.removeExclBtn').forEach(b => b.addEventListener('click', e => {
+    syncQuoteFormIntoPayload();
+    const idx = Number(e.currentTarget.getAttribute('data-idx'));
+    p.exclusions.splice(idx, 1);
+    render();
+  }));
+
+  // Discount live update (recalculate totals box on change)
+  const discountInput = document.getElementById('quoteDiscount');
+  if (discountInput) discountInput.addEventListener('input', updateQuoteLiveTotals);
+
+  // Save / Delete
+  const saveDraftBtn = document.getElementById('saveQuoteDraftBtn');
+  if (saveDraftBtn) saveDraftBtn.addEventListener('click', async () => {
+    syncQuoteFormIntoPayload();
+    if (!p.clientCompany || !p.clientCompany.trim()) { showToast('Client company name is required.', 'err'); return; }
+    const body = { ...p };
+    try {
+      let saved;
+      if (p.id) saved = (await api('PUT', '/api/quotations/' + p.id, body)).quotation;
+      else saved = (await api('POST', '/api/quotations', body)).quotation;
+      await loadAll();
+      showToast('Draft saved.', 'ok');
+      closeModal();
+      openModal('viewQuote', findQuote(saved.id));
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+  const deleteQuoteBtn = document.getElementById('deleteQuoteBtn');
+  if (deleteQuoteBtn) deleteQuoteBtn.addEventListener('click', async () => {
+    if (!confirm('Delete this draft quotation? This cannot be undone.')) return;
+    try {
+      await api('DELETE', '/api/quotations/' + p.id);
+      await loadAll();
+      showToast('Draft deleted.', 'ok');
+      closeModal(); setTab('quotations');
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+}
+
+/* ---- Quotation view / workflow action handlers ---- */
+function attachQuoteViewHandlers() {
+  if (!state.modal || state.modal.type !== 'viewQuote') return;
+  const q = state.modal.payload;
+
+  const printBtn = document.getElementById('printQuoteBtn');
+  if (printBtn) printBtn.addEventListener('click', () => window.print());
+
+  const editBtn = document.getElementById('editQuoteBtn');
+  if (editBtn) editBtn.addEventListener('click', () => openModal('newQuote', { ...q }));
+
+  const submitBtn = document.getElementById('submitQuoteBtn');
+  if (submitBtn) submitBtn.addEventListener('click', async () => {
+    try {
+      const res = await api('POST', `/api/quotations/${q.id}/submit`);
+      await loadAll();
+      showToast('Submitted for approval.', 'ok');
+      openModal('viewQuote', res.quotation);
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+
+  const approveBtn = document.getElementById('approveQuoteBtn');
+  if (approveBtn) approveBtn.addEventListener('click', async () => {
+    try {
+      const res = await api('POST', `/api/quotations/${q.id}/approve`);
+      await loadAll();
+      showToast('Quotation approved.', 'ok');
+      openModal('viewQuote', res.quotation);
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+  const rejectBtn = document.getElementById('rejectQuoteBtn');
+  if (rejectBtn) rejectBtn.addEventListener('click', async () => {
+    const reason = prompt('Reason for rejecting this quotation (visible to the person who created it):');
+    if (reason === null) return;
+    try {
+      const res = await api('POST', `/api/quotations/${q.id}/reject`, { reason });
+      await loadAll();
+      showToast('Quotation rejected.', 'ok');
+      openModal('viewQuote', res.quotation);
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+
+  const sendBtn = document.getElementById('sendQuoteBtn');
+  if (sendBtn) sendBtn.addEventListener('click', async () => {
+    if (!confirm('Send this quotation? A permanent reference number will be assigned.')) return;
+    try {
+      const res = await api('POST', `/api/quotations/${q.id}/send`);
+      await loadAll();
+      showToast('Quotation sent — number ' + res.quotation.quotationNumber, 'ok');
+      openModal('viewQuote', res.quotation);
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+
+  const acceptBtn = document.getElementById('acceptQuoteBtn');
+  if (acceptBtn) acceptBtn.addEventListener('click', async () => {
+    try {
+      const res = await api('POST', `/api/quotations/${q.id}/client-decision`, { decision: 'Accepted' });
+      await loadAll();
+      showToast('Marked as accepted by client.', 'ok');
+      openModal('viewQuote', res.quotation);
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+  const declineBtn = document.getElementById('declineQuoteBtn');
+  if (declineBtn) declineBtn.addEventListener('click', async () => {
+    const note = prompt('Any note about why the client declined? (optional)') || '';
+    try {
+      const res = await api('POST', `/api/quotations/${q.id}/client-decision`, { decision: 'Declined', note });
+      await loadAll();
+      showToast('Marked as declined by client.', 'ok');
+      openModal('viewQuote', res.quotation);
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+
+  const convertBtn = document.getElementById('convertQuoteBtn');
+  if (convertBtn) convertBtn.addEventListener('click', async () => {
+    if (!confirm('Create a Job Order from this accepted quotation?')) return;
+    try {
+      const res = await api('POST', `/api/quotations/${q.id}/convert-to-job-order`);
+      await loadAll();
+      showToast('Job Order ' + res.jobOrder.jobOrderNumber + ' created.', 'ok');
+      openModal('viewQuote', res.quotation);
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+}
+
+/* ---- Exclusions library (Settings) ---- */
+function attachExclusionsLibraryHandlers() {
+  if (!state.modal || state.modal.type !== 'exclusionsLib') return;
+  const addBtn = document.getElementById('addLibExclBtn');
+  if (addBtn) addBtn.addEventListener('click', async () => {
+    const text = val('newLibExclText').trim();
+    if (!text) return;
+    try {
+      await api('POST', '/api/exclusions', { text });
+      await loadAll();
+      showToast('Added to library.', 'ok');
+      openModal('exclusionsLib', {});
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+  document.querySelectorAll('.removeLibExclBtn').forEach(b => b.addEventListener('click', async e => {
+    const id = e.currentTarget.getAttribute('data-id');
+    try {
+      await api('DELETE', '/api/exclusions/' + id);
+      await loadAll();
+      showToast('Removed.', 'ok');
+      openModal('exclusionsLib', {});
+    } catch (err) { showToast(err.message, 'err'); }
+  }));
+}
+
 /* ---- Settings ---- */
 function attachSettingsHandlers() {
   const saveCompanyBtn = document.getElementById('saveCompanyBtn');
@@ -1402,6 +2380,35 @@ function attachSettingsHandlers() {
       showToast(`Updated ${role} permissions.`, 'ok');
     } catch (err) { showToast(err.message, 'err'); render(); }
   }));
+
+  const saveQuoteCounterBtn = document.getElementById('saveQuoteCounterBtn');
+  if (saveQuoteCounterBtn) saveQuoteCounterBtn.addEventListener('click', async () => {
+    const value = Number(val('setQuoteCounter'));
+    try {
+      await api('PUT', '/api/company/quotation-counter', { value });
+      await loadAll();
+      showToast('Quotation numbering updated.', 'ok'); render();
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+  const addQuoteCatBtn = document.getElementById('addQuoteCatBtn');
+  if (addQuoteCatBtn) addQuoteCatBtn.addEventListener('click', async () => {
+    const v = val('newQuoteCatInput').trim(); if (!v) return;
+    try { await api('POST', '/api/meta/quotationCategories', { value: v }); await loadAll(); render(); } catch (e) { showToast(e.message, 'err'); }
+  });
+  document.querySelectorAll('[data-del-quotecat]').forEach(b => b.addEventListener('click', async e => {
+    try { await api('DELETE', '/api/meta/quotationCategories/' + encodeURIComponent(e.currentTarget.getAttribute('data-del-quotecat'))); await loadAll(); render(); } catch (err) { showToast(err.message, 'err'); }
+  }));
+  const saveApproversBtn = document.getElementById('saveApproversBtn');
+  if (saveApproversBtn) saveApproversBtn.addEventListener('click', async () => {
+    const userIds = [...document.querySelectorAll('.approverCheck:checked')].map(cb => cb.getAttribute('data-uid'));
+    try {
+      await api('PUT', '/api/company/quotation-approvers', { userIds });
+      await loadAll();
+      showToast('Approvers updated.', 'ok'); render();
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+  const openExclusionsLibBtn = document.getElementById('openExclusionsLibBtn');
+  if (openExclusionsLibBtn) openExclusionsLibBtn.addEventListener('click', () => openModal('exclusionsLib', {}));
 }
 
 /* ================= INIT ================= */

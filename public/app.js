@@ -700,12 +700,12 @@ function quoteDocFooter(q) {
     <ul style="margin:6px 0 0;padding-left:20px;font-size:13px;">${q.exclusions.map(e => `<li style="margin-bottom:4px;">${e}</li>`).join('')}</ul>
   </div>` : ''}
   ${q.notes ? `<div style="margin-top:14px;"><strong>Notes:</strong> ${q.notes}</div>` : ''}
-  <div class="dn-sign" style="margin-top:40px;">
-    <div>
-      <div style="margin-bottom:36px;">Regards,</div>
-      <div class="sign-line">${q.preparedByName || ''}</div>
-    </div>
+  <p style="margin-top:20px;">Regards,</p>
+  <div class="dn-sign" style="margin-top:36px;">
+    <div class="sign-line">Prepared By${q.preparedByName ? ' — ' + q.preparedByName : ''}</div>
+    <div class="sign-line">Approved By${q.approvedByName ? ' — ' + q.approvedByName : ' — pending'}</div>
   </div>
+  <div class="dn-footer-note">This is a system-generated quotation. Signature is not required unless specifically requested by the client.</div>
   `;
 }
 

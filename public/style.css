@@ -157,18 +157,18 @@ tr:hover td{background:#FAFCFC;}
 
 /* Delivery note print doc */
 .dn-doc{background:#fff;padding:0;}
-.dn-head{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid var(--teal);padding-bottom:16px;margin-bottom:20px;}
+.dn-head{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid var(--teal);padding-bottom:16px;margin-bottom:20px;page-break-inside:avoid;break-inside:avoid;}
 .dn-logo{max-width:220px;object-fit:contain;}
 .dn-company{font-size:18px;font-weight:800;color:var(--teal);}
 .dn-company-sub{font-size:11.5px;color:var(--ink-soft);margin-top:2px;}
 .dn-title-block{text-align:right;}
 .dn-title{font-size:20px;font-weight:800;letter-spacing:1px;color:var(--navy-deep);}
 .dn-num{font-family:var(--mono);font-size:13px;color:var(--orange-deep);font-weight:700;margin-top:4px;}
-.dn-meta{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px;font-size:13px;}
+.dn-meta{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px;font-size:13px;page-break-inside:avoid;break-inside:avoid;}
 .dn-meta .k{color:var(--ink-soft);font-size:11px;text-transform:uppercase;letter-spacing:.4px;font-weight:700;}
 .dn-meta .v{font-weight:600;margin-top:2px;}
 .dn-table th{background:#F3F5F6;}
-.dn-sign{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:50px;}
+.dn-sign{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:50px;page-break-inside:avoid;break-inside:avoid;}
 .sign-line{border-top:1px solid var(--ink);margin-top:40px;padding-top:6px;font-size:12px;color:var(--ink-soft);}
 .dn-footer-note{margin-top:26px;font-size:11px;color:var(--ink-soft);border-top:1px dashed var(--border);padding-top:12px;}
 

@@ -475,6 +475,7 @@ function renderMovements() {
   let list = [...state.movements];
   if (state.branch !== 'All') list = list.filter(m => { const it = findItem(m.itemId); return it && it.location === state.branch; });
   list.sort((a, b) => b.createdAt - a.createdAt);
+  const canManage = can('manageMovements');
   return `
   <div class="toolbar">
     <div style="flex:1"></div>
@@ -482,9 +483,9 @@ function renderMovements() {
   </div>
   <div class="card">
     <div class="tbl-wrap"><table>
-      <thead><tr><th>Date</th><th>Item</th><th>Branch</th><th>Action</th><th>Qty</th><th>Reference</th><th>By</th><th>Linked DN</th></tr></thead>
+      <thead><tr><th>Date</th><th>Item</th><th>Branch</th><th>Action</th><th>Qty</th><th>Reference</th><th>By</th><th>Linked DN</th>${canManage ? '<th></th>' : ''}</tr></thead>
       <tbody>
-      ${list.length === 0 ? `<tr><td colspan="8"><div class="empty"><div class="big">🧾</div>No stock movements logged yet.</div></td></tr>` :
+      ${list.length === 0 ? `<tr><td colspan="${canManage ? 9 : 8}"><div class="empty"><div class="big">🧾</div>No stock movements logged yet.</div></td></tr>` :
         list.map(m => {
           const it = findItem(m.itemId);
           const cls = m.action === 'IN' ? 'pill-in' : m.action === 'OUT' ? 'pill-out' : 'pill-adj';
@@ -496,13 +497,16 @@ function renderMovements() {
             <td class="${cls}">${m.action}</td>
             <td style="font-family:var(--mono);font-weight:700;">${m.qty}</td>
             <td>${m.reference || '—'}</td>
-            <td>${m.by || '—'}</td>
+            <td>${m.by || '—'}${m.editedByName ? ` <span class="muted" style="font-size:10.5px;">(edited by ${m.editedByName})</span>` : ''}</td>
             <td>${dn ? `<span class="tag">${dn.dnNumber}</span>` : '—'}</td>
+            ${canManage ? `<td><button class="btn btn-outline btn-sm" data-edit-mv="${m.id}">Edit</button></td>` : ''}
           </tr>`;
         }).join('')}
       </tbody>
     </table></div>
-  </div>`;
+  </div>
+  ${canManage ? `<div class="shared-note">As Super Admin, you can edit or delete any entry here — this bypasses the normal audit-trail protection, so use it for genuine mistakes (like a typo), not routine corrections. Routine corrections should still go through an ADJUSTMENT entry so the history stays meaningful.</div>` : ''}
+  `;
 }
 
 /* ---------------- Delivery Notes ---------------- */
@@ -1232,7 +1236,7 @@ function closeModal() { state.modal = null; render(); }
 function renderModal() {
   const { type, payload } = state.modal;
   if (type === 'item') return modalWrap(renderItemForm(payload), 'Item Details');
-  if (type === 'movement') return modalWrap(renderMovementForm(payload), 'Log Stock Movement');
+  if (type === 'movement') return modalWrap(renderMovementForm(payload), payload.id ? 'Edit Stock Movement' : 'Log Stock Movement');
   if (type === 'client') return modalWrap(renderClientForm(payload), 'Client Details');
   if (type === 'userEdit') return modalWrap(renderUserForm(payload), 'User Details');
   if (type === 'forcePwd') return modalWrap(renderForcePwdForm(payload), 'Change Your Password');
@@ -1350,6 +1354,7 @@ function renderForcePwdForm() {
 function renderChangePwdForm() { return renderForcePwdForm(); }
 
 function renderMovementForm(payload) {
+  const isEdit = !!payload.id;
   const items = [...state.items].sort((a, b) => a.description.localeCompare(b.description));
   return `
   <div class="field"><label>Item</label>
@@ -1361,29 +1366,33 @@ function renderMovementForm(payload) {
   <div class="grid3">
     <div class="field"><label>Action</label>
       <select id="mv_action">
-        <option value="IN">IN (Received)</option>
-        <option value="OUT">OUT (Issued)</option>
-        <option value="ADJUSTMENT">ADJUSTMENT (Correction)</option>
+        <option value="IN" ${payload.action === 'IN' ? 'selected' : ''}>IN (Received)</option>
+        <option value="OUT" ${payload.action === 'OUT' ? 'selected' : ''}>OUT (Issued)</option>
+        <option value="ADJUSTMENT" ${payload.action === 'ADJUSTMENT' ? 'selected' : ''}>ADJUSTMENT (Correction)</option>
       </select>
     </div>
-    <div class="field"><label>Quantity</label><input type="number" id="mv_qty" placeholder="e.g. 10"></div>
-    <div class="field"><label>Date</label><input type="date" id="mv_date" value="${new Date().toISOString().slice(0, 10)}"></div>
+    <div class="field"><label>Quantity</label><input type="number" id="mv_qty" placeholder="e.g. 10" value="${payload.qty ?? ''}"></div>
+    <div class="field"><label>Date</label><input type="date" id="mv_date" value="${payload.date || new Date().toISOString().slice(0, 10)}"></div>
   </div>
   <div class="grid2">
-    <div class="field"><label>Reference / Project</label><input id="mv_ref" placeholder="PO number, project name…"></div>
-    <div class="field"><label>Issued / Received By</label><input id="mv_by" value="${state.user.name}"></div>
+    <div class="field"><label>Reference / Project</label><input id="mv_ref" placeholder="PO number, project name…" value="${payload.reference || ''}"></div>
+    <div class="field"><label>Issued / Received By</label><input id="mv_by" value="${payload.by || state.user.name}"></div>
   </div>
   <div class="muted" style="margin-bottom:10px;">IN/OUT must be a positive quantity. ADJUSTMENT can be negative (e.g. -3) to reduce stock.</div>
-  <div style="display:flex;justify-content:flex-end;gap:8px;">
-    <button class="btn btn-ghost" id="modalCancel">Cancel</button>
-    <button class="btn btn-primary" id="saveMvBtn">Log Movement</button>
+  ${isEdit && payload.dnId ? `<div class="banner-warn">⚠ This entry was created automatically by issuing Delivery Note ${state.dns.find(d => d.id === payload.dnId)?.dnNumber || ''}. Editing it here only changes the stock ledger — it will not update the Delivery Note document itself.</div>` : ''}
+  <div style="display:flex;justify-content:${isEdit ? 'space-between' : 'flex-end'};gap:8px;">
+    ${isEdit ? `<button class="btn btn-danger" id="deleteMvBtn" type="button">Delete Entry</button>` : ''}
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-ghost" id="modalCancel">Cancel</button>
+      <button class="btn btn-primary" id="saveMvBtn">${isEdit ? 'Save Changes' : 'Log Movement'}</button>
+    </div>
   </div>
   `;
 }
 
 /* ---------------- Delivery note form / view ---------------- */
 function renderDnForm(payload) {
-  const lines = payload.lines || [{ itemId: '', qty: 1 }];
+  const lines = payload.lines || [{ itemId: '', qty: '' }];
   const location = payload.location || (state.branch !== 'All' ? state.branch : state.branches[0]);
   const sortedClients = [...state.clients].sort((a, b) => a.companyName.localeCompare(b.companyName));
   return `
@@ -1568,6 +1577,25 @@ function renderInventoryReportView() {
 /* ================= EVENT HANDLING ================= */
 function val(id) { const el = document.getElementById(id); return el ? el.value : ''; }
 
+// Printing content that lives inside a deeply-nested modal (overlay > modal > printArea) is
+// fragile with CSS visibility/position tricks alone — the overlay's own scroll/positioning
+// can clip or truncate content, especially on documents long enough to span multiple pages.
+// Instead, we clone the current #printArea into a fresh, top-level element with zero
+// inherited styling, print that in isolation, then remove it.
+function printDocument() {
+  const source = document.getElementById('printArea');
+  if (!source) { window.print(); return; }
+  document.getElementById('printMount')?.remove();
+  const mount = document.createElement('div');
+  mount.id = 'printMount';
+  mount.innerHTML = source.outerHTML;
+  document.body.appendChild(mount);
+  window.print();
+  const cleanup = () => { document.getElementById('printMount')?.remove(); window.removeEventListener('afterprint', cleanup); };
+  window.addEventListener('afterprint', cleanup);
+  setTimeout(cleanup, 8000); // fallback in case afterprint doesn't fire (varies by browser/print-to-PDF flow)
+}
+
 function attachHandlers() {
   document.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', e => {
     setTab(e.currentTarget.getAttribute('data-tab'));
@@ -1618,10 +1646,14 @@ function attachHandlers() {
     apiDownload('/api/export/pdf?' + qs.toString()).then(() => showToast('PDF downloaded.', 'ok')).catch(err => showToast(err.message, 'err'));
   });
   const printReportBtn = document.getElementById('printReportBtn');
-  if (printReportBtn) printReportBtn.addEventListener('click', () => window.print());
+  if (printReportBtn) printReportBtn.addEventListener('click', printDocument);
 
   const addMvBtn = document.getElementById('addMvBtn');
   if (addMvBtn) addMvBtn.addEventListener('click', () => openModal('movement', {}));
+  document.querySelectorAll('[data-edit-mv]').forEach(b => b.addEventListener('click', e => {
+    const mv = state.movements.find(m => m.id === e.currentTarget.getAttribute('data-edit-mv'));
+    openModal('movement', { ...mv });
+  }));
 
   document.querySelectorAll('[data-view-dn]').forEach(b => b.addEventListener('click', e => {
     openModal('viewDn', state.dns.find(d => d.id === e.currentTarget.getAttribute('data-view-dn')));
@@ -1718,10 +1750,23 @@ function attachMovementFormHandlers() {
     const itemId = val('mv_item'), action = val('mv_action'), qty = Number(val('mv_qty'));
     if (!itemId) { showToast('Please select an item.', 'err'); return; }
     if (!qty || (action !== 'ADJUSTMENT' && qty <= 0)) { showToast('Enter a valid quantity.', 'err'); return; }
+    const isEdit = !!state.modal.payload.id;
     try {
-      await api('POST', '/api/movements', { itemId, action, qty, date: val('mv_date'), reference: val('mv_ref').trim(), by: val('mv_by').trim() });
+      const body = { itemId, action, qty, date: val('mv_date'), reference: val('mv_ref').trim(), by: val('mv_by').trim() };
+      if (isEdit) await api('PUT', '/api/movements/' + state.modal.payload.id, body);
+      else await api('POST', '/api/movements', body);
       await loadAll();
-      showToast('Movement logged — Qty On Hand updated.', 'ok');
+      showToast(isEdit ? 'Movement updated — Qty On Hand recalculated.' : 'Movement logged — Qty On Hand updated.', 'ok');
+      closeModal(); setTab('movements');
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+  const deleteMvBtn = document.getElementById('deleteMvBtn');
+  if (deleteMvBtn) deleteMvBtn.addEventListener('click', async () => {
+    if (!confirm('Permanently delete this stock movement entry? This directly rewrites stock history and cannot be undone.')) return;
+    try {
+      await api('DELETE', '/api/movements/' + state.modal.payload.id);
+      await loadAll();
+      showToast('Movement deleted — Qty On Hand recalculated.', 'ok');
       closeModal(); setTab('movements');
     } catch (e) { showToast(e.message, 'err'); }
   });
@@ -1739,12 +1784,12 @@ function syncDnPayload(p) {
 function attachDnFormHandlers() {
   const addLineBtn = document.getElementById('addDnLineBtn');
   if (addLineBtn) addLineBtn.addEventListener('click', () => {
-    const p = state.modal.payload; p.lines = collectDnLines(); p.lines.push({ itemId: '', qty: 1 }); syncDnPayload(p); render();
+    const p = state.modal.payload; p.lines = collectDnLines(); p.lines.push({ itemId: '', qty: '' }); syncDnPayload(p); render();
   });
   document.querySelectorAll('.removeDnLine').forEach(b => b.addEventListener('click', e => {
     const idx = Number(e.currentTarget.getAttribute('data-idx'));
     const p = state.modal.payload; p.lines = collectDnLines(); p.lines.splice(idx, 1);
-    if (p.lines.length === 0) p.lines.push({ itemId: '', qty: 1 });
+    if (p.lines.length === 0) p.lines.push({ itemId: '', qty: '' });
     syncDnPayload(p); render();
   }));
   document.querySelectorAll('.dnLineItem').forEach(s => s.addEventListener('change', () => {
@@ -1752,7 +1797,7 @@ function attachDnFormHandlers() {
   }));
   const locSel = document.getElementById('dn_location');
   if (locSel) locSel.addEventListener('change', () => {
-    const p = state.modal.payload; p.lines = [{ itemId: '', qty: 1 }]; syncDnPayload(p); render();
+    const p = state.modal.payload; p.lines = [{ itemId: '', qty: '' }]; syncDnPayload(p); render();
   });
   const clientPick = document.getElementById('dn_clientPick');
   if (clientPick) clientPick.addEventListener('change', e => {
@@ -1776,7 +1821,8 @@ function collectDnLines() {
   document.querySelectorAll('.dnLineItem').forEach(sel => {
     const idx = Number(sel.getAttribute('data-idx'));
     const qtyEl = document.querySelector(`.dnLineQty[data-idx="${idx}"]`);
-    lines.push({ itemId: sel.value, qty: Number(qtyEl ? qtyEl.value : 1) || 0 });
+    const raw = qtyEl ? qtyEl.value : '';
+    lines.push({ itemId: sel.value, qty: raw === '' ? '' : Number(raw) });
   });
   return lines;
 }
@@ -1810,7 +1856,7 @@ async function submitDn(issue) {
 
 function attachDnViewHandlers() {
   const printBtn = document.getElementById('printDnBtn');
-  if (printBtn) printBtn.addEventListener('click', () => window.print());
+  if (printBtn) printBtn.addEventListener('click', printDocument);
   const editBtn = document.getElementById('editDraftBtn');
   if (editBtn) editBtn.addEventListener('click', () => {
     const dn = state.modal.payload; openModal('newDn', { ...dn, lines: dn.items });
@@ -2067,7 +2113,7 @@ function attachQuoteFormHandlers() {
   const addLineBtn = document.getElementById('addQuoteLineBtn');
   if (addLineBtn) addLineBtn.addEventListener('click', () => {
     syncQuoteFormIntoPayload();
-    p.lineItems = [...(p.lineItems || []), { description: '', category: state.quotationCategories[0], unit: state.units[0], qty: 1, unitPrice: 0 }];
+    p.lineItems = [...(p.lineItems || []), { description: '', category: state.quotationCategories[0], unit: state.units[0], qty: '', unitPrice: '' }];
     render();
   });
   document.querySelectorAll('.removeQuoteLineBtn').forEach(b => b.addEventListener('click', e => {
@@ -2102,7 +2148,7 @@ function attachQuoteFormHandlers() {
   const addAmcSvcBtn = document.getElementById('addAmcSvcBtn');
   if (addAmcSvcBtn) addAmcSvcBtn.addEventListener('click', () => {
     syncQuoteFormIntoPayload();
-    p.amc.services = [...(p.amc.services || []), { description: '', qty: 1, unitPrice: 0 }];
+    p.amc.services = [...(p.amc.services || []), { description: '', qty: '', unitPrice: '' }];
     render();
   });
   document.querySelectorAll('.removeAmcSvcBtn').forEach(b => b.addEventListener('click', e => {
@@ -2122,7 +2168,7 @@ function attachQuoteFormHandlers() {
   const addAmcMpBtn = document.getElementById('addAmcMpBtn');
   if (addAmcMpBtn) addAmcMpBtn.addEventListener('click', () => {
     syncQuoteFormIntoPayload();
-    p.amc.manpower = [...(p.amc.manpower || []), { role: '', qty: 1 }];
+    p.amc.manpower = [...(p.amc.manpower || []), { role: '', qty: '' }];
     render();
   });
   document.querySelectorAll('.removeAmcMpBtn').forEach(b => b.addEventListener('click', e => {
@@ -2193,7 +2239,7 @@ function attachQuoteViewHandlers() {
   const q = state.modal.payload;
 
   const printBtn = document.getElementById('printQuoteBtn');
-  if (printBtn) printBtn.addEventListener('click', () => window.print());
+  if (printBtn) printBtn.addEventListener('click', printDocument);
 
   const editBtn = document.getElementById('editQuoteBtn');
   if (editBtn) editBtn.addEventListener('click', () => openModal('newQuote', { ...q }));

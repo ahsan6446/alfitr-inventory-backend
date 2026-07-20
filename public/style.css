@@ -173,10 +173,13 @@ tr:hover td{background:#FAFCFC;}
 .dn-footer-note{margin-top:26px;font-size:11px;color:var(--ink-soft);border-top:1px dashed var(--border);padding-top:12px;}
 
 @media print{
-  body *{visibility:hidden;}
-  #printArea, #printArea *{visibility:visible;}
-  #printArea{position:absolute;top:0;left:0;width:100%;padding:20px;}
-  .no-print{display:none !important;}
+  @page { size: A4; margin: 12mm; }
+  body > *:not(#printMount) { display:none !important; }
+  #printMount { display:block !important; position:static !important; margin:0; padding:0; }
+  #printMount table { page-break-inside:auto; }
+  #printMount tr { page-break-inside:avoid; page-break-after:auto; }
+  #printMount thead { display:table-header-group; }
+  #printMount .no-print { display:none !important; }
 }
 
 .toast{position:fixed;bottom:22px;right:22px;background:var(--navy-deep);color:#fff;padding:12px 18px;

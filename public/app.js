@@ -1109,7 +1109,8 @@ function renderSettings() {
           <option value="Letter" ${co.paperSize === 'Letter' ? 'selected' : ''}>Letter</option>
         </select>
       </div>
-      <div class="field"><label>Report Footer Text</label><textarea id="setReportFooter" rows="2" ${can('manageInventory') ? '' : 'disabled'}>${co.reportFooter || ''}</textarea></div>
+      <div class="field"><label>Delivery Note Footer Text</label><textarea id="setReportFooter" rows="2" placeholder="e.g. The undersigned hereby acknowledges receipt of the materials in good condition..." ${can('manageInventory') ? '' : 'disabled'}>${co.reportFooter || ''}</textarea>
+      <p class="muted" style="margin-top:4px;">Only appears on Delivery Notes — not on Inventory Reports or Quotations, which have their own appropriate wording.</p></div>
       ${can('manageInventory') ? `<button class="btn btn-teal" id="saveDnSettingsBtn">Save Delivery Note &amp; Report Settings</button>` : ''}
     </div>
   </div>
@@ -1565,7 +1566,6 @@ function renderInventoryReportView() {
       <th>Status</th></tr></thead>
       <tbody>${rows || `<tr><td colspan="${colspan}">No items match the current filters.</td></tr>`}</tbody>
     </table>
-    ${co.reportFooter ? `<div class="dn-footer-note">${co.reportFooter}</div>` : ''}
   </div>
   <div class="no-print" style="display:flex;justify-content:flex-end;gap:8px;margin-top:20px;">
     <button class="btn btn-ghost" id="modalCancel">Close</button>

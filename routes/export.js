@@ -218,7 +218,6 @@ router.get('/pdf', async (req, res) => {
     doc.page.margins.bottom = 0; // allow writing into the margin area without triggering an auto page-break
     doc.fontSize(8).fillColor('#787878')
       .text(`Page ${i - range.start + 1} of ${range.count}`, doc.page.width - 150, doc.page.height - 25, { width: 120, align: 'right', lineBreak: false });
-    if (co.reportFooter) doc.text(co.reportFooter, 30, doc.page.height - 25, { width: 300, lineBreak: false });
     doc.page.margins.bottom = savedBottomMargin;
   }
 

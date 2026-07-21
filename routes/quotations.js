@@ -3,6 +3,7 @@ const db = require('../lib/db');
 const { requireAuth, requirePermission } = require('../lib/auth');
 const { can } = require('../lib/permissions');
 const { quotationTotals } = require('../lib/calc');
+const { generateQuotationPdf } = require('../lib/quotePdf');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -50,6 +51,18 @@ router.get('/:id', (req, res) => {
   res.json({ quotation: withTotals(q) });
 });
 
+router.get('/:id/pdf', async (req, res) => {
+  const { quotations } = db.get();
+  const q = quotations.find(x => x.id === req.params.id);
+  if (!q) return res.status(404).json({ error: 'Quotation not found.' });
+  try {
+    await generateQuotationPdf(q, res);
+  } catch (e) {
+    console.error('Quotation PDF generation failed', e);
+    if (!res.headersSent) res.status(500).json({ error: 'Failed to generate PDF.' });
+  }
+});
+
 function validatePayload(body, state) {
   if (!body.type || !TYPE_PREFIX[body.type]) return 'Invalid quotation type.';
   if (!body.clientCompany || !body.clientCompany.trim()) return 'Client company name is required.';
@@ -71,6 +84,7 @@ router.post('/', requirePermission('manageQuotations'), async (req, res) => {
   const err = validatePayload(body, state);
   if (err) return res.status(400).json({ error: err });
 
+  const preparer = state.users.find(u => u.id === req.user.id);
   const q = {
     id: db.uuid(),
     quotationNumber: null, // assigned only when first sent, so drafts don't burn real sequence numbers
@@ -107,8 +121,9 @@ router.post('/', requirePermission('manageQuotations'), async (req, res) => {
     notes: body.notes || '',
     preparedById: req.user.id,
     preparedByName: req.user.name,
+    preparedByDesignation: (preparer && preparer.designation) || '',
     approverIds: [],
-    approvedById: null, approvedByName: null, approvedAt: null,
+    approvedById: null, approvedByName: null, approvedByDesignation: null, approvedAt: null,
     rejectionReason: null,
     sentAt: null,
     clientDecision: null, clientDecisionAt: null, clientDecisionNote: null,
@@ -182,7 +197,8 @@ router.post('/:id/approve', async (req, res) => {
   if (!isApprover(state, req.user)) return res.status(403).json({ error: 'You are not an authorized approver for quotations.' });
   if (q.status !== 'PendingApproval') return res.status(400).json({ error: 'This quotation is not awaiting approval.' });
   q.status = 'Approved';
-  q.approvedById = req.user.id; q.approvedByName = req.user.name; q.approvedAt = Date.now();
+  const approver = state.users.find(u => u.id === req.user.id);
+  q.approvedById = req.user.id; q.approvedByName = req.user.name; q.approvedByDesignation = (approver && approver.designation) || ''; q.approvedAt = Date.now();
   q.updatedAt = Date.now();
   await db.persist();
   res.json({ quotation: withTotals(q) });

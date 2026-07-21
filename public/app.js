@@ -706,8 +706,8 @@ function quoteDocFooter(q) {
   ${q.notes ? `<div style="margin-top:14px;"><strong>Notes:</strong> ${q.notes}</div>` : ''}
   <p style="margin-top:20px;">Regards,</p>
   <div class="dn-sign" style="margin-top:36px;">
-    <div class="sign-line">Prepared By${q.preparedByName ? ' — ' + q.preparedByName : ''}</div>
-    <div class="sign-line">Approved By${q.approvedByName ? ' — ' + q.approvedByName : ' — pending'}</div>
+    <div class="sign-line"><strong>${q.preparedByName || '—'}</strong><br><span style="font-size:11px;">${q.preparedByDesignation || 'Prepared By'}</span></div>
+    <div class="sign-line"><strong>${q.approvedByName || 'Pending'}</strong><br><span style="font-size:11px;">${q.approvedByDesignation || (q.approvedByName ? 'Approved By' : 'Approval Pending')}</span></div>
   </div>
   <div class="dn-footer-note">This is a system-generated quotation. Signature is not required unless specifically requested by the client.</div>
   `;
@@ -1200,11 +1200,12 @@ function renderUsersRolesSettings() {
     <div class="card-head"><div class="card-title">Users <span>${state.users.length} user(s)</span></div>
       <button class="btn btn-primary btn-sm" id="addUserBtn">+ Add User</button></div>
     <div class="tbl-wrap"><table>
-      <thead><tr><th>Name</th><th>Username</th><th>Role</th><th>Active</th><th></th></tr></thead>
+      <thead><tr><th>Name</th><th>Designation</th><th>Username</th><th>Role</th><th>Active</th><th></th></tr></thead>
       <tbody>
       ${state.users.map(u => `
         <tr>
           <td><strong>${u.name}</strong></td>
+          <td class="muted">${u.designation || '—'}</td>
           <td style="font-family:var(--mono);font-size:12px;">${u.username}</td>
           <td>${u.role}</td>
           <td>${u.active !== false ? '✅' : '—'}</td>
@@ -1319,6 +1320,7 @@ function renderUserForm(user) {
   const isEdit = !!user.id;
   return `
   <div class="field"><label>Name</label><input id="u_name" value="${user.name || ''}" placeholder="Full name"></div>
+  <div class="field"><label>Designation <span class="muted" style="font-weight:500;text-transform:none;">(job title — appears on quotations they prepare or approve)</span></label><input id="u_designation" value="${user.designation || ''}" placeholder="e.g. Sales Engineer, General Manager"></div>
   ${isEdit ? '' : `
   <div class="grid2">
     <div class="field"><label>Username</label><input id="u_username" placeholder="e.g. faisal"></div>
@@ -1914,9 +1916,10 @@ function attachUserFormHandlers() {
     const name = val('u_name').trim();
     if (!name) { showToast('Name is required.', 'err'); return; }
     const existing = state.modal.payload.id;
+    const designation = val('u_designation').trim();
     try {
       if (existing) {
-        const body = { name, role: val('u_role'), active: val('u_active') === 'true' };
+        const body = { name, designation, role: val('u_role'), active: val('u_active') === 'true' };
         const newPwd = val('u_newPassword');
         if (newPwd) body.password = newPwd;
         await api('PUT', '/api/users/' + existing, body);
@@ -1924,7 +1927,7 @@ function attachUserFormHandlers() {
         const username = val('u_username').trim();
         const password = val('u_password');
         if (!username || !password) { showToast('Username and temporary password are required.', 'err'); return; }
-        await api('POST', '/api/users', { name, username, password, role: val('u_role'), active: val('u_active') === 'true' });
+        await api('POST', '/api/users', { name, username, password, designation, role: val('u_role'), active: val('u_active') === 'true' });
       }
       await loadAll();
       showToast(existing ? 'User updated.' : 'User added.', 'ok');

@@ -8,7 +8,7 @@ const router = express.Router();
 router.use(requireAuth);
 
 function publicUser(u) {
-  return { id: u.id, name: u.name, username: u.username, role: u.role, active: u.active !== false, createdAt: u.createdAt };
+  return { id: u.id, name: u.name, username: u.username, role: u.role, designation: u.designation || '', active: u.active !== false, createdAt: u.createdAt };
 }
 
 router.get('/', requirePermission('manageUsers'), (req, res) => {
@@ -18,7 +18,7 @@ router.get('/', requirePermission('manageUsers'), (req, res) => {
 
 router.post('/', requirePermission('manageUsers'), async (req, res) => {
   const state = db.get();
-  const { name, username, password, role, active } = req.body || {};
+  const { name, username, password, role, active, designation } = req.body || {};
   if (!name || !username || !password) return res.status(400).json({ error: 'Name, username and password are required.' });
   if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters.' });
   if (state.users.find(u => u.username.toLowerCase() === String(username).toLowerCase())) {
@@ -27,7 +27,7 @@ router.post('/', requirePermission('manageUsers'), async (req, res) => {
   if (!state.roles[role]) return res.status(400).json({ error: 'Unknown role.' });
   const user = {
     id: db.uuid(), name, username, passwordHash: bcrypt.hashSync(password, 10),
-    role, active: active !== false, mustChangePassword: true, createdAt: Date.now(),
+    role, designation: (designation || '').trim(), active: active !== false, mustChangePassword: true, createdAt: Date.now(),
   };
   state.users.push(user);
   await db.persist();
@@ -39,7 +39,7 @@ router.put('/:id', requirePermission('manageUsers'), async (req, res) => {
   const user = state.users.find(u => u.id === req.params.id);
   if (!user) return res.status(404).json({ error: 'User not found.' });
 
-  const { name, role, active, password } = req.body || {};
+  const { name, role, active, password, designation } = req.body || {};
   if (role && role !== user.role) {
     if (!state.roles[role]) return res.status(400).json({ error: 'Unknown role.' });
     if (user.role === 'Super Admin') {
@@ -49,6 +49,7 @@ router.put('/:id', requirePermission('manageUsers'), async (req, res) => {
     user.role = role;
   }
   if (typeof name === 'string' && name.trim()) user.name = name.trim();
+  if (typeof designation === 'string') user.designation = designation.trim();
   if (typeof active === 'boolean') {
     if (user.role === 'Super Admin' && active === false) {
       const activeSuperAdmins = state.users.filter(u => u.role === 'Super Admin' && u.active !== false);

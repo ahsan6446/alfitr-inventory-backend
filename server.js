@@ -26,7 +26,6 @@ app.use('/api/company', require('./routes/company'));
 app.use('/api/meta', require('./routes/meta'));
 app.use('/api/export', require('./routes/export'));
 app.use('/api/quotations', require('./routes/quotations'));
-app.use('/api/quotations', require('./routes/quotationPdf'));
 app.use('/api/job-orders', require('./routes/jobOrders'));
 app.use('/api/exclusions', require('./routes/exclusions'));
 

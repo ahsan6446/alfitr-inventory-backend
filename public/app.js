@@ -764,7 +764,7 @@ function renderAmcQuoteDoc(q) {
 function renderQuoteActionBar(q) {
   const buttons = [];
   const canManage = can('manageQuotations');
-  buttons.push(`<button class="btn btn-teal" id="printQuoteBtn">Print / Save PDF</button>`);
+  buttons.push(`<button class="btn btn-teal" id="downloadQuotePdfBtn">Download PDF</button>`);
 
   if (q.status === 'Draft' && canManage) {
     buttons.unshift(`<button class="btn btn-outline" id="editQuoteBtn">Edit</button>`);
@@ -2238,8 +2238,12 @@ function attachQuoteViewHandlers() {
   if (!state.modal || state.modal.type !== 'viewQuote') return;
   const q = state.modal.payload;
 
-  const printBtn = document.getElementById('printQuoteBtn');
-  if (printBtn) printBtn.addEventListener('click', printDocument);
+  const printBtn = document.getElementById('downloadQuotePdfBtn');
+  if (printBtn) printBtn.addEventListener('click', () => {
+    apiDownload(`/api/quotations/${q.id}/pdf`)
+      .then(() => showToast('PDF downloaded.', 'ok'))
+      .catch(err => showToast(err.message, 'err'));
+  });
 
   const editBtn = document.getElementById('editQuoteBtn');
   if (editBtn) editBtn.addEventListener('click', () => openModal('newQuote', { ...q }));

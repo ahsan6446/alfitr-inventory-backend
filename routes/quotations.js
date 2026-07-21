@@ -223,7 +223,15 @@ router.post('/:id/send', requirePermission('manageQuotations'), async (req, res)
   const q = state.quotations.find(x => x.id === req.params.id);
   if (!q) return res.status(404).json({ error: 'Quotation not found.' });
   if (q.status !== 'Approved') return res.status(400).json({ error: 'Only an approved quotation can be sent.' });
-  if (!q.quotationNumber) q.quotationNumber = nextQuotationNumber(state, q.type);
+  if (!q.quotationNumber) {
+    if (q.revisionOf && q.baseQuotationNumber) {
+      // Revisions keep the original's number with an -R suffix, rather than burning a new sequential number
+      q.quotationNumber = `${q.baseQuotationNumber}-R${q.revisionNumber}`;
+    } else {
+      q.quotationNumber = nextQuotationNumber(state, q.type);
+      q.baseQuotationNumber = q.quotationNumber;
+    }
+  }
   q.status = 'Sent';
   q.sentAt = Date.now();
   q.updatedAt = Date.now();
@@ -275,6 +283,46 @@ router.post('/:id/convert-to-job-order', requirePermission('manageQuotations'), 
   q.updatedAt = Date.now();
   await db.persist();
   res.status(201).json({ jobOrder: jo, quotation: withTotals(q) });
+});
+
+// ---- Revise a sent quote (client asked for a discount, BOQ change, etc.) ----
+router.post('/:id/revise', requirePermission('manageQuotations'), async (req, res) => {
+  const state = db.get();
+  const orig = state.quotations.find(x => x.id === req.params.id);
+  if (!orig) return res.status(404).json({ error: 'Quotation not found.' });
+  if (!['Sent', 'Accepted', 'Declined'].includes(orig.status)) {
+    return res.status(400).json({ error: 'Only a sent, accepted, or declined quotation can be revised.' });
+  }
+  if (orig.supersededByQuotationId) {
+    return res.status(400).json({ error: 'This quotation has already been revised. Revise the latest revision instead.' });
+  }
+
+  const preparer = state.users.find(u => u.id === req.user.id);
+  const revision = {
+    ...JSON.parse(JSON.stringify(orig)), // deep-copy every editable field (client, items, terms, exclusions, etc.)
+    id: db.uuid(),
+    quotationNumber: null, // assigned again on send, using the base number below + new revision suffix
+    baseQuotationNumber: orig.baseQuotationNumber || orig.quotationNumber,
+    revisionOf: orig.id,
+    revisionNumber: (orig.revisionNumber || 0) + 1,
+    status: 'Draft',
+    preparedById: req.user.id,
+    preparedByName: req.user.name,
+    preparedByDesignation: (preparer && preparer.designation) || '',
+    approverIds: [],
+    approvedById: null, approvedByName: null, approvedByDesignation: null, approvedAt: null,
+    rejectionReason: null,
+    sentAt: null,
+    clientDecision: null, clientDecisionAt: null, clientDecisionNote: null,
+    jobOrderId: null,
+    supersededByQuotationId: null,
+    createdAt: Date.now(), updatedAt: Date.now(),
+  };
+  state.quotations.push(revision);
+  orig.supersededByQuotationId = revision.id;
+  orig.updatedAt = Date.now();
+  await db.persist();
+  res.status(201).json({ quotation: withTotals(revision) });
 });
 
 module.exports = router;

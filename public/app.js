@@ -597,13 +597,13 @@ function renderQuotations() {
       ${list.length === 0 ? `<tr><td colspan="8"><div class="empty"><div class="big">📋</div>No quotations match.</div></td></tr>` :
         list.map(q => `
         <tr>
-          <td style="font-family:var(--mono);font-weight:700;font-size:12px;">${q.quotationNumber || '<span class="muted">(draft)</span>'}</td>
+          <td style="font-family:var(--mono);font-weight:700;font-size:12px;">${q.quotationNumber || '<span class="muted">(draft)</span>'}${q.revisionOf ? ` <span class="muted" style="font-weight:400;">(Rev ${q.revisionNumber})</span>` : ''}</td>
           <td><span class="tag">${QUOTE_TYPE_LABEL[q.type]}</span></td>
           <td>${q.clientCompany}</td>
           <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${q.subject || q.siteDetail || '—'}</td>
           <td>${fmtDate(q.date)}</td>
           <td style="font-family:var(--mono);">${state.company.currency} ${fmtMoney(q.totals.total)}</td>
-          <td>${quoteStatusBadge(q.status)}</td>
+          <td>${quoteStatusBadge(q.status)}${q.supersededByQuotationId ? ` <span class="badge badge-low">Superseded</span>` : ''}</td>
           <td><button class="btn btn-outline btn-sm" data-view-quote="${q.id}">Open</button></td>
         </tr>`).join('')}
       </tbody>
@@ -660,9 +660,10 @@ function quoteDocHeader(q) {
     <div class="dn-title-block">
       <div class="dn-title">QUOTATION</div>
       <div class="dn-num">${q.quotationNumber || '(not yet sent)'}</div>
-      <div class="muted">${q.status === 'PendingApproval' ? 'PENDING APPROVAL' : q.status.toUpperCase()}</div>
+      <div class="muted">${q.status === 'PendingApproval' ? 'PENDING APPROVAL' : q.status.toUpperCase()}${q.revisionOf ? ` · REV ${q.revisionNumber}` : ''}</div>
     </div>
   </div>
+  ${q.supersededByQuotationId ? `<div class="banner-warn">⚠ This quotation has been superseded by a later revision. It's kept here for reference only.</div>` : ''}
   <div class="dn-meta">
     <div><div class="k">Ref No</div><div class="v">${q.quotationNumber || '—'}</div></div>
     <div><div class="k">Date</div><div class="v">${fmtDate(q.date)}</div></div>
@@ -795,6 +796,15 @@ function renderQuoteActionBar(q) {
   }
   if (q.status === 'Declined') {
     buttons.unshift(`<span class="muted" style="align-self:center;font-size:12px;">${q.clientDecisionNote || 'Client declined this quotation.'}</span>`);
+  }
+  if (['Sent', 'Accepted', 'Declined'].includes(q.status) && canManage) {
+    if (q.supersededByQuotationId) {
+      const rev = findQuote(q.supersededByQuotationId);
+      buttons.unshift(`<button class="btn btn-outline btn-sm" data-view-quote="${q.supersededByQuotationId}">View ${rev ? (rev.quotationNumber || 'Revision') : 'Revision'}</button>`);
+      buttons.unshift(`<span class="badge badge-low" style="align-self:center;">Superseded${rev && rev.quotationNumber ? ' by ' + rev.quotationNumber : ''}</span>`);
+    } else {
+      buttons.unshift(`<button class="btn btn-outline" id="reviseQuoteBtn">Revise (Discount / BOQ Change)</button>`);
+    }
   }
 
   return `<div class="no-print" style="display:flex;justify-content:flex-end;gap:8px;margin-top:20px;flex-wrap:wrap;">
@@ -2321,6 +2331,17 @@ function attachQuoteViewHandlers() {
       await loadAll();
       showToast('Job Order ' + res.jobOrder.jobOrderNumber + ' created.', 'ok');
       openModal('viewQuote', res.quotation);
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+
+  const reviseBtn = document.getElementById('reviseQuoteBtn');
+  if (reviseBtn) reviseBtn.addEventListener('click', async () => {
+    if (!confirm('Create a new revision of this quotation? You\'ll be able to edit the discount, items, or terms, and it will go through approval again before sending.')) return;
+    try {
+      const res = await api('POST', `/api/quotations/${q.id}/revise`);
+      await loadAll();
+      showToast('Revision created — edit it and resubmit for approval when ready.', 'ok');
+      openModal('newQuote', { ...res.quotation });
     } catch (e) { showToast(e.message, 'err'); }
   });
 }

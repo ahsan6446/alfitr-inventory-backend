@@ -27,6 +27,7 @@ app.use('/api/meta', require('./routes/meta'));
 app.use('/api/export', require('./routes/export'));
 app.use('/api/quotations', require('./routes/quotations'));
 app.use('/api/job-orders', require('./routes/jobOrders'));
+app.use('/api/material-requests', require('./routes/materialRequests'));
 app.use('/api/exclusions', require('./routes/exclusions'));
 
 app.get('/api/health', (req, res) => res.json({ ok: true, time: new Date().toISOString() }));

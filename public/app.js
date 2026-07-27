@@ -54,7 +54,7 @@ const state = {
   items: [], movements: [], clients: [], dns: [], users: [], roles: {}, permLabels: [],
   loaded: false, modal: null, toast: null,
   publicBranding: null,
-  quotations: [], jobOrders: [], exclusionsLibrary: [], quotationCategories: [], quotationApprovers: [],
+  quotations: [], jobOrders: [], materialRequests: [], exclusionsLibrary: [], quotationCategories: [], quotationApprovers: [],
   nextQuotationCounter: null, quoteFilter: 'All',
 };
 
@@ -121,6 +121,13 @@ function groupLinesByCategory(lineItems) {
   return groups;
 }
 function findQuote(id) { return state.quotations.find(q => q.id === id); }
+function findJobOrder(id) { return state.jobOrders.find(j => j.id === id); }
+function findMaterialRequest(id) { return state.materialRequests.find(m => m.id === id); }
+function mrStatusBadge(status) {
+  const map = { Requested: 'badge-low', PartiallyFulfilled: 'badge-low', Fulfilled: 'badge-in', Cancelled: 'badge-out' };
+  const label = status === 'PartiallyFulfilled' ? 'Partially Fulfilled' : status;
+  return `<span class="badge ${map[status] || 'badge-draft'}">${label}</span>`;
+}
 
 // Maps the Settings > "Logo Display Size" choice to an actual pixel height, used everywhere
 // the logo appears (header, login screen, Delivery Notes, printed reports).
@@ -145,7 +152,7 @@ async function loadAll() {
   const me = await api('GET', '/api/auth/me');
   state.user = me.user; state.permissions = me.permissions;
 
-  const [company, branchesR, brandsR, unitsR, itemsR, movementsR, clientsR, dnsR, quotCatR, exclR, quotesR, joR] = await Promise.all([
+  const [company, branchesR, brandsR, unitsR, itemsR, movementsR, clientsR, dnsR, quotCatR, exclR, quotesR, joR, mrR] = await Promise.all([
     api('GET', '/api/company'),
     api('GET', '/api/meta/branches'),
     api('GET', '/api/meta/brands'),
@@ -158,12 +165,13 @@ async function loadAll() {
     api('GET', '/api/exclusions'),
     api('GET', '/api/quotations'),
     api('GET', '/api/job-orders'),
+    api('GET', '/api/material-requests'),
   ]);
   state.company = company.company; state.nextDnPreview = company.nextDnPreview; state.nextQuotationCounter = company.nextQuotationCounter;
   state.branches = branchesR.branches; state.brands = brandsR.brands; state.units = unitsR.units;
   state.items = itemsR.items; state.movements = movementsR.movements; state.clients = clientsR.clients; state.dns = dnsR.dns;
   state.quotationCategories = quotCatR.quotationCategories; state.exclusionsLibrary = exclR.exclusions;
-  state.quotations = quotesR.quotations; state.jobOrders = joR.jobOrders;
+  state.quotations = quotesR.quotations; state.jobOrders = joR.jobOrders; state.materialRequests = mrR.materialRequests;
 
   if (can('manageUsers')) {
     const [usersR, rolesR] = await Promise.all([api('GET', '/api/users'), api('GET', '/api/users/roles/all')]);
@@ -320,6 +328,7 @@ function renderSidebar() {
       ${navItem('dns', 'Delivery Notes')}
       ${navItem('quotations', 'Quotations')}
       ${navItem('jobOrders', 'Job Orders')}
+      ${navItem('materialRequests', 'Material Requests')}
       ${navItem('clients', 'Clients')}
       ${navItem('settings', 'Settings')}
     </div>
@@ -338,6 +347,7 @@ function renderTopbar() {
     dns: ['Delivery Notes', 'Create, issue and print delivery notes'],
     quotations: ['Quotations', 'Create, approve, send and track quotations'],
     jobOrders: ['Job Orders', 'Jobs created from accepted quotations'],
+    materialRequests: ['Material Requests', 'Request materials against a job, checked and fulfilled from stock'],
     clients: ['Clients', 'Company directory used on delivery notes'],
     settings: ['Settings', 'Branches, brands, units, security and company details'],
   };
@@ -362,6 +372,7 @@ function renderPage() {
   if (state.tab === 'dns') return renderDns();
   if (state.tab === 'quotations') return renderQuotations();
   if (state.tab === 'jobOrders') return renderJobOrders();
+  if (state.tab === 'materialRequests') return renderMaterialRequests();
   if (state.tab === 'clients') return renderClients();
   if (state.tab === 'settings') return renderSettings();
   return '';
@@ -625,9 +636,9 @@ function renderJobOrders() {
   return `
   <div class="card">
     <div class="tbl-wrap"><table>
-      <thead><tr><th>Job Order #</th><th>From Quote</th><th>Type</th><th>Client</th><th>Subject / Site</th><th>Value</th><th>Status</th></tr></thead>
+      <thead><tr><th>Job Order #</th><th>From Quote</th><th>Type</th><th>Client</th><th>Subject / Site</th><th>Value</th><th>Status</th><th></th></tr></thead>
       <tbody>
-      ${list.length === 0 ? `<tr><td colspan="7"><div class="empty"><div class="big">🛠️</div>No job orders yet. These are created from accepted quotations.</div></td></tr>` :
+      ${list.length === 0 ? `<tr><td colspan="8"><div class="empty"><div class="big">🛠️</div>No job orders yet. These are created from accepted quotations.</div></td></tr>` :
         list.map(jo => `
         <tr>
           <td style="font-family:var(--mono);font-weight:700;">${jo.jobOrderNumber}</td>
@@ -637,11 +648,162 @@ function renderJobOrders() {
           <td>${jo.subject || jo.siteDetail || '—'}</td>
           <td style="font-family:var(--mono);">${state.company.currency} ${fmtMoney(jo.value)}</td>
           <td><span class="badge badge-in">${jo.status}</span></td>
+          <td><button class="btn btn-outline btn-sm" data-view-jo="${jo.id}">Open</button></td>
         </tr>`).join('')}
       </tbody>
     </table></div>
   </div>
-  <div class="shared-note">Job Orders are created automatically when you convert an accepted quotation. Material requests, procurement, and completion reports build on top of this in the next phase.</div>
+  <div class="shared-note">Job Orders are created automatically when you convert an accepted quotation. Open one to raise Material Requests against it.</div>
+  `;
+}
+
+function renderJobOrderView(jo) {
+  const mrs = state.materialRequests.filter(m => m.jobOrderId === jo.id).sort((a, b) => b.createdAt - a.createdAt);
+  return `
+  <div class="grid3">
+    <div><div class="k muted">Client</div><div style="font-weight:600;">${jo.clientCompany}</div></div>
+    <div><div class="k muted">From Quote</div><div style="font-weight:600;font-family:var(--mono);font-size:12px;">${jo.quotationNumber || '—'}</div></div>
+    <div><div class="k muted">Value</div><div style="font-weight:600;">${state.company.currency} ${fmtMoney(jo.value)}</div></div>
+  </div>
+  <div style="margin:10px 0 16px;">${jo.subject || jo.siteDetail || ''}</div>
+  <div class="card-head" style="margin-top:6px;">
+    <div class="card-title">Material Requests <span>${mrs.length}</span></div>
+    ${can('manageMaterialRequests') ? `<button class="btn btn-primary btn-sm" id="newMrFromJoBtn">+ New Material Request</button>` : ''}
+  </div>
+  <div class="tbl-wrap"><table>
+    <thead><tr><th>MR #</th><th>Date</th><th>Requested By</th><th>Lines</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+    ${mrs.length === 0 ? `<tr><td colspan="6"><div class="empty">No material requests raised against this job yet.</div></td></tr>` :
+      mrs.map(m => `
+      <tr>
+        <td style="font-family:var(--mono);font-weight:700;">${m.mrNumber}</td>
+        <td>${fmtDate(m.date)}</td>
+        <td>${m.requestedByName}</td>
+        <td>${m.lineItems.length}</td>
+        <td>${mrStatusBadge(m.status)}</td>
+        <td><button class="btn btn-outline btn-sm" data-view-mr="${m.id}">Open</button></td>
+      </tr>`).join('')}
+    </tbody>
+  </table></div>
+  <div style="display:flex;justify-content:flex-end;margin-top:16px;"><button class="btn btn-ghost" id="modalCancel">Close</button></div>
+  `;
+}
+
+/* ---------------- Material Requests ---------------- */
+function renderMaterialRequests() {
+  const list = [...state.materialRequests].sort((a, b) => b.createdAt - a.createdAt);
+  return `
+  <div class="toolbar">
+    <div style="flex:1"></div>
+    ${can('manageMaterialRequests') ? `<button class="btn btn-primary" id="newMrBtn">+ New Material Request</button>` : ''}
+  </div>
+  <div class="card">
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>MR #</th><th>Job Order</th><th>Client</th><th>Date</th><th>Requested By</th><th>Lines</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+      ${list.length === 0 ? `<tr><td colspan="8"><div class="empty"><div class="big">📦</div>No material requests yet.</div></td></tr>` :
+        list.map(m => `
+        <tr>
+          <td style="font-family:var(--mono);font-weight:700;">${m.mrNumber}</td>
+          <td style="font-family:var(--mono);font-size:12px;">${m.jobOrderNumber}</td>
+          <td>${m.clientCompany}</td>
+          <td>${fmtDate(m.date)}</td>
+          <td>${m.requestedByName}</td>
+          <td>${m.lineItems.length}</td>
+          <td>${mrStatusBadge(m.status)}</td>
+          <td><button class="btn btn-outline btn-sm" data-view-mr="${m.id}">Open</button></td>
+        </tr>`).join('')}
+      </tbody>
+    </table></div>
+  </div>
+  `;
+}
+
+function renderMaterialRequestForm(payload) {
+  const isEdit = !!payload.id;
+  const jobOrderOptions = state.jobOrders.map(jo => `<option value="${jo.id}" ${payload.jobOrderId === jo.id ? 'selected' : ''}>${jo.jobOrderNumber} — ${jo.clientCompany}</option>`).join('');
+  const lines = payload.lineItems || [];
+  return `
+  <div class="field"><label>Job Order</label>
+    <select id="mrJobOrderPick" ${isEdit ? 'disabled' : ''}>
+      <option value="">— Select Job Order —</option>
+      ${jobOrderOptions}
+    </select>
+  </div>
+  <div class="grid2">
+    <div class="field"><label>Date</label><input type="date" id="mrDate" value="${payload.date || new Date().toISOString().slice(0, 10)}"></div>
+    <div class="field"><label>Needed By <span class="muted" style="font-weight:500;text-transform:none;">(optional)</span></label><input type="date" id="mrNeededBy" value="${payload.neededBy || ''}"></div>
+  </div>
+  <label>Line Items</label>
+  <div id="mrLinesList">
+    ${lines.length === 0 ? `<p class="muted" style="font-size:12px;">No items yet — add one below.</p>` : ''}
+    ${lines.map((l, idx) => renderMrLineRow(l, idx)).join('')}
+  </div>
+  <button class="btn btn-ghost btn-sm" id="addMrLineBtn" type="button" style="margin-bottom:16px;">+ Add Line Item</button>
+  <div class="field"><label>Notes</label><textarea id="mrNotes" rows="2">${payload.notes || ''}</textarea></div>
+  <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">
+    <button class="btn btn-ghost" id="modalCancel">Cancel</button>
+    <button class="btn btn-primary" id="saveMrBtn">${isEdit ? 'Save Changes' : 'Submit Request'}</button>
+  </div>
+  `;
+}
+
+function renderMrLineRow(l, idx) {
+  const it = l.itemId ? findItem(l.itemId) : null;
+  const avail = it ? it.qty : null;
+  return `
+  <div class="grid3" style="margin-bottom:8px;align-items:end;" data-mr-line="${idx}">
+    <div class="field" style="margin-bottom:0;grid-column:span 2;"><label>Item</label>
+      <select class="mrLineItemPick" data-idx="${idx}">
+        <option value="">— Select item —</option>
+        ${state.items.map(i => `<option value="${i.id}" ${l.itemId === i.id ? 'selected' : ''}>${itemLabel(i)} (Avail: ${i.qty})</option>`).join('')}
+      </select>
+      ${it ? `<div class="muted" style="font-size:11px;margin-top:3px;">Currently in stock: ${avail} ${it.unit}</div>` : ''}
+    </div>
+    <div style="display:flex;gap:6px;">
+      <div class="field" style="margin-bottom:0;flex:1;"><label>Qty</label><input class="mrLineQty" data-idx="${idx}" type="number" value="${l.qty ?? ''}"></div>
+      <button class="btn btn-ghost btn-sm removeMrLineBtn" data-idx="${idx}" style="padding:6px 9px;align-self:flex-end;">✕</button>
+    </div>
+  </div>`;
+}
+
+function renderMaterialRequestView(mr) {
+  const canFulfill = can('manageStock');
+  const jo = findJobOrder(mr.jobOrderId);
+  return `
+  <div class="grid3">
+    <div><div class="k muted">Job Order</div><div style="font-weight:600;font-family:var(--mono);font-size:12px;">${mr.jobOrderNumber}</div></div>
+    <div><div class="k muted">Client</div><div style="font-weight:600;">${mr.clientCompany}</div></div>
+    <div><div class="k muted">Requested By</div><div style="font-weight:600;">${mr.requestedByName}</div></div>
+  </div>
+  <div class="grid3" style="margin-top:10px;">
+    <div><div class="k muted">Date</div><div>${fmtDate(mr.date)}</div></div>
+    <div><div class="k muted">Needed By</div><div>${mr.neededBy ? fmtDate(mr.neededBy) : '—'}</div></div>
+    <div><div class="k muted">Status</div><div>${mrStatusBadge(mr.status)}</div></div>
+  </div>
+  ${mr.notes ? `<div style="margin-top:12px;"><strong>Notes:</strong> ${mr.notes}</div>` : ''}
+  <div class="tbl-wrap" style="margin-top:16px;"><table>
+    <thead><tr><th>Description</th><th>Brand</th><th>Unit</th><th style="text-align:right;">Requested</th><th style="text-align:right;">Fulfilled</th><th style="text-align:right;">In Stock</th>${canFulfill ? '<th></th>' : ''}</tr></thead>
+    <tbody>
+    ${mr.lineItems.map(l => {
+      const it = findItem(l.itemId);
+      const remaining = l.qtyRequested - l.qtyFulfilled;
+      const avail = it ? it.qty : 0;
+      const lineDone = remaining <= 0;
+      return `<tr>
+        <td>${l.description}</td><td>${l.brand || '—'}</td><td>${l.unit}</td>
+        <td style="text-align:right;font-family:var(--mono);">${l.qtyRequested}</td>
+        <td style="text-align:right;font-family:var(--mono);">${l.qtyFulfilled}</td>
+        <td style="text-align:right;font-family:var(--mono);" class="${avail < remaining ? 'pill-out' : ''}">${avail}</td>
+        ${canFulfill ? `<td>${lineDone && mr.status !== 'Cancelled' ? '<span class="muted" style="font-size:11px;">Done</span>' : (mr.status === 'Cancelled' ? '' : `<button class="btn btn-outline btn-sm" data-fulfill-line="${mr.id}|${l.id}|${remaining}">Fulfill</button>`)}</td>` : ''}
+      </tr>`;
+    }).join('')}
+    </tbody>
+  </table></div>
+  <div style="display:flex;justify-content:space-between;margin-top:18px;">
+    <div>${mr.status === 'Requested' && can('manageMaterialRequests') ? `<button class="btn btn-danger" id="cancelMrBtn">Cancel Request</button>` : ''}</div>
+    <button class="btn btn-ghost" id="modalCancel">Close</button>
+  </div>
   `;
 }
 
@@ -1268,6 +1430,9 @@ function renderModal() {
   if (type === 'newQuote') return modalWrap(renderQuoteForm(payload), payload.id ? 'Edit Quotation' : 'New Quotation', true);
   if (type === 'viewQuote') return modalWrap(renderQuoteView(payload), '', true);
   if (type === 'exclusionsLib') return modalWrap(renderExclusionsLibrary(payload), 'Exclusions & Terms Library');
+  if (type === 'viewJobOrder') return modalWrap(renderJobOrderView(payload), `Job Order ${payload.jobOrderNumber}`, true);
+  if (type === 'newMr') return modalWrap(renderMaterialRequestForm(payload), payload.id ? 'Edit Material Request' : 'New Material Request');
+  if (type === 'viewMr') return modalWrap(renderMaterialRequestView(payload), `Material Request ${payload.mrNumber}`, true);
   return '';
 }
 function modalWrap(inner, title, wide) {
@@ -1699,6 +1864,20 @@ function attachHandlers() {
     openModal('newQuote', { type: e.currentTarget.getAttribute('data-choose-quote-type'), lineItems: [], sitesCovered: [], exclusions: [] });
   }));
 
+  document.querySelectorAll('[data-view-jo]').forEach(b => b.addEventListener('click', e => {
+    openModal('viewJobOrder', findJobOrder(e.currentTarget.getAttribute('data-view-jo')));
+  }));
+  document.querySelectorAll('[data-view-mr]').forEach(b => b.addEventListener('click', e => {
+    openModal('viewMr', findMaterialRequest(e.currentTarget.getAttribute('data-view-mr')));
+  }));
+  const newMrBtn = document.getElementById('newMrBtn');
+  if (newMrBtn) newMrBtn.addEventListener('click', () => openModal('newMr', { lineItems: [] }));
+  const newMrFromJoBtn = document.getElementById('newMrFromJoBtn');
+  if (newMrFromJoBtn) newMrFromJoBtn.addEventListener('click', () => {
+    const jo = state.modal.payload; // currently-open Job Order
+    openModal('newMr', { jobOrderId: jo.id, lineItems: [] });
+  });
+
   const openChangePwdBtn = document.getElementById('openChangePwdBtn');
   if (openChangePwdBtn) openChangePwdBtn.addEventListener('click', () => openModal('changePwd', {}));
 
@@ -1721,6 +1900,8 @@ function attachHandlers() {
   attachQuoteFormHandlers();
   attachQuoteViewHandlers();
   attachExclusionsLibraryHandlers();
+  attachMrFormHandlers();
+  attachMrViewHandlers();
 }
 
 function renderInventoryOnly() {
@@ -2380,6 +2561,104 @@ function attachExclusionsLibraryHandlers() {
       openModal('exclusionsLib', {});
     } catch (err) { showToast(err.message, 'err'); }
   }));
+}
+
+/* ---- Material Request form handlers ---- */
+function readMrLinesFromDom() {
+  const lines = [];
+  document.querySelectorAll('[data-mr-line]').forEach(row => {
+    const idx = row.getAttribute('data-mr-line');
+    const itemId = row.querySelector('.mrLineItemPick').value;
+    const qtyEl = row.querySelector('.mrLineQty');
+    const qty = qtyEl.value === '' ? '' : Number(qtyEl.value);
+    lines.push({ itemId, qty });
+  });
+  return lines;
+}
+function syncMrFormIntoPayload() {
+  const p = state.modal.payload;
+  p.jobOrderId = val('mrJobOrderPick') || p.jobOrderId;
+  p.date = val('mrDate') || p.date;
+  p.neededBy = val('mrNeededBy');
+  p.notes = val('mrNotes');
+  p.lineItems = readMrLinesFromDom();
+}
+
+function attachMrFormHandlers() {
+  if (!state.modal || state.modal.type !== 'newMr') return;
+  const p = state.modal.payload;
+
+  const addLineBtn = document.getElementById('addMrLineBtn');
+  if (addLineBtn) addLineBtn.addEventListener('click', () => {
+    syncMrFormIntoPayload();
+    p.lineItems = [...(p.lineItems || []), { itemId: '', qty: '' }];
+    render();
+  });
+  document.querySelectorAll('.removeMrLineBtn').forEach(b => b.addEventListener('click', e => {
+    syncMrFormIntoPayload();
+    const idx = Number(e.currentTarget.getAttribute('data-idx'));
+    p.lineItems.splice(idx, 1);
+    render();
+  }));
+  document.querySelectorAll('.mrLineItemPick').forEach(sel => sel.addEventListener('change', () => {
+    syncMrFormIntoPayload(); // discrete select action — a full re-render here is safe (not continuous typing)
+    render();
+  }));
+  // Qty is a live-typed field — no render() on every keystroke, matching the lesson learned
+  // from the quotation form (a re-render mid-type can steal focus and drop keystrokes).
+  // We simply let syncMrFormIntoPayload() read the live DOM value whenever an action needs it.
+
+  const saveBtn = document.getElementById('saveMrBtn');
+  if (saveBtn) saveBtn.addEventListener('click', async () => {
+    syncMrFormIntoPayload();
+    const p2 = state.modal.payload;
+    if (!p2.jobOrderId) { showToast('Please select a Job Order.', 'err'); return; }
+    if (!p2.lineItems || p2.lineItems.length === 0) { showToast('Add at least one line item.', 'err'); return; }
+    for (const l of p2.lineItems) {
+      if (!l.itemId) { showToast('Every line needs an item selected.', 'err'); return; }
+      if (!l.qty || Number(l.qty) <= 0) { showToast('Every line needs a quantity greater than zero.', 'err'); return; }
+    }
+    try {
+      let saved;
+      if (p2.id) saved = (await api('PUT', '/api/material-requests/' + p2.id, p2)).materialRequest;
+      else saved = (await api('POST', '/api/material-requests', p2)).materialRequest;
+      await loadAll();
+      showToast('Material Request saved.', 'ok');
+      closeModal();
+      openModal('viewMr', findMaterialRequest(saved.id));
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+}
+
+/* ---- Material Request view handlers ---- */
+function attachMrViewHandlers() {
+  if (!state.modal || state.modal.type !== 'viewMr') return;
+  const mr = state.modal.payload;
+
+  document.querySelectorAll('[data-fulfill-line]').forEach(b => b.addEventListener('click', async e => {
+    const [mrId, lineId, remaining] = e.currentTarget.getAttribute('data-fulfill-line').split('|');
+    const input = prompt(`Fulfill how many? (up to ${remaining} remaining)`, remaining);
+    if (input === null) return;
+    const qty = Number(input);
+    if (!qty || qty <= 0) { showToast('Enter a valid quantity.', 'err'); return; }
+    try {
+      const res = await api('POST', `/api/material-requests/${mrId}/fulfill-line`, { lineId, qty });
+      await loadAll();
+      showToast('Stock released.', 'ok');
+      openModal('viewMr', res.materialRequest);
+    } catch (err) { showToast(err.message, 'err'); }
+  }));
+
+  const cancelBtn = document.getElementById('cancelMrBtn');
+  if (cancelBtn) cancelBtn.addEventListener('click', async () => {
+    if (!confirm('Cancel this Material Request?')) return;
+    try {
+      await api('POST', `/api/material-requests/${mr.id}/cancel`);
+      await loadAll();
+      showToast('Request cancelled.', 'ok');
+      closeModal(); setTab('materialRequests');
+    } catch (e) { showToast(e.message, 'err'); }
+  });
 }
 
 /* ---- Settings ---- */

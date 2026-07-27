@@ -47,6 +47,7 @@ body{margin:0;font-family:var(--sans);background:var(--bg);color:var(--ink);}
 .nav .dot{width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.55;}
 .sidebar-foot{margin-top:auto;padding:14px 20px 4px;font-size:11px;color:#7F98A0;border-top:1px solid rgba(255,255,255,.1);}
 .sync-badge{display:flex;align-items:center;gap:6px;margin-top:8px;font-size:11px;color:#8fe0b7;}
+.owner-credit{margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,.1);font-size:10.5px;color:#7F98A0;letter-spacing:.2px;}
 .sync-dot{width:6px;height:6px;border-radius:50%;background:#3CD07A;}
 
 /* ---------- Main ---------- */

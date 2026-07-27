@@ -184,6 +184,7 @@ async function loadAll() {
     api('GET', '/api/purchase-orders'),
   ]);
   state.company = company.company; state.nextDnPreview = company.nextDnPreview; state.nextQuotationCounter = company.nextQuotationCounter;
+  if (state.company.name) document.title = state.company.name;
   state.branches = branchesR.branches; state.brands = brandsR.brands; state.units = unitsR.units;
   state.items = itemsR.items; state.movements = movementsR.movements; state.clients = clientsR.clients; state.dns = dnsR.dns;
   state.quotationCategories = quotCatR.quotationCategories; state.exclusionsLibrary = exclR.exclusions;
@@ -266,7 +267,7 @@ function renderLoginScreen() {
   <div class="login-wrap">
     <div class="login-card">
       ${logoHtml}
-      <div class="login-title">${(b && b.name) || 'Al Fitr Inventory & Delivery'}</div>
+      <div class="login-title">${(b && b.name) || 'Sign In'}</div>
       <div class="login-sub">Sign in to continue</div>
       <div id="loginErr"></div>
       <div class="field"><label>Username</label><input id="loginUsername" autocomplete="username" placeholder="e.g. admin"></div>
@@ -279,7 +280,11 @@ function renderLoginScreen() {
 async function loadPublicBranding() {
   try {
     const res = await fetch('/api/company/public');
-    if (res.ok) { state.publicBranding = await res.json(); render(); }
+    if (res.ok) {
+      state.publicBranding = await res.json();
+      if (state.publicBranding.name) document.title = state.publicBranding.name;
+      render();
+    }
   } catch (e) { /* non-fatal — login screen just shows the text fallback */ }
 }
 function attachLoginHandlers() {
@@ -315,7 +320,7 @@ function renderAppHeader() {
   <div class="app-header no-print">
     <div class="app-header-left">
       ${co.logoPath ? `<img src="${co.logoPath}" class="app-header-logo" style="height:${headerLogoSizePx(co.logoSize)}px;max-width:160px;object-fit:contain;" alt="logo">` : `<div class="brand-mark" style="width:30px;height:30px;font-size:12px;">${userInitials(co.name)}</div>`}
-      <div class="app-header-name">${co.name || ''} <span class="muted" style="font-weight:500;">— Inventory &amp; Delivery</span></div>
+      <div class="app-header-name">${co.name || ''}</div>
     </div>
     <div class="app-header-right">
       <button class="icon-btn" title="No new notifications">🔔</button>
@@ -354,6 +359,7 @@ function renderSidebar() {
     <div class="sidebar-foot">
       Server-backed: pricing and permissions are enforced by the server, not just hidden in this screen.
       <div class="sync-badge"><span class="sync-dot"></span> Connected</div>
+      <div class="owner-credit">Powered by Nexora Technologies</div>
     </div>
   </div>`;
 }

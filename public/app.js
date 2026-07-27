@@ -54,7 +54,8 @@ const state = {
   items: [], movements: [], clients: [], dns: [], users: [], roles: {}, permLabels: [],
   loaded: false, modal: null, toast: null,
   publicBranding: null,
-  quotations: [], jobOrders: [], materialRequests: [], exclusionsLibrary: [], quotationCategories: [], quotationApprovers: [],
+  quotations: [], jobOrders: [], materialRequests: [], vendors: [], purchaseRequests: [], purchaseOrders: [],
+  exclusionsLibrary: [], quotationCategories: [], quotationApprovers: [], procView: 'requests',
   nextQuotationCounter: null, quoteFilter: 'All',
 };
 
@@ -123,6 +124,18 @@ function groupLinesByCategory(lineItems) {
 function findQuote(id) { return state.quotations.find(q => q.id === id); }
 function findJobOrder(id) { return state.jobOrders.find(j => j.id === id); }
 function findMaterialRequest(id) { return state.materialRequests.find(m => m.id === id); }
+function findVendor(id) { return state.vendors.find(v => v.id === id); }
+function findPurchaseRequest(id) { return state.purchaseRequests.find(p => p.id === id); }
+function findPurchaseOrder(id) { return state.purchaseOrders.find(p => p.id === id); }
+function prStatusBadge(status) {
+  const map = { Requested: 'badge-low', Approved: 'badge-in', Rejected: 'badge-out', Converted: 'badge-draft' };
+  return `<span class="badge ${map[status] || 'badge-draft'}">${status}</span>`;
+}
+function poStatusBadge(status) {
+  const map = { Draft: 'badge-draft', Sent: 'badge-low', PartiallyReceived: 'badge-low', Received: 'badge-in', Cancelled: 'badge-out' };
+  const label = status === 'PartiallyReceived' ? 'Partially Received' : status;
+  return `<span class="badge ${map[status] || 'badge-draft'}">${label}</span>`;
+}
 function mrStatusBadge(status) {
   const map = { Requested: 'badge-low', PartiallyFulfilled: 'badge-low', Fulfilled: 'badge-in', Cancelled: 'badge-out' };
   const label = status === 'PartiallyFulfilled' ? 'Partially Fulfilled' : status;
@@ -152,7 +165,7 @@ async function loadAll() {
   const me = await api('GET', '/api/auth/me');
   state.user = me.user; state.permissions = me.permissions;
 
-  const [company, branchesR, brandsR, unitsR, itemsR, movementsR, clientsR, dnsR, quotCatR, exclR, quotesR, joR, mrR] = await Promise.all([
+  const [company, branchesR, brandsR, unitsR, itemsR, movementsR, clientsR, dnsR, quotCatR, exclR, quotesR, joR, mrR, vendR, prR, poR] = await Promise.all([
     api('GET', '/api/company'),
     api('GET', '/api/meta/branches'),
     api('GET', '/api/meta/brands'),
@@ -166,12 +179,16 @@ async function loadAll() {
     api('GET', '/api/quotations'),
     api('GET', '/api/job-orders'),
     api('GET', '/api/material-requests'),
+    api('GET', '/api/vendors'),
+    api('GET', '/api/purchase-requests'),
+    api('GET', '/api/purchase-orders'),
   ]);
   state.company = company.company; state.nextDnPreview = company.nextDnPreview; state.nextQuotationCounter = company.nextQuotationCounter;
   state.branches = branchesR.branches; state.brands = brandsR.brands; state.units = unitsR.units;
   state.items = itemsR.items; state.movements = movementsR.movements; state.clients = clientsR.clients; state.dns = dnsR.dns;
   state.quotationCategories = quotCatR.quotationCategories; state.exclusionsLibrary = exclR.exclusions;
   state.quotations = quotesR.quotations; state.jobOrders = joR.jobOrders; state.materialRequests = mrR.materialRequests;
+  state.vendors = vendR.vendors; state.purchaseRequests = prR.purchaseRequests; state.purchaseOrders = poR.purchaseOrders;
 
   if (can('manageUsers')) {
     const [usersR, rolesR] = await Promise.all([api('GET', '/api/users'), api('GET', '/api/users/roles/all')]);
@@ -329,6 +346,8 @@ function renderSidebar() {
       ${navItem('quotations', 'Quotations')}
       ${navItem('jobOrders', 'Job Orders')}
       ${navItem('materialRequests', 'Material Requests')}
+      ${navItem('procurement', 'Procurement')}
+      ${navItem('vendors', 'Vendors')}
       ${navItem('clients', 'Clients')}
       ${navItem('settings', 'Settings')}
     </div>
@@ -348,6 +367,8 @@ function renderTopbar() {
     quotations: ['Quotations', 'Create, approve, send and track quotations'],
     jobOrders: ['Job Orders', 'Jobs created from accepted quotations'],
     materialRequests: ['Material Requests', 'Request materials against a job, checked and fulfilled from stock'],
+    procurement: ['Procurement', 'Purchase Requests and Purchase Orders for whatever stock can\'t cover'],
+    vendors: ['Vendors', 'Companies you buy materials from'],
     clients: ['Clients', 'Company directory used on delivery notes'],
     settings: ['Settings', 'Branches, brands, units, security and company details'],
   };
@@ -373,6 +394,8 @@ function renderPage() {
   if (state.tab === 'quotations') return renderQuotations();
   if (state.tab === 'jobOrders') return renderJobOrders();
   if (state.tab === 'materialRequests') return renderMaterialRequests();
+  if (state.tab === 'procurement') return renderProcurement();
+  if (state.tab === 'vendors') return renderVendors();
   if (state.tab === 'clients') return renderClients();
   if (state.tab === 'settings') return renderSettings();
   return '';
@@ -587,6 +610,51 @@ function renderClients() {
   </div>`;
 }
 
+function renderVendors() {
+  const list = [...state.vendors].sort((a, b) => a.companyName.localeCompare(b.companyName));
+  return `
+  <div class="toolbar">
+    <div style="flex:1"></div>
+    <button class="btn btn-primary" id="addVendorBtn">+ Add Vendor</button>
+  </div>
+  <div class="card">
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Company Name</th><th>Contact Person</th><th>Phone</th><th>Email</th><th>Address</th><th></th></tr></thead>
+      <tbody>
+      ${list.length === 0 ? `<tr><td colspan="6"><div class="empty"><div class="big">🚚</div>No vendors yet — add the companies you buy materials from.</div></td></tr>` :
+        list.map(v => `
+        <tr>
+          <td><strong>${v.companyName}</strong></td>
+          <td>${v.contactPerson || '—'}</td>
+          <td>${v.phone || '—'}</td>
+          <td>${v.email || '—'}</td>
+          <td>${v.address || '—'}</td>
+          <td><button class="btn btn-outline btn-sm" data-edit-vendor="${v.id}">Edit</button></td>
+        </tr>`).join('')}
+      </tbody>
+    </table></div>
+  </div>`;
+}
+
+function renderVendorForm(vendor) {
+  const isEdit = !!vendor.id;
+  return `
+  <div class="field"><label>Company Name</label><input id="v_companyName" value="${vendor.companyName || ''}" placeholder="e.g. Gulf Fire Supplies LLC"></div>
+  <div class="grid2">
+    <div class="field"><label>Contact Person</label><input id="v_contactPerson" value="${vendor.contactPerson || ''}"></div>
+    <div class="field"><label>Phone</label><input id="v_phone" value="${vendor.phone || ''}" placeholder="+971 5xx xxx xxx"></div>
+  </div>
+  <div class="grid2">
+    <div class="field"><label>Email</label><input id="v_email" type="email" value="${vendor.email || ''}"></div>
+    <div class="field"><label>Address</label><input id="v_address" value="${vendor.address || ''}"></div>
+  </div>
+  <div style="display:flex;justify-content:space-between;margin-top:8px;">
+    <div>${isEdit ? `<button class="btn btn-danger" id="deleteVendorBtn">Delete Vendor</button>` : ''}</div>
+    <div style="display:flex;gap:8px;"><button class="btn btn-ghost" id="modalCancel">Cancel</button><button class="btn btn-primary" id="saveVendorBtn">${isEdit ? 'Save Changes' : 'Add Vendor'}</button></div>
+  </div>
+  `;
+}
+
 /* ---------------- Quotations ---------------- */
 function renderQuotations() {
   let list = [...state.quotations];
@@ -769,7 +837,15 @@ function renderMrLineRow(l, idx) {
 
 function renderMaterialRequestView(mr) {
   const canFulfill = can('manageStock');
+  const canProcure = can('manageMaterialRequests');
   const jo = findJobOrder(mr.jobOrderId);
+  const shortfallLines = mr.lineItems.filter(l => {
+    const it = findItem(l.itemId);
+    const remaining = l.qtyRequested - l.qtyFulfilled;
+    const avail = it ? it.qty : 0;
+    return remaining > 0 && avail < remaining;
+  });
+  const existingPr = state.purchaseRequests.find(p => p.materialRequestId === mr.id);
   return `
   <div class="grid3">
     <div><div class="k muted">Job Order</div><div style="font-weight:600;font-family:var(--mono);font-size:12px;">${mr.jobOrderNumber}</div></div>
@@ -800,8 +876,205 @@ function renderMaterialRequestView(mr) {
     }).join('')}
     </tbody>
   </table></div>
+  ${shortfallLines.length > 0 && mr.status !== 'Cancelled' ? `
+    <div class="banner-warn" style="margin-top:14px;">
+      ⚠ ${shortfallLines.length} line(s) don't have enough in stock.
+      ${existingPr ? `A Purchase Request has already been raised for this (${existingPr.prNumber}).` : `Raise a Purchase Request to buy the shortfall.`}
+    </div>
+    ${!existingPr && canProcure ? `<button class="btn btn-primary btn-sm" id="raisePrBtn" style="margin-bottom:14px;">Raise Purchase Request</button>` : ''}
+    ${existingPr ? `<button class="btn btn-outline btn-sm" data-view-pr="${existingPr.id}" style="margin-bottom:14px;">View ${existingPr.prNumber}</button>` : ''}
+  ` : ''}
   <div style="display:flex;justify-content:space-between;margin-top:18px;">
     <div>${mr.status === 'Requested' && can('manageMaterialRequests') ? `<button class="btn btn-danger" id="cancelMrBtn">Cancel Request</button>` : ''}</div>
+    <button class="btn btn-ghost" id="modalCancel">Close</button>
+  </div>
+  `;
+}
+
+/* ---------------- Procurement (Purchase Requests + Purchase Orders) ---------------- */
+function renderProcurement() {
+  const view = state.procView || 'requests';
+  return `
+  <div class="toolbar">
+    <div style="display:flex;gap:8px;">
+      <button class="btn ${view === 'requests' ? 'btn-primary' : 'btn-outline'} btn-sm" data-proc-view="requests">Purchase Requests</button>
+      <button class="btn ${view === 'orders' ? 'btn-primary' : 'btn-outline'} btn-sm" data-proc-view="orders">Purchase Orders</button>
+    </div>
+    <div style="flex:1"></div>
+  </div>
+  ${view === 'requests' ? renderPrList() : renderPoList()}
+  `;
+}
+
+function renderPrList() {
+  const list = [...state.purchaseRequests].sort((a, b) => b.createdAt - a.createdAt);
+  return `
+  <div class="card">
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>PR #</th><th>Material Request</th><th>Job Order</th><th>Date</th><th>Requested By</th><th>Lines</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+      ${list.length === 0 ? `<tr><td colspan="8"><div class="empty"><div class="big">🧾</div>No purchase requests yet — these get raised from a Material Request's shortfall.</div></td></tr>` :
+        list.map(pr => `
+        <tr>
+          <td style="font-family:var(--mono);font-weight:700;">${pr.prNumber}</td>
+          <td style="font-family:var(--mono);font-size:12px;">${pr.materialRequestNumber}</td>
+          <td style="font-family:var(--mono);font-size:12px;">${pr.jobOrderNumber}</td>
+          <td>${fmtDate(pr.date)}</td>
+          <td>${pr.requestedByName}</td>
+          <td>${pr.lineItems.length}</td>
+          <td>${prStatusBadge(pr.status)}</td>
+          <td><button class="btn btn-outline btn-sm" data-view-pr="${pr.id}">Open</button></td>
+        </tr>`).join('')}
+      </tbody>
+    </table></div>
+  </div>`;
+}
+
+function renderPoList() {
+  const list = [...state.purchaseOrders].sort((a, b) => b.createdAt - a.createdAt);
+  return `
+  <div class="card">
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>PO #</th><th>Vendor</th><th>From PR</th><th>Date</th><th>Lines</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+      ${list.length === 0 ? `<tr><td colspan="7"><div class="empty"><div class="big">📦</div>No purchase orders yet — these get created from an approved Purchase Request.</div></td></tr>` :
+        list.map(po => `
+        <tr>
+          <td style="font-family:var(--mono);font-weight:700;">${po.poNumber}</td>
+          <td>${po.vendorName}</td>
+          <td style="font-family:var(--mono);font-size:12px;">${po.purchaseRequestNumber}</td>
+          <td>${fmtDate(po.date)}</td>
+          <td>${po.lineItems.length}</td>
+          <td>${poStatusBadge(po.status)}</td>
+          <td><button class="btn btn-outline btn-sm" data-view-po="${po.id}">Open</button></td>
+        </tr>`).join('')}
+      </tbody>
+    </table></div>
+  </div>`;
+}
+
+function renderPrView(pr) {
+  const canProcure = can('manageProcurement');
+  return `
+  <div class="grid3">
+    <div><div class="k muted">Material Request</div><div style="font-weight:600;font-family:var(--mono);font-size:12px;">${pr.materialRequestNumber}</div></div>
+    <div><div class="k muted">Job Order</div><div style="font-weight:600;font-family:var(--mono);font-size:12px;">${pr.jobOrderNumber}</div></div>
+    <div><div class="k muted">Requested By</div><div style="font-weight:600;">${pr.requestedByName}</div></div>
+  </div>
+  <div class="grid2" style="margin-top:10px;">
+    <div><div class="k muted">Date</div><div>${fmtDate(pr.date)}</div></div>
+    <div><div class="k muted">Status</div><div>${prStatusBadge(pr.status)}</div></div>
+  </div>
+  ${pr.status === 'Rejected' ? `<div class="banner-warn" style="margin-top:10px;">Rejected: ${pr.rejectionReason || 'No reason given'}</div>` : ''}
+  ${pr.notes ? `<div style="margin-top:12px;"><strong>Notes:</strong> ${pr.notes}</div>` : ''}
+  <div class="tbl-wrap" style="margin-top:16px;"><table>
+    <thead><tr><th>Description</th><th>Brand</th><th>Unit</th><th style="text-align:right;">Qty</th></tr></thead>
+    <tbody>
+    ${pr.lineItems.map(l => `<tr><td>${l.description}</td><td>${l.brand || '—'}</td><td>${l.unit}</td><td style="text-align:right;font-family:var(--mono);">${l.qty}</td></tr>`).join('')}
+    </tbody>
+  </table></div>
+  <div style="display:flex;justify-content:space-between;margin-top:18px;">
+    <div style="display:flex;gap:8px;">
+      ${pr.status === 'Requested' && canProcure ? `<button class="btn btn-primary btn-sm" id="approvePrBtn">Approve</button><button class="btn btn-danger btn-sm" id="rejectPrBtn">Reject</button>` : ''}
+      ${pr.status === 'Approved' && canProcure ? `<button class="btn btn-primary btn-sm" id="convertPrToPoBtn">Create Purchase Order</button>` : ''}
+      ${pr.status === 'Converted' && pr.purchaseOrderId ? `<button class="btn btn-outline btn-sm" data-view-po="${pr.purchaseOrderId}">View Purchase Order</button>` : ''}
+    </div>
+    <button class="btn btn-ghost" id="modalCancel">Close</button>
+  </div>
+  `;
+}
+
+function renderPrForm(payload) {
+  const mr = findMaterialRequest(payload.materialRequestId);
+  const lines = payload.lineItems || [];
+  return `
+  <div class="muted" style="margin-bottom:10px;font-size:12px;">Raising against <strong>${mr.mrNumber}</strong> (${mr.jobOrderNumber})</div>
+  <label>Shortfall Line Items <span class="muted" style="font-weight:500;text-transform:none;">(pre-filled with what's short — adjust if you want to order more)</span></label>
+  <div class="tbl-wrap" style="margin-bottom:14px;"><table>
+    <thead><tr><th>Description</th><th>Unit</th><th style="text-align:right;">Qty to Order</th></tr></thead>
+    <tbody>
+    ${lines.map((l, idx) => `
+      <tr>
+        <td>${l.description}</td><td>${l.unit}</td>
+        <td style="text-align:right;"><input class="prLineQty" data-idx="${idx}" type="number" style="width:100px;text-align:right;" value="${l.qty}"></td>
+      </tr>`).join('')}
+    </tbody>
+  </table></div>
+  <div class="field"><label>Notes</label><textarea id="prNotes" rows="2">${payload.notes || ''}</textarea></div>
+  <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">
+    <button class="btn btn-ghost" id="modalCancel">Cancel</button>
+    <button class="btn btn-primary" id="savePrBtn">Raise Purchase Request</button>
+  </div>
+  `;
+}
+
+function renderPoForm(payload) {
+  // payload.purchaseRequestId is the approved PR being converted
+  const pr = findPurchaseRequest(payload.purchaseRequestId);
+  const vendorOptions = state.vendors.map(v => `<option value="${v.id}" ${payload.vendorId === v.id ? 'selected' : ''}>${v.companyName}</option>`).join('');
+  return `
+  <div class="muted" style="margin-bottom:10px;font-size:12px;">Converting <strong>${pr.prNumber}</strong> (from ${pr.materialRequestNumber}, ${pr.jobOrderNumber})</div>
+  <div class="field"><label>Vendor</label>
+    <select id="poVendorPick">
+      <option value="">— Select vendor —</option>
+      ${vendorOptions}
+    </select>
+  </div>
+  <div class="field"><label>Expected Delivery Date <span class="muted" style="font-weight:500;text-transform:none;">(optional)</span></label><input type="date" id="poExpectedDate" value="${payload.expectedDate || ''}"></div>
+  <label>Line Items &amp; Unit Cost</label>
+  <div class="tbl-wrap" style="margin-bottom:14px;"><table>
+    <thead><tr><th>Description</th><th>Unit</th><th style="text-align:right;">Qty</th><th style="text-align:right;">Unit Cost</th></tr></thead>
+    <tbody>
+    ${pr.lineItems.map(l => `
+      <tr>
+        <td>${l.description}</td><td>${l.unit}</td><td style="text-align:right;font-family:var(--mono);">${l.qty}</td>
+        <td style="text-align:right;"><input class="poUnitCost" data-prlineid="${l.id}" type="number" style="width:100px;text-align:right;" value="${(payload.unitCosts && payload.unitCosts[l.id]) || ''}"></td>
+      </tr>`).join('')}
+    </tbody>
+  </table></div>
+  <div class="field"><label>Notes</label><textarea id="poNotes" rows="2">${payload.notes || ''}</textarea></div>
+  <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">
+    <button class="btn btn-ghost" id="modalCancel">Cancel</button>
+    <button class="btn btn-primary" id="createPoBtn">Create Purchase Order</button>
+  </div>
+  `;
+}
+
+function renderPoView(po) {
+  const canProcure = can('manageProcurement');
+  const canReceive = can('manageStock');
+  return `
+  <div class="grid3">
+    <div><div class="k muted">Vendor</div><div style="font-weight:600;">${po.vendorName}</div></div>
+    <div><div class="k muted">From Purchase Request</div><div style="font-weight:600;font-family:var(--mono);font-size:12px;">${po.purchaseRequestNumber}</div></div>
+    <div><div class="k muted">Job Order</div><div style="font-weight:600;font-family:var(--mono);font-size:12px;">${po.jobOrderNumber}</div></div>
+  </div>
+  <div class="grid3" style="margin-top:10px;">
+    <div><div class="k muted">Date</div><div>${fmtDate(po.date)}</div></div>
+    <div><div class="k muted">Expected</div><div>${po.expectedDate ? fmtDate(po.expectedDate) : '—'}</div></div>
+    <div><div class="k muted">Status</div><div>${poStatusBadge(po.status)}</div></div>
+  </div>
+  ${po.notes ? `<div style="margin-top:12px;"><strong>Notes:</strong> ${po.notes}</div>` : ''}
+  <div class="tbl-wrap" style="margin-top:16px;"><table>
+    <thead><tr><th>Description</th><th>Unit</th><th style="text-align:right;">Ordered</th><th style="text-align:right;">Received</th><th style="text-align:right;">Unit Cost</th>${canReceive ? '<th></th>' : ''}</tr></thead>
+    <tbody>
+    ${po.lineItems.map(l => {
+      const remaining = l.qtyOrdered - l.qtyReceived;
+      const lineDone = remaining <= 0;
+      return `<tr>
+        <td>${l.description}</td><td>${l.unit}</td>
+        <td style="text-align:right;font-family:var(--mono);">${l.qtyOrdered}</td>
+        <td style="text-align:right;font-family:var(--mono);">${l.qtyReceived}</td>
+        <td style="text-align:right;font-family:var(--mono);">${state.company.currency} ${fmtMoney(l.unitCost)}</td>
+        ${canReceive ? `<td>${po.status === 'Draft' ? '' : lineDone ? '<span class="muted" style="font-size:11px;">Done</span>' : (po.status === 'Cancelled' ? '' : `<button class="btn btn-outline btn-sm" data-receive-line="${po.id}|${l.id}|${remaining}">Receive</button>`)}</td>` : ''}
+      </tr>`;
+    }).join('')}
+    </tbody>
+  </table></div>
+  <div style="display:flex;justify-content:space-between;margin-top:18px;">
+    <div style="display:flex;gap:8px;">
+      ${po.status === 'Draft' && canProcure ? `<button class="btn btn-primary btn-sm" id="sendPoBtn">Send to Vendor</button><button class="btn btn-danger btn-sm" id="cancelPoBtn">Cancel</button>` : ''}
+    </div>
     <button class="btn btn-ghost" id="modalCancel">Close</button>
   </div>
   `;
@@ -1421,6 +1694,7 @@ function renderModal() {
   if (type === 'item') return modalWrap(renderItemForm(payload), 'Item Details');
   if (type === 'movement') return modalWrap(renderMovementForm(payload), payload.id ? 'Edit Stock Movement' : 'Log Stock Movement');
   if (type === 'client') return modalWrap(renderClientForm(payload), 'Client Details');
+  if (type === 'vendor') return modalWrap(renderVendorForm(payload), 'Vendor Details');
   if (type === 'userEdit') return modalWrap(renderUserForm(payload), 'User Details');
   if (type === 'forcePwd') return modalWrap(renderForcePwdForm(payload), 'Change Your Password');
   if (type === 'changePwd') return modalWrap(renderChangePwdForm(payload), 'Change Password');
@@ -1433,6 +1707,10 @@ function renderModal() {
   if (type === 'viewJobOrder') return modalWrap(renderJobOrderView(payload), `Job Order ${payload.jobOrderNumber}`, true);
   if (type === 'newMr') return modalWrap(renderMaterialRequestForm(payload), payload.id ? 'Edit Material Request' : 'New Material Request');
   if (type === 'viewMr') return modalWrap(renderMaterialRequestView(payload), `Material Request ${payload.mrNumber}`, true);
+  if (type === 'newPr') return modalWrap(renderPrForm(payload), 'Raise Purchase Request');
+  if (type === 'viewPr') return modalWrap(renderPrView(payload), `Purchase Request ${payload.prNumber}`, true);
+  if (type === 'newPo') return modalWrap(renderPoForm(payload), 'Create Purchase Order');
+  if (type === 'viewPo') return modalWrap(renderPoView(payload), `Purchase Order ${payload.poNumber}`, true);
   return '';
 }
 function modalWrap(inner, title, wide) {
@@ -1853,6 +2131,12 @@ function attachHandlers() {
     openModal('client', { ...state.clients.find(c => c.id === e.currentTarget.getAttribute('data-edit-client')) });
   }));
 
+  const addVendorBtn = document.getElementById('addVendorBtn');
+  if (addVendorBtn) addVendorBtn.addEventListener('click', () => openModal('vendor', {}));
+  document.querySelectorAll('[data-edit-vendor]').forEach(b => b.addEventListener('click', e => {
+    openModal('vendor', { ...findVendor(e.currentTarget.getAttribute('data-edit-vendor')) });
+  }));
+
   const newQuoteBtn = document.getElementById('newQuoteBtn');
   if (newQuoteBtn) newQuoteBtn.addEventListener('click', () => openModal('newQuote', {}));
   const quoteStatusFilter = document.getElementById('quoteStatusFilter');
@@ -1878,6 +2162,28 @@ function attachHandlers() {
     openModal('newMr', { jobOrderId: jo.id, lineItems: [] });
   });
 
+  const procViewBtns = document.querySelectorAll('[data-proc-view]');
+  procViewBtns.forEach(b => b.addEventListener('click', e => { state.procView = e.currentTarget.getAttribute('data-proc-view'); render(); }));
+
+  document.querySelectorAll('[data-view-pr]').forEach(b => b.addEventListener('click', e => {
+    openModal('viewPr', findPurchaseRequest(e.currentTarget.getAttribute('data-view-pr')));
+  }));
+  document.querySelectorAll('[data-view-po]').forEach(b => b.addEventListener('click', e => {
+    openModal('viewPo', findPurchaseOrder(e.currentTarget.getAttribute('data-view-po')));
+  }));
+  const raisePrBtn = document.getElementById('raisePrBtn');
+  if (raisePrBtn) raisePrBtn.addEventListener('click', () => {
+    const mr = state.modal.payload; // currently-open Material Request
+    const shortfallLines = mr.lineItems.map(l => {
+      const it = findItem(l.itemId);
+      const remaining = l.qtyRequested - l.qtyFulfilled;
+      const avail = it ? it.qty : 0;
+      const shortfall = remaining - avail;
+      return shortfall > 0 ? { mrLineId: l.id, itemId: l.itemId, description: l.description, unit: l.unit, qty: shortfall } : null;
+    }).filter(Boolean);
+    openModal('newPr', { materialRequestId: mr.id, lineItems: shortfallLines });
+  });
+
   const openChangePwdBtn = document.getElementById('openChangePwdBtn');
   if (openChangePwdBtn) openChangePwdBtn.addEventListener('click', () => openModal('changePwd', {}));
 
@@ -1895,6 +2201,7 @@ function attachHandlers() {
   attachDnFormHandlers();
   attachDnViewHandlers();
   attachClientFormHandlers();
+  attachVendorFormHandlers();
   attachUserFormHandlers();
   attachPwdFormHandlers();
   attachQuoteFormHandlers();
@@ -1902,6 +2209,10 @@ function attachHandlers() {
   attachExclusionsLibraryHandlers();
   attachMrFormHandlers();
   attachMrViewHandlers();
+  attachPrFormHandlers();
+  attachPrViewHandlers();
+  attachPoFormHandlers();
+  attachPoViewHandlers();
 }
 
 function renderInventoryOnly() {
@@ -2107,6 +2418,33 @@ function attachClientFormHandlers() {
       await loadAll();
       showToast('Client deleted.', 'ok');
       closeModal(); setTab('clients');
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+}
+
+function attachVendorFormHandlers() {
+  const saveBtn = document.getElementById('saveVendorBtn');
+  if (saveBtn) saveBtn.addEventListener('click', async () => {
+    const companyName = val('v_companyName').trim();
+    if (!companyName) { showToast('Company name is required.', 'err'); return; }
+    const existing = state.modal.payload.id;
+    const body = { companyName, contactPerson: val('v_contactPerson').trim(), phone: val('v_phone').trim(), email: val('v_email').trim(), address: val('v_address').trim() };
+    try {
+      if (existing) await api('PUT', '/api/vendors/' + existing, body);
+      else await api('POST', '/api/vendors', body);
+      await loadAll();
+      showToast(existing ? 'Vendor updated.' : 'Vendor added.', 'ok');
+      closeModal(); setTab('vendors');
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+  const delBtn = document.getElementById('deleteVendorBtn');
+  if (delBtn) delBtn.addEventListener('click', async () => {
+    if (!confirm('Delete this vendor?')) return;
+    try {
+      await api('DELETE', '/api/vendors/' + state.modal.payload.id);
+      await loadAll();
+      showToast('Vendor deleted.', 'ok');
+      closeModal(); setTab('vendors');
     } catch (e) { showToast(e.message, 'err'); }
   });
 }
@@ -2659,6 +2997,118 @@ function attachMrViewHandlers() {
       closeModal(); setTab('materialRequests');
     } catch (e) { showToast(e.message, 'err'); }
   });
+}
+
+/* ---- Purchase Request form + view handlers ---- */
+function attachPrFormHandlers() {
+  if (!state.modal || state.modal.type !== 'newPr') return;
+  const saveBtn = document.getElementById('savePrBtn');
+  if (saveBtn) saveBtn.addEventListener('click', async () => {
+    const p = state.modal.payload;
+    const qtyInputs = document.querySelectorAll('.prLineQty');
+    const lineItems = p.lineItems.map((l, idx) => ({ mrLineId: l.mrLineId, qty: Number(qtyInputs[idx].value) }));
+    if (lineItems.some(l => !l.qty || l.qty <= 0)) { showToast('Every line needs a quantity greater than zero.', 'err'); return; }
+    try {
+      const res = await api('POST', '/api/purchase-requests', { materialRequestId: p.materialRequestId, lineItems, notes: val('prNotes') });
+      await loadAll();
+      showToast('Purchase Request raised.', 'ok');
+      closeModal();
+      openModal('viewPr', res.purchaseRequest);
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+}
+
+function attachPrViewHandlers() {
+  if (!state.modal || state.modal.type !== 'viewPr') return;
+  const pr = state.modal.payload;
+
+  const approveBtn = document.getElementById('approvePrBtn');
+  if (approveBtn) approveBtn.addEventListener('click', async () => {
+    try {
+      const res = await api('POST', `/api/purchase-requests/${pr.id}/approve`);
+      await loadAll();
+      showToast('Purchase Request approved.', 'ok');
+      openModal('viewPr', res.purchaseRequest);
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+  const rejectBtn = document.getElementById('rejectPrBtn');
+  if (rejectBtn) rejectBtn.addEventListener('click', async () => {
+    const reason = prompt('Reason for rejecting this purchase request:');
+    if (reason === null) return;
+    try {
+      const res = await api('POST', `/api/purchase-requests/${pr.id}/reject`, { reason });
+      await loadAll();
+      showToast('Purchase Request rejected.', 'ok');
+      openModal('viewPr', res.purchaseRequest);
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+  const convertBtn = document.getElementById('convertPrToPoBtn');
+  if (convertBtn) convertBtn.addEventListener('click', () => {
+    closeModal();
+    openModal('newPo', { purchaseRequestId: pr.id, unitCosts: {} });
+  });
+}
+
+/* ---- Purchase Order form + view handlers ---- */
+function attachPoFormHandlers() {
+  if (!state.modal || state.modal.type !== 'newPo') return;
+  const createBtn = document.getElementById('createPoBtn');
+  if (createBtn) createBtn.addEventListener('click', async () => {
+    const p = state.modal.payload;
+    const vendorId = val('poVendorPick');
+    if (!vendorId) { showToast('Please select a vendor.', 'err'); return; }
+    const unitCosts = {};
+    document.querySelectorAll('.poUnitCost').forEach(el => { unitCosts[el.getAttribute('data-prlineid')] = Number(el.value || 0); });
+    try {
+      const res = await api('POST', '/api/purchase-orders', {
+        purchaseRequestId: p.purchaseRequestId, vendorId, unitCosts,
+        expectedDate: val('poExpectedDate'), notes: val('poNotes'),
+      });
+      await loadAll();
+      showToast('Purchase Order created.', 'ok');
+      closeModal();
+      openModal('viewPo', res.purchaseOrder);
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+}
+
+function attachPoViewHandlers() {
+  if (!state.modal || state.modal.type !== 'viewPo') return;
+  const po = state.modal.payload;
+
+  const sendBtn = document.getElementById('sendPoBtn');
+  if (sendBtn) sendBtn.addEventListener('click', async () => {
+    if (!confirm('Send this Purchase Order to the vendor?')) return;
+    try {
+      const res = await api('POST', `/api/purchase-orders/${po.id}/send`);
+      await loadAll();
+      showToast('Purchase Order marked as sent.', 'ok');
+      openModal('viewPo', res.purchaseOrder);
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+  const cancelBtn = document.getElementById('cancelPoBtn');
+  if (cancelBtn) cancelBtn.addEventListener('click', async () => {
+    if (!confirm('Cancel this Purchase Order?')) return;
+    try {
+      await api('POST', `/api/purchase-orders/${po.id}/cancel`);
+      await loadAll();
+      showToast('Purchase Order cancelled.', 'ok');
+      closeModal(); setTab('procurement');
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+  document.querySelectorAll('[data-receive-line]').forEach(b => b.addEventListener('click', async e => {
+    const [poId, lineId, remaining] = e.currentTarget.getAttribute('data-receive-line').split('|');
+    const input = prompt(`Receive how many? (up to ${remaining} remaining)`, remaining);
+    if (input === null) return;
+    const qty = Number(input);
+    if (!qty || qty <= 0) { showToast('Enter a valid quantity.', 'err'); return; }
+    try {
+      const res = await api('POST', `/api/purchase-orders/${poId}/receive-line`, { lineId, qty });
+      await loadAll();
+      showToast('Stock received.', 'ok');
+      openModal('viewPo', res.purchaseOrder);
+    } catch (err) { showToast(err.message, 'err'); }
+  }));
 }
 
 /* ---- Settings ---- */

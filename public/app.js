@@ -54,7 +54,7 @@ const state = {
   items: [], movements: [], clients: [], dns: [], users: [], roles: {}, permLabels: [],
   loaded: false, modal: null, toast: null,
   publicBranding: null,
-  quotations: [], jobOrders: [], materialRequests: [], vendors: [], purchaseRequests: [], purchaseOrders: [],
+  quotations: [], jobOrders: [], materialRequests: [], vendors: [], purchaseRequests: [], purchaseOrders: [], delayReports: [],
   exclusionsLibrary: [], quotationCategories: [], quotationApprovers: [], procView: 'requests',
   nextQuotationCounter: null, quoteFilter: 'All',
 };
@@ -127,6 +127,7 @@ function findMaterialRequest(id) { return state.materialRequests.find(m => m.id 
 function findVendor(id) { return state.vendors.find(v => v.id === id); }
 function findPurchaseRequest(id) { return state.purchaseRequests.find(p => p.id === id); }
 function findPurchaseOrder(id) { return state.purchaseOrders.find(p => p.id === id); }
+function findDelayReport(id) { return state.delayReports.find(d => d.id === id); }
 function prStatusBadge(status) {
   const map = { Requested: 'badge-low', Approved: 'badge-in', Rejected: 'badge-out', Converted: 'badge-draft' };
   return `<span class="badge ${map[status] || 'badge-draft'}">${status}</span>`;
@@ -165,7 +166,7 @@ async function loadAll() {
   const me = await api('GET', '/api/auth/me');
   state.user = me.user; state.permissions = me.permissions;
 
-  const [company, branchesR, brandsR, unitsR, itemsR, movementsR, clientsR, dnsR, quotCatR, exclR, quotesR, joR, mrR, vendR, prR, poR] = await Promise.all([
+  const [company, branchesR, brandsR, unitsR, itemsR, movementsR, clientsR, dnsR, quotCatR, exclR, quotesR, joR, mrR, vendR, prR, poR, drR] = await Promise.all([
     api('GET', '/api/company'),
     api('GET', '/api/meta/branches'),
     api('GET', '/api/meta/brands'),
@@ -182,6 +183,7 @@ async function loadAll() {
     api('GET', '/api/vendors'),
     api('GET', '/api/purchase-requests'),
     api('GET', '/api/purchase-orders'),
+    api('GET', '/api/delay-reports'),
   ]);
   state.company = company.company; state.nextDnPreview = company.nextDnPreview; state.nextQuotationCounter = company.nextQuotationCounter;
   if (state.company.name) document.title = state.company.name;
@@ -190,6 +192,7 @@ async function loadAll() {
   state.quotationCategories = quotCatR.quotationCategories; state.exclusionsLibrary = exclR.exclusions;
   state.quotations = quotesR.quotations; state.jobOrders = joR.jobOrders; state.materialRequests = mrR.materialRequests;
   state.vendors = vendR.vendors; state.purchaseRequests = prR.purchaseRequests; state.purchaseOrders = poR.purchaseOrders;
+  state.delayReports = drR.delayReports;
 
   if (can('manageUsers')) {
     const [usersR, rolesR] = await Promise.all([api('GET', '/api/users'), api('GET', '/api/users/roles/all')]);
@@ -274,6 +277,7 @@ function renderLoginScreen() {
       <div class="field"><label>Password</label><input id="loginPassword" type="password" autocomplete="current-password" placeholder="Enter your password"></div>
       <button class="btn btn-primary" id="loginBtn" style="width:100%;justify-content:center;margin-top:6px;">Sign In</button>
       <p class="muted" style="text-align:center;margin-top:16px;font-size:11.5px;">First time? Default is <strong>admin</strong> / <strong>admin123</strong> — you'll be asked to change it.</p>
+      <div class="muted" style="text-align:center;margin-top:14px;font-size:10.5px;">Powered by Nexora Technologies</div>
     </div>
   </div>`;
 }
@@ -336,12 +340,12 @@ function renderAppHeader() {
 
 function renderSidebar() {
   const navItem = (id, label) => `<button data-tab="${id}" class="${state.tab === id ? 'active' : ''}"><span class="dot"></span>${label}</button>`;
+  const co = state.company || {};
   return `
   <div class="sidebar">
     <div class="brand">
-      <div class="brand-mark">AF</div>
-      <div class="brand-name">Al Fitr Electromechanical</div>
-      <div class="brand-sub">Inventory &amp; Delivery</div>
+      <div class="brand-mark">${userInitials(co.name)}</div>
+      <div class="brand-name">${co.name || ''}</div>
     </div>
     <div class="nav">
       ${navItem('dashboard', 'Dashboard')}
@@ -353,6 +357,7 @@ function renderSidebar() {
       ${navItem('materialRequests', 'Material Requests')}
       ${navItem('procurement', 'Procurement')}
       ${navItem('vendors', 'Vendors')}
+      ${navItem('delayReports', 'Delay Reports')}
       ${navItem('clients', 'Clients')}
       ${navItem('settings', 'Settings')}
     </div>
@@ -375,6 +380,7 @@ function renderTopbar() {
     materialRequests: ['Material Requests', 'Request materials against a job, checked and fulfilled from stock'],
     procurement: ['Procurement', 'Purchase Requests and Purchase Orders for whatever stock can\'t cover'],
     vendors: ['Vendors', 'Companies you buy materials from'],
+    delayReports: ['Delay Reports', 'Site delay reports raised against a Job Order'],
     clients: ['Clients', 'Company directory used on delivery notes'],
     settings: ['Settings', 'Branches, brands, units, security and company details'],
   };
@@ -402,6 +408,7 @@ function renderPage() {
   if (state.tab === 'materialRequests') return renderMaterialRequests();
   if (state.tab === 'procurement') return renderProcurement();
   if (state.tab === 'vendors') return renderVendors();
+  if (state.tab === 'delayReports') return renderDelayReports();
   if (state.tab === 'clients') return renderClients();
   if (state.tab === 'settings') return renderSettings();
   return '';
@@ -733,6 +740,8 @@ function renderJobOrders() {
 
 function renderJobOrderView(jo) {
   const mrs = state.materialRequests.filter(m => m.jobOrderId === jo.id).sort((a, b) => b.createdAt - a.createdAt);
+  const drs = state.delayReports.filter(d => d.jobOrderId === jo.id).sort((a, b) => b.createdAt - a.createdAt);
+  const hasSiteTeam = jo.siteEngineer || jo.projectManager || jo.siteSupervisor || jo.projectsIncharge;
   return `
   <div class="grid3">
     <div><div class="k muted">Client</div><div style="font-weight:600;">${jo.clientCompany}</div></div>
@@ -740,11 +749,25 @@ function renderJobOrderView(jo) {
     <div><div class="k muted">Value</div><div style="font-weight:600;">${state.company.currency} ${fmtMoney(jo.value)}</div></div>
   </div>
   <div style="margin:10px 0 16px;">${jo.subject || jo.siteDetail || ''}</div>
+
+  <div class="card-head" style="margin-top:6px;">
+    <div class="card-title">Site Team</div>
+    ${can('manageReports') ? `<button class="btn btn-outline btn-sm" id="editSiteTeamBtn">${hasSiteTeam ? 'Edit' : '+ Set Site Team'}</button>` : ''}
+  </div>
+  ${hasSiteTeam ? `
+    <div class="grid2" style="margin-bottom:18px;">
+      <div><div class="k muted">Site Engineer</div><div>${jo.siteEngineer || '—'}</div></div>
+      <div><div class="k muted">Project Manager</div><div>${jo.projectManager || '—'}</div></div>
+      <div><div class="k muted">Site Supervisor</div><div>${jo.siteSupervisor || '—'}</div></div>
+      <div><div class="k muted">Projects Incharge</div><div>${jo.projectsIncharge || '—'}</div></div>
+    </div>
+  ` : `<p class="muted" style="font-size:12px;margin-bottom:18px;">No site team set yet — set it once here, and every Delay Report for this job will use it automatically.</p>`}
+
   <div class="card-head" style="margin-top:6px;">
     <div class="card-title">Material Requests <span>${mrs.length}</span></div>
     ${can('manageMaterialRequests') ? `<button class="btn btn-primary btn-sm" id="newMrFromJoBtn">+ New Material Request</button>` : ''}
   </div>
-  <div class="tbl-wrap"><table>
+  <div class="tbl-wrap" style="margin-bottom:20px;"><table>
     <thead><tr><th>MR #</th><th>Date</th><th>Requested By</th><th>Lines</th><th>Status</th><th></th></tr></thead>
     <tbody>
     ${mrs.length === 0 ? `<tr><td colspan="6"><div class="empty">No material requests raised against this job yet.</div></td></tr>` :
@@ -759,7 +782,182 @@ function renderJobOrderView(jo) {
       </tr>`).join('')}
     </tbody>
   </table></div>
+
+  <div class="card-head" style="margin-top:6px;">
+    <div class="card-title">Delay Reports <span>${drs.length}</span></div>
+    ${can('manageReports') ? `<button class="btn btn-primary btn-sm" id="newDrFromJoBtn">+ New Delay Report</button>` : ''}
+  </div>
+  <div class="tbl-wrap"><table>
+    <thead><tr><th>Ref #</th><th>Date</th><th>Reported By</th><th>Items</th><th></th></tr></thead>
+    <tbody>
+    ${drs.length === 0 ? `<tr><td colspan="5"><div class="empty">No delay reports raised against this job yet.</div></td></tr>` :
+      drs.map(d => `
+      <tr>
+        <td style="font-family:var(--mono);font-weight:700;">${d.refNumber}</td>
+        <td>${fmtDate(d.date)}</td>
+        <td>${d.reportedBy}</td>
+        <td>${d.delayItems.length}</td>
+        <td><button class="btn btn-outline btn-sm" data-view-dr="${d.id}">Open</button></td>
+      </tr>`).join('')}
+    </tbody>
+  </table></div>
   <div style="display:flex;justify-content:flex-end;margin-top:16px;"><button class="btn btn-ghost" id="modalCancel">Close</button></div>
+  `;
+}
+
+function renderSiteTeamForm(jo) {
+  return `
+  <div class="muted" style="margin-bottom:12px;font-size:12px;">For ${jo.jobOrderNumber} — ${jo.clientCompany}</div>
+  <div class="field"><label>Site Engineer</label><input id="st_siteEngineer" value="${jo.siteEngineer || ''}" placeholder="e.g. Engr. Sarah Khan"></div>
+  <div class="field"><label>Project Manager</label><input id="st_projectManager" value="${jo.projectManager || ''}"></div>
+  <div class="field"><label>Site Supervisor</label><input id="st_siteSupervisor" value="${jo.siteSupervisor || ''}"></div>
+  <div class="field"><label>Projects Incharge</label><input id="st_projectsIncharge" value="${jo.projectsIncharge || ''}"></div>
+  <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">
+    <button class="btn btn-ghost" id="modalCancel">Cancel</button>
+    <button class="btn btn-primary" id="saveSiteTeamBtn">Save</button>
+  </div>
+  `;
+}
+
+/* ---------------- Delay Reports ---------------- */
+function renderDelayReports() {
+  const list = [...state.delayReports].sort((a, b) => b.createdAt - a.createdAt);
+  return `
+  <div class="card">
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Ref #</th><th>Job Order</th><th>Project</th><th>Date</th><th>Reported By</th><th>Items</th><th></th></tr></thead>
+      <tbody>
+      ${list.length === 0 ? `<tr><td colspan="7"><div class="empty"><div class="big">⏱️</div>No delay reports yet — raise one from a Job Order.</div></td></tr>` :
+        list.map(d => `
+        <tr>
+          <td style="font-family:var(--mono);font-weight:700;">${d.refNumber}</td>
+          <td style="font-family:var(--mono);font-size:12px;">${d.jobOrderNumber}</td>
+          <td>${d.projectName || '—'}</td>
+          <td>${fmtDate(d.date)}</td>
+          <td>${d.reportedBy}</td>
+          <td>${d.delayItems.length}</td>
+          <td><button class="btn btn-outline btn-sm" data-view-dr="${d.id}">Open</button></td>
+        </tr>`).join('')}
+      </tbody>
+    </table></div>
+  </div>
+  `;
+}
+
+const DELAY_STATUS_OPTIONS = ['Open', 'In Progress', 'Resolved', 'Client Action Required'];
+
+function renderDelayReportForm(payload) {
+  const jo = findJobOrder(payload.jobOrderId);
+  const items = payload.delayItems || [];
+  return `
+  <div class="field"><label>Job Order</label>
+    <select id="drJobOrderPick" ${payload.jobOrderId ? 'disabled' : ''}>
+      <option value="">— Select Job Order —</option>
+      ${state.jobOrders.map(j => `<option value="${j.id}" ${payload.jobOrderId === j.id ? 'selected' : ''}>${j.jobOrderNumber} — ${j.clientCompany}</option>`).join('')}
+    </select>
+  </div>
+  ${jo ? `
+  <div class="grid2" style="margin-bottom:14px;">
+    <div><div class="k muted">Project</div><div>${jo.subject || '—'}</div></div>
+    <div><div class="k muted">Location</div><div>${jo.siteDetail || '—'}</div></div>
+  </div>
+  ${!(jo.siteEngineer || jo.projectManager || jo.siteSupervisor || jo.projectsIncharge) ? `<div class="banner-warn">⚠ This Job Order has no site team set yet — signatures below will be blank until you set it (open the Job Order and click "Set Site Team").</div>` : ''}
+  ` : ''}
+  <div class="grid2">
+    <div class="field"><label>Date</label><input type="date" id="drDate" value="${payload.date || new Date().toISOString().slice(0, 10)}"></div>
+    <div class="field"><label>Reported By</label><input id="drReportedBy" value="${payload.reportedBy || state.user.name}"></div>
+  </div>
+
+  <label>Delay Items</label>
+  <div id="drItemsList">
+    ${items.length === 0 ? `<p class="muted" style="font-size:12px;">No items yet — add one below.</p>` : ''}
+    ${items.map((it, idx) => renderDrItemRow(it, idx)).join('')}
+  </div>
+  <button class="btn btn-ghost btn-sm" id="addDrItemBtn" type="button" style="margin-bottom:16px;">+ Add Delay Item</button>
+
+  <label>Signatures to Include</label>
+  <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:16px;">
+    <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500;color:var(--ink);text-transform:none;letter-spacing:0;">
+      <input type="checkbox" id="sig_reportedBy" checked style="width:auto;"> Reported By — ${payload.reportedBy || state.user.name}
+    </label>
+    <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500;color:var(--ink);text-transform:none;letter-spacing:0;">
+      <input type="checkbox" id="sig_projectsIncharge" ${jo && jo.projectsIncharge ? 'checked' : ''} style="width:auto;"> Projects Incharge — ${jo?.projectsIncharge || '—'}
+    </label>
+    <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500;color:var(--ink);text-transform:none;letter-spacing:0;">
+      <input type="checkbox" id="sig_siteEngineer" ${jo && jo.siteEngineer ? 'checked' : ''} style="width:auto;"> Site Engineer — ${jo?.siteEngineer || '—'}
+    </label>
+    <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500;color:var(--ink);text-transform:none;letter-spacing:0;">
+      <input type="checkbox" id="sig_projectManager" ${jo && jo.projectManager ? 'checked' : ''} style="width:auto;"> Project Manager — ${jo?.projectManager || '—'}
+    </label>
+  </div>
+
+  <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">
+    <button class="btn btn-ghost" id="modalCancel">Cancel</button>
+    <button class="btn btn-primary" id="saveDrBtn">Submit Delay Report</button>
+  </div>
+  `;
+}
+
+function renderDrItemRow(it, idx) {
+  return `
+  <div class="card" style="background:#FAFCFC;margin-bottom:10px;" data-dr-item="${idx}">
+    <div class="grid3">
+      <div class="field"><label>Floor</label><input class="drFloor" data-idx="${idx}" value="${it.floor || ''}"></div>
+      <div class="field"><label>Area / Zone</label><input class="drAreaZone" data-idx="${idx}" value="${it.areaZone || ''}"></div>
+      <div class="field"><label>Target Date</label><input type="date" class="drTargetDate" data-idx="${idx}" value="${it.targetDate || ''}"></div>
+    </div>
+    <div class="field"><label>Description</label><input class="drDescription" data-idx="${idx}" value="${it.description || ''}"></div>
+    <div class="grid2">
+      <div class="field"><label>Reason of Delay</label><input class="drReason" data-idx="${idx}" value="${it.reasonOfDelay || ''}"></div>
+      <div class="field"><label>Action By</label><input class="drActionBy" data-idx="${idx}" value="${it.actionBy || ''}" placeholder="e.g. Contractor, Client"></div>
+    </div>
+    <div class="grid3">
+      <div class="field"><label>Status</label>
+        <select class="drStatus" data-idx="${idx}">${DELAY_STATUS_OPTIONS.map(s => `<option ${it.status === s ? 'selected' : ''}>${s}</option>`).join('')}</select>
+      </div>
+      <div class="field"><label>Site Photo</label><input type="file" class="drSitePhoto" data-idx="${idx}" accept="image/*"></div>
+      <div class="field"><label>Drawing Photo</label><input type="file" class="drDrawingPhoto" data-idx="${idx}" accept="image/*"></div>
+    </div>
+    <div class="field" style="margin-bottom:0;"><label>Remarks</label><input class="drRemarks" data-idx="${idx}" value="${it.remarks || ''}"></div>
+    <div style="text-align:right;margin-top:8px;"><button class="btn btn-ghost btn-sm removeDrItemBtn" data-idx="${idx}" type="button">Remove Item</button></div>
+  </div>`;
+}
+
+function renderDelayReportView(d) {
+  return `
+  <div class="grid3">
+    <div><div class="k muted">Job Order</div><div style="font-weight:600;font-family:var(--mono);font-size:12px;">${d.jobOrderNumber}</div></div>
+    <div><div class="k muted">Client</div><div style="font-weight:600;">${d.clientCompany}</div></div>
+    <div><div class="k muted">Date</div><div>${fmtDate(d.date)}</div></div>
+  </div>
+  <div class="grid2" style="margin-top:10px;margin-bottom:16px;">
+    <div><div class="k muted">Project</div><div>${d.projectName || '—'}</div></div>
+    <div><div class="k muted">Location</div><div>${d.location || '—'}</div></div>
+  </div>
+  ${d.delayItems.map(it => `
+    <div class="card" style="margin-bottom:12px;">
+      <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
+        <strong>Item ${it.srNo} — ${it.floor || ''} ${it.areaZone ? '· ' + it.areaZone : ''}</strong>
+        <span class="tag">${it.status}</span>
+      </div>
+      <div>${it.description || ''}</div>
+      <div class="grid2" style="margin-top:8px;font-size:12.5px;">
+        <div><span class="muted">Reason:</span> ${it.reasonOfDelay || '—'}</div>
+        <div><span class="muted">Action By:</span> ${it.actionBy || '—'}</div>
+      </div>
+      ${it.targetDate ? `<div style="font-size:12.5px;margin-top:4px;"><span class="muted">Target Date:</span> ${fmtDate(it.targetDate)}</div>` : ''}
+      ${it.remarks ? `<div style="font-size:12.5px;margin-top:4px;"><span class="muted">Remarks:</span> ${it.remarks}</div>` : ''}
+      ${it.sitePhotoUrl || it.drawingPhotoUrl ? `
+      <div style="display:flex;gap:10px;margin-top:10px;">
+        ${it.sitePhotoUrl ? `<a href="${it.sitePhotoUrl}" target="_blank"><img src="${it.sitePhotoUrl}" style="width:110px;height:80px;object-fit:cover;border-radius:6px;border:1px solid var(--border);"></a>` : ''}
+        ${it.drawingPhotoUrl ? `<a href="${it.drawingPhotoUrl}" target="_blank"><img src="${it.drawingPhotoUrl}" style="width:110px;height:80px;object-fit:cover;border-radius:6px;border:1px solid var(--border);"></a>` : ''}
+      </div>` : ''}
+    </div>`).join('')}
+  <div class="dn-sign" style="margin-top:30px;">
+    ${d.signatures.afSide.map(s => `<div class="sign-line">${s.name || '—'}<br><span style="font-size:11px;">${s.role}</span></div>`).join('')}
+    ${d.signatures.clientSide.map(s => `<div class="sign-line">${s.name || '—'}<br><span style="font-size:11px;">${s.role}</span></div>`).join('')}
+  </div>
+  <div style="display:flex;justify-content:flex-end;margin-top:18px;"><button class="btn btn-ghost" id="modalCancel">Close</button></div>
   `;
 }
 
@@ -1717,6 +1915,9 @@ function renderModal() {
   if (type === 'viewPr') return modalWrap(renderPrView(payload), `Purchase Request ${payload.prNumber}`, true);
   if (type === 'newPo') return modalWrap(renderPoForm(payload), 'Create Purchase Order');
   if (type === 'viewPo') return modalWrap(renderPoView(payload), `Purchase Order ${payload.poNumber}`, true);
+  if (type === 'siteTeam') return modalWrap(renderSiteTeamForm(payload), 'Set Site Team');
+  if (type === 'newDr') return modalWrap(renderDelayReportForm(payload), 'New Delay Report', true);
+  if (type === 'viewDr') return modalWrap(renderDelayReportView(payload), `Delay Report ${payload.refNumber}`, true);
   return '';
 }
 function modalWrap(inner, title, wide) {
@@ -1820,6 +2021,7 @@ function renderForcePwdForm() {
   <div style="display:flex;justify-content:flex-end;margin-top:8px;">
     <button class="btn btn-primary" id="savePwdBtn">Set New Password</button>
   </div>
+  <div class="muted" style="text-align:center;margin-top:18px;font-size:10.5px;">Powered by Nexora Technologies</div>
   `;
 }
 function renderChangePwdForm() { return renderForcePwdForm(); }
@@ -1991,7 +2193,7 @@ function renderDnView(dn) {
       <div class="sign-line">Received By${dn.receivedBy ? ' — ' + dn.receivedBy : ''} (Signature &amp; Stamp)</div>
     </div>
     ${co.reportFooter ? `<div class="dn-footer-note">${co.reportFooter}</div>` : ''}
-    <div class="dn-footer-note">This delivery note was generated by the ${co.name} Inventory &amp; Delivery system. ${dn.status === 'Issued' ? 'Issuing this note automatically deducted the listed quantities from stock.' : 'This is a draft — stock has not been deducted yet.'}</div>
+    <div class="dn-footer-note">This delivery note was generated by ${co.name}'s business operations system. ${dn.status === 'Issued' ? 'Issuing this note automatically deducted the listed quantities from stock.' : 'This is a draft — stock has not been deducted yet.'}</div>
     ${companyFooterNote()}
   </div>
   <div class="no-print" style="display:flex;justify-content:flex-end;gap:8px;margin-top:20px;">
@@ -2190,6 +2392,19 @@ function attachHandlers() {
     openModal('newPr', { materialRequestId: mr.id, lineItems: shortfallLines });
   });
 
+  const editSiteTeamBtn = document.getElementById('editSiteTeamBtn');
+  if (editSiteTeamBtn) editSiteTeamBtn.addEventListener('click', () => {
+    openModal('siteTeam', state.modal.payload); // currently-open Job Order
+  });
+  const newDrFromJoBtn = document.getElementById('newDrFromJoBtn');
+  if (newDrFromJoBtn) newDrFromJoBtn.addEventListener('click', () => {
+    const jo = state.modal.payload; // currently-open Job Order
+    openModal('newDr', { jobOrderId: jo.id, delayItems: [] });
+  });
+  document.querySelectorAll('[data-view-dr]').forEach(b => b.addEventListener('click', e => {
+    openModal('viewDr', findDelayReport(e.currentTarget.getAttribute('data-view-dr')));
+  }));
+
   const openChangePwdBtn = document.getElementById('openChangePwdBtn');
   if (openChangePwdBtn) openChangePwdBtn.addEventListener('click', () => openModal('changePwd', {}));
 
@@ -2219,6 +2434,8 @@ function attachHandlers() {
   attachPrViewHandlers();
   attachPoFormHandlers();
   attachPoViewHandlers();
+  attachSiteTeamFormHandlers();
+  attachDrFormHandlers();
 }
 
 function renderInventoryOnly() {
@@ -3115,6 +3332,121 @@ function attachPoViewHandlers() {
       openModal('viewPo', res.purchaseOrder);
     } catch (err) { showToast(err.message, 'err'); }
   }));
+}
+
+/* ---- Site Team form handler ---- */
+function attachSiteTeamFormHandlers() {
+  if (!state.modal || state.modal.type !== 'siteTeam') return;
+  const jo = state.modal.payload;
+  const saveBtn = document.getElementById('saveSiteTeamBtn');
+  if (saveBtn) saveBtn.addEventListener('click', async () => {
+    try {
+      const res = await api('PUT', `/api/job-orders/${jo.id}/site-team`, {
+        siteEngineer: val('st_siteEngineer').trim(),
+        projectManager: val('st_projectManager').trim(),
+        siteSupervisor: val('st_siteSupervisor').trim(),
+        projectsIncharge: val('st_projectsIncharge').trim(),
+      });
+      await loadAll();
+      showToast('Site team saved.', 'ok');
+      closeModal();
+      openModal('viewJobOrder', findJobOrder(res.jobOrder.id));
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+}
+
+/* ---- Delay Report form handler ---- */
+function syncDrFormIntoPayload() {
+  const p = state.modal.payload;
+  p.jobOrderId = val('drJobOrderPick') || p.jobOrderId;
+  p.date = val('drDate') || p.date;
+  p.reportedBy = val('drReportedBy');
+  p.delayItems = [];
+  document.querySelectorAll('[data-dr-item]').forEach(row => {
+    const idx = row.getAttribute('data-dr-item');
+    p.delayItems.push({
+      floor: row.querySelector('.drFloor').value,
+      areaZone: row.querySelector('.drAreaZone').value,
+      targetDate: row.querySelector('.drTargetDate').value,
+      description: row.querySelector('.drDescription').value,
+      reasonOfDelay: row.querySelector('.drReason').value,
+      actionBy: row.querySelector('.drActionBy').value,
+      status: row.querySelector('.drStatus').value,
+      remarks: row.querySelector('.drRemarks').value,
+      // File inputs can't be serialized into plain payload state — read directly at submit time instead.
+    });
+  });
+}
+
+function attachDrFormHandlers() {
+  if (!state.modal || state.modal.type !== 'newDr') return;
+  const p = state.modal.payload;
+
+  const jobOrderPick = document.getElementById('drJobOrderPick');
+  if (jobOrderPick) jobOrderPick.addEventListener('change', () => {
+    syncDrFormIntoPayload();
+    render(); // discrete select action — safe to re-render, refreshes the auto-filled project/site-team preview
+  });
+
+  const addItemBtn = document.getElementById('addDrItemBtn');
+  if (addItemBtn) addItemBtn.addEventListener('click', () => {
+    syncDrFormIntoPayload();
+    p.delayItems = [...p.delayItems, { status: 'Open' }];
+    render();
+  });
+  document.querySelectorAll('.removeDrItemBtn').forEach(b => b.addEventListener('click', e => {
+    syncDrFormIntoPayload();
+    const idx = Number(e.currentTarget.getAttribute('data-idx'));
+    p.delayItems.splice(idx, 1);
+    render();
+  }));
+  // Text/select fields inside each row are read live via syncDrFormIntoPayload() at
+  // add/remove/submit time — no per-keystroke render(), matching the lesson learned
+  // from every other form in this app (mid-type re-renders drop focus and keystrokes).
+
+  const saveBtn = document.getElementById('saveDrBtn');
+  if (saveBtn) saveBtn.addEventListener('click', async () => {
+    const jobOrderId = val('drJobOrderPick') || p.jobOrderId;
+    if (!jobOrderId) { showToast('Please select a Job Order.', 'err'); return; }
+    const rows = document.querySelectorAll('[data-dr-item]');
+    if (rows.length === 0) { showToast('Add at least one delay item.', 'err'); return; }
+
+    const delayItems = [];
+    const fd = new FormData();
+    rows.forEach((row, idx) => {
+      delayItems.push({
+        floor: row.querySelector('.drFloor').value,
+        areaZone: row.querySelector('.drAreaZone').value,
+        targetDate: row.querySelector('.drTargetDate').value,
+        description: row.querySelector('.drDescription').value,
+        reasonOfDelay: row.querySelector('.drReason').value,
+        actionBy: row.querySelector('.drActionBy').value,
+        status: row.querySelector('.drStatus').value,
+        remarks: row.querySelector('.drRemarks').value,
+      });
+      const siteFile = row.querySelector('.drSitePhoto').files[0];
+      const drawingFile = row.querySelector('.drDrawingPhoto').files[0];
+      if (siteFile) fd.append(`sitePhoto_${idx}`, siteFile);
+      if (drawingFile) fd.append(`drawingPhoto_${idx}`, drawingFile);
+    });
+
+    fd.append('jobOrderId', jobOrderId);
+    fd.append('date', val('drDate'));
+    fd.append('reportedBy', val('drReportedBy'));
+    fd.append('delayItems', JSON.stringify(delayItems));
+    fd.append('includeReportedBySignature', document.getElementById('sig_reportedBy').checked);
+    fd.append('includeProjectsInchargeSignature', document.getElementById('sig_projectsIncharge').checked);
+    fd.append('includeSiteEngineerSignature', document.getElementById('sig_siteEngineer').checked);
+    fd.append('includeProjectManagerSignature', document.getElementById('sig_projectManager').checked);
+
+    try {
+      const res = await api('POST', '/api/delay-reports', fd, true);
+      await loadAll();
+      showToast('Delay report submitted.', 'ok');
+      closeModal();
+      openModal('viewDr', res.delayReport);
+    } catch (e) { showToast(e.message, 'err'); }
+  });
 }
 
 /* ---- Settings ---- */

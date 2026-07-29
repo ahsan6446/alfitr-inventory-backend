@@ -712,29 +712,70 @@ function renderQuotations() {
 }
 
 /* ---------------- Job Orders ---------------- */
+const JO_STATUS_BADGE = { Open: 'badge-in', 'In Progress': 'badge-low', Completed: 'badge-in', 'On Hold': 'badge-low', Cancelled: 'badge-out' };
+
 function renderJobOrders() {
   const list = [...state.jobOrders].sort((a, b) => b.createdAt - a.createdAt);
   return `
+  <div class="toolbar">
+    <div style="flex:1"></div>
+    ${can('manageReports') ? `<button class="btn btn-primary" id="newJoBtn">+ New Job Order</button>` : ''}
+  </div>
   <div class="card">
     <div class="tbl-wrap"><table>
       <thead><tr><th>Job Order #</th><th>From Quote</th><th>Type</th><th>Client</th><th>Subject / Site</th><th>Value</th><th>Status</th><th></th></tr></thead>
       <tbody>
-      ${list.length === 0 ? `<tr><td colspan="8"><div class="empty"><div class="big">🛠️</div>No job orders yet. These are created from accepted quotations.</div></td></tr>` :
+      ${list.length === 0 ? `<tr><td colspan="8"><div class="empty"><div class="big">🛠️</div>No job orders yet.</div></td></tr>` :
         list.map(jo => `
         <tr>
           <td style="font-family:var(--mono);font-weight:700;">${jo.jobOrderNumber}</td>
-          <td style="font-family:var(--mono);font-size:12px;">${jo.quotationNumber || '—'}</td>
-          <td><span class="tag">${QUOTE_TYPE_LABEL[jo.type]}</span></td>
+          <td style="font-family:var(--mono);font-size:12px;">${jo.quotationNumber || '<span class="muted" style="font-family:var(--sans);font-style:italic;">Manual</span>'}</td>
+          <td><span class="tag">${QUOTE_TYPE_LABEL[jo.type] || jo.type}</span></td>
           <td>${jo.clientCompany}</td>
           <td>${jo.subject || jo.siteDetail || '—'}</td>
           <td style="font-family:var(--mono);">${state.company.currency} ${fmtMoney(jo.value)}</td>
-          <td><span class="badge badge-in">${jo.status}</span></td>
+          <td><span class="badge ${JO_STATUS_BADGE[jo.status] || 'badge-draft'}">${jo.status}</span></td>
           <td><button class="btn btn-outline btn-sm" data-view-jo="${jo.id}">Open</button></td>
         </tr>`).join('')}
       </tbody>
     </table></div>
   </div>
-  <div class="shared-note">Job Orders are created automatically when you convert an accepted quotation. Open one to raise Material Requests against it.</div>
+  <div class="shared-note">Job Orders are usually created automatically when you convert an accepted quotation — but you can also create one manually, e.g. for past jobs you're adding into the system. Open one to raise Material Requests or Delay Reports against it.</div>
+  `;
+}
+
+function renderJoForm(payload) {
+  const isEdit = !!payload.id;
+  const clientOptions = [...state.clients].sort((a, b) => a.companyName.localeCompare(b.companyName))
+    .map(c => `<option value="${c.id}" ${payload.clientId === c.id ? 'selected' : ''}>${c.companyName}</option>`).join('');
+  return `
+  <div class="grid2">
+    <div class="field"><label>Client (optional — pick saved client)</label>
+      <select id="jo_clientPick">
+        <option value="">— None / type company name below —</option>
+        ${clientOptions}
+      </select>
+    </div>
+    <div class="field"><label>Client Company Name</label><input id="jo_clientCompany" value="${payload.clientCompany || ''}" placeholder="M/S. Client Name"></div>
+  </div>
+  <div class="grid2">
+    <div class="field"><label>Job Order Number <span class="muted" style="font-weight:500;text-transform:none;">(leave blank to auto-generate, or enter a real historical number)</span></label><input id="jo_number" value="${payload.jobOrderNumber || ''}" placeholder="e.g. JO-2024-0087" ${isEdit ? '' : ''}></div>
+    <div class="field"><label>Type</label>
+      <select id="jo_type">${Object.entries(QUOTE_TYPE_LABEL).map(([k, v]) => `<option value="${k}" ${payload.type === k ? 'selected' : ''}>${v}</option>`).join('')}</select>
+    </div>
+  </div>
+  <div class="field"><label>Subject / Project Name</label><input id="jo_subject" value="${payload.subject || ''}" placeholder="e.g. Fire Alarm Installation — Tower B"></div>
+  <div class="field"><label>Site Detail</label><input id="jo_siteDetail" value="${payload.siteDetail || ''}"></div>
+  <div class="grid2">
+    <div class="field"><label>Value</label><input id="jo_value" type="number" value="${payload.value ?? ''}" placeholder="0"></div>
+    <div class="field"><label>Status</label>
+      <select id="jo_status">${Object.keys(JO_STATUS_BADGE).map(s => `<option ${payload.status === s ? 'selected' : ''}>${s}</option>`).join('')}</select>
+    </div>
+  </div>
+  <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">
+    <button class="btn btn-ghost" id="modalCancel">Cancel</button>
+    <button class="btn btn-primary" id="saveJoBtn">${isEdit ? 'Save Changes' : 'Create Job Order'}</button>
+  </div>
   `;
 }
 
@@ -743,9 +784,12 @@ function renderJobOrderView(jo) {
   const drs = state.delayReports.filter(d => d.jobOrderId === jo.id).sort((a, b) => b.createdAt - a.createdAt);
   const hasSiteTeam = jo.siteEngineer || jo.projectManager || jo.siteSupervisor || jo.projectsIncharge;
   return `
+  <div style="display:flex;justify-content:flex-end;margin-bottom:6px;">
+    ${can('manageReports') ? `<button class="btn btn-outline btn-sm" id="editJoBtn">Edit Details</button>` : ''}
+  </div>
   <div class="grid3">
     <div><div class="k muted">Client</div><div style="font-weight:600;">${jo.clientCompany}</div></div>
-    <div><div class="k muted">From Quote</div><div style="font-weight:600;font-family:var(--mono);font-size:12px;">${jo.quotationNumber || '—'}</div></div>
+    <div><div class="k muted">From Quote</div><div style="font-weight:600;font-family:var(--mono);font-size:12px;">${jo.quotationNumber || 'Manual entry'}</div></div>
     <div><div class="k muted">Value</div><div style="font-weight:600;">${state.company.currency} ${fmtMoney(jo.value)}</div></div>
   </div>
   <div style="margin:10px 0 16px;">${jo.subject || jo.siteDetail || ''}</div>
@@ -1916,6 +1960,7 @@ function renderModal() {
   if (type === 'newPo') return modalWrap(renderPoForm(payload), 'Create Purchase Order');
   if (type === 'viewPo') return modalWrap(renderPoView(payload), `Purchase Order ${payload.poNumber}`, true);
   if (type === 'siteTeam') return modalWrap(renderSiteTeamForm(payload), 'Set Site Team');
+  if (type === 'newJo') return modalWrap(renderJoForm(payload), payload.id ? 'Edit Job Order' : 'New Job Order');
   if (type === 'newDr') return modalWrap(renderDelayReportForm(payload), 'New Delay Report', true);
   if (type === 'viewDr') return modalWrap(renderDelayReportView(payload), `Delay Report ${payload.refNumber}`, true);
   return '';
@@ -2405,6 +2450,11 @@ function attachHandlers() {
     openModal('viewDr', findDelayReport(e.currentTarget.getAttribute('data-view-dr')));
   }));
 
+  const newJoBtn = document.getElementById('newJoBtn');
+  if (newJoBtn) newJoBtn.addEventListener('click', () => openModal('newJo', { type: 'SUP', status: 'Open' }));
+  const editJoBtn = document.getElementById('editJoBtn');
+  if (editJoBtn) editJoBtn.addEventListener('click', () => openModal('newJo', { ...state.modal.payload }));
+
   const openChangePwdBtn = document.getElementById('openChangePwdBtn');
   if (openChangePwdBtn) openChangePwdBtn.addEventListener('click', () => openModal('changePwd', {}));
 
@@ -2435,6 +2485,7 @@ function attachHandlers() {
   attachPoFormHandlers();
   attachPoViewHandlers();
   attachSiteTeamFormHandlers();
+  attachJoFormHandlers();
   attachDrFormHandlers();
 }
 
@@ -3351,6 +3402,37 @@ function attachSiteTeamFormHandlers() {
       showToast('Site team saved.', 'ok');
       closeModal();
       openModal('viewJobOrder', findJobOrder(res.jobOrder.id));
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+}
+
+/* ---- Job Order create/edit form handler ---- */
+function attachJoFormHandlers() {
+  if (!state.modal || state.modal.type !== 'newJo') return;
+  const p = state.modal.payload;
+  const clientPick = document.getElementById('jo_clientPick');
+  if (clientPick) clientPick.addEventListener('change', e => {
+    const c = state.clients.find(cl => cl.id === e.target.value);
+    if (c) document.getElementById('jo_clientCompany').value = c.companyName;
+  });
+  const saveBtn = document.getElementById('saveJoBtn');
+  if (saveBtn) saveBtn.addEventListener('click', async () => {
+    const clientCompany = val('jo_clientCompany').trim();
+    if (!clientCompany) { showToast('Client company name is required.', 'err'); return; }
+    const body = {
+      clientId: val('jo_clientPick') || null, clientCompany,
+      jobOrderNumber: val('jo_number').trim(),
+      type: val('jo_type'), subject: val('jo_subject'), siteDetail: val('jo_siteDetail'),
+      value: Number(val('jo_value') || 0), status: val('jo_status'),
+    };
+    try {
+      let saved;
+      if (p.id) saved = (await api('PUT', '/api/job-orders/' + p.id, body)).jobOrder;
+      else saved = (await api('POST', '/api/job-orders', body)).jobOrder;
+      await loadAll();
+      showToast(p.id ? 'Job Order updated.' : 'Job Order created.', 'ok');
+      closeModal();
+      openModal('viewJobOrder', findJobOrder(saved.id));
     } catch (e) { showToast(e.message, 'err'); }
   });
 }

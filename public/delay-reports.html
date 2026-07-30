@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Site Delay Analysis Report — Al Fitr</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:Arial,sans-serif;background:#f0f2f5;color:#1a1a1a;font-size:13px;}
+
+/* ── Navbar ── */
+.navbar{background:#1a1a1a;padding:0 20px;display:flex;align-items:center;justify-content:space-between;height:48px;position:sticky;top:0;z-index:100;}
+.nav-brand{display:flex;align-items:center;gap:10px;}
+.nav-logo{width:28px;height:28px;border-radius:50%;border:2px solid #1D9E75;display:flex;align-items:center;justify-content:center;}
+.nav-logo-inner{width:18px;height:18px;border-radius:50%;background:#1D9E75;color:#fff;font-size:7px;font-weight:700;display:flex;align-items:center;justify-content:center;}
+.nav-title{color:#fff;font-size:14px;font-weight:700;}
+.nav-title span{color:#E8520A;}
+.nav-right{display:flex;align-items:center;gap:10px;}
+.nav-user{color:#aaa;font-size:12px;}
+.btn-logout{background:transparent;border:1px solid #444;color:#aaa;padding:4px 12px;border-radius:4px;cursor:pointer;font-size:12px;}
+
+/* ── Layout ── */
+.page{max-width:1200px;margin:0 auto;padding:20px;}
+.page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;}
+.page-title{font-size:18px;font-weight:700;}
+.page-title span{color:#E8520A;}
+.page-subtitle{font-size:11px;color:#aaa;margin-top:2px;}
+
+/* ── Tabs ── */
+.tabs{display:flex;border-bottom:2px solid #e5e7eb;margin-bottom:20px;}
+.tab{padding:8px 20px;cursor:pointer;font-size:13px;color:#888;border-bottom:2px solid transparent;margin-bottom:-2px;font-weight:500;}
+.tab.active{color:#E8520A;border-bottom-color:#E8520A;}
+
+/* ── Buttons ── */
+.btn{padding:7px 16px;border-radius:5px;border:1px solid #ddd;background:#fff;color:#333;cursor:pointer;font-size:12px;font-weight:500;display:inline-flex;align-items:center;gap:5px;}
+.btn:hover{background:#f5f5f5;}
+.btn-primary{background:#E8520A;color:#fff;border-color:#E8520A;}
+.btn-primary:hover{background:#c94208;}
+.btn-teal{background:#1D9E75;color:#fff;border-color:#1D9E75;}
+.btn-teal:hover{background:#157a5b;}
+.btn-dark{background:#2c2c2c;color:#fff;border-color:#2c2c2c;}
+
+/* ── Cards ── */
+.card{background:#fff;border:1px solid #e5e7eb;border-radius:8px;margin-bottom:16px;}
+.card-header{padding:12px 16px;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;justify-content:space-between;}
+.card-title{font-size:11px;font-weight:700;color:#555;letter-spacing:0.06em;text-transform:uppercase;}
+.card-body{padding:16px;}
+
+/* ── Form ── */
+.form-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;}
+.form-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.field{display:flex;flex-direction:column;gap:4px;}
+.field label{font-size:11px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.05em;}
+.field input,.field select,.field textarea{padding:7px 10px;border:1px solid #ddd;border-radius:5px;font-size:13px;color:#1a1a1a;background:#fff;outline:none;width:100%;}
+.field input:focus,.field select:focus,.field textarea:focus{border-color:#E8520A;box-shadow:0 0 0 2px rgba(232,82,10,0.1);}
+.field input[readonly]{background:#f9f9f9;color:#888;}
+.field textarea{resize:vertical;min-height:56px;}
+
+/* ── JO locked info ── */
+.locked-group{background:#f0faf5;border:1px solid #d1fae5;border-radius:6px;padding:12px;margin-top:12px;}
+.locked-label{font-size:10px;font-weight:700;color:#1D9E75;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;}
+.locked-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;}
+.locked-item-label{font-size:10px;color:#888;font-weight:600;margin-bottom:2px;}
+.locked-item-val{font-size:12px;color:#1a1a1a;font-weight:500;}
+
+/* ── Delay rows table ── */
+.delay-table-wrap{overflow-x:auto;}
+.delay-table{width:100%;border-collapse:collapse;min-width:960px;}
+.delay-table th{background:#2c2c2c;color:#fff;font-size:11px;padding:8px 6px;text-align:left;white-space:nowrap;border:1px solid #444;}
+.delay-table td{border:1px solid #e5e7eb;padding:6px;vertical-align:top;}
+.delay-table tr:nth-child(even) td{background:#fafafa;}
+.row-num{text-align:center;font-weight:700;color:#888;font-size:12px;padding-top:10px;}
+.cell-input{width:100%;padding:5px 7px;border:1px solid #ddd;border-radius:4px;font-size:12px;color:#1a1a1a;background:#fff;}
+.cell-input:focus{border-color:#E8520A;outline:none;}
+.cell-select{width:100%;padding:5px;border:1px solid #ddd;border-radius:4px;font-size:11px;background:#fff;}
+.photo-slot{border:1px dashed #ccc;border-radius:4px;padding:6px 4px;text-align:center;cursor:pointer;font-size:10px;color:#aaa;background:#fafafa;position:relative;min-height:36px;display:flex;align-items:center;justify-content:center;}
+.photo-slot:hover{border-color:#E8520A;color:#E8520A;}
+.photo-slot input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;}
+.photo-preview{width:100%;height:52px;object-fit:cover;border-radius:3px;border:1px solid #e5e7eb;display:block;}
+.photo-name{font-size:9px;color:#1D9E75;font-weight:600;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px;}
+.del-row-btn{color:#dc2626;background:none;border:none;cursor:pointer;font-size:18px;line-height:1;padding:2px 6px;border-radius:3px;}
+.del-row-btn:hover{background:#fef2f2;}
+.add-row-btn{display:flex;align-items:center;gap:6px;color:#E8520A;cursor:pointer;font-size:12px;font-weight:500;padding:10px 14px;border-top:1px solid #f0f0f0;width:100%;background:none;border-left:none;border-right:none;border-bottom:none;text-align:left;}
+.add-row-btn:hover{background:#fff5f2;}
+
+/* ── Signature checkboxes ── */
+.sig-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+.sig-group-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;padding:3px 8px;border-radius:3px;display:inline-block;}
+.sig-af{background:#e1f5ee;color:#085041;}
+.sig-cl{background:#e6f1fb;color:#185FA5;}
+.sig-check-row{display:flex;align-items:center;gap:8px;margin-bottom:6px;cursor:pointer;font-size:12px;}
+.sig-check-row input{width:13px;height:13px;accent-color:#E8520A;cursor:pointer;}
+.sig-role-tag{color:#aaa;font-size:10px;}
+
+/* ── Report list ── */
+.report-item{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:14px 16px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;margin-bottom:10px;}
+.report-item:hover{border-color:#E8520A;box-shadow:0 2px 8px rgba(232,82,10,0.08);}
+.report-ref{font-size:13px;font-weight:700;color:#E8520A;}
+.report-meta{font-size:12px;color:#555;margin-top:3px;}
+.report-date-info{font-size:11px;color:#aaa;margin-top:2px;}
+.badge{padding:3px 8px;border-radius:3px;font-size:10px;font-weight:700;display:inline-block;margin-right:4px;}
+.b-open{background:#FEE2E2;color:#991B1B;}
+.b-prog{background:#FEF3C7;color:#92400E;}
+.b-done{background:#D1FAE5;color:#065F46;}
+.empty-state{text-align:center;padding:40px;color:#aaa;font-size:13px;}
+
+/* ── Toast ── */
+.toast{position:fixed;bottom:24px;right:24px;padding:10px 18px;border-radius:6px;font-size:12px;z-index:9999;display:none;align-items:center;gap:8px;color:#fff;}
+.toast.show{display:flex;}
+.toast.success{background:#065F46;}
+.toast.error{background:#991B1B;}
+
+/* ── Spinner ── */
+.spinner{width:14px;height:14px;border:2px solid rgba(255,255,255,0.3);border-top-color:#fff;border-radius:50%;animation:spin 0.7s linear infinite;display:inline-block;}
+@keyframes spin{to{transform:rotate(360deg);}}
+
+/* ── PDF Preview ── */
+.pdf-wrap{background:#e0e0e0;padding:16px;border-radius:8px;}
+.pdf-page{background:#fff;width:100%;border:1px solid #ccc;font-family:Arial,sans-serif;color:#1a1a1a;font-size:9px;}
+.pdf-hdr{border-bottom:3px solid #E8520A;display:grid;grid-template-columns:72px 1fr auto;align-items:center;padding:8px 14px;gap:10px;}
+.pdf-logo-c{width:42px;height:42px;border-radius:50%;border:2px solid #1D9E75;display:flex;align-items:center;justify-content:center;}
+.pdf-logo-i{width:26px;height:26px;border-radius:50%;background:#1D9E75;color:#fff;font-weight:700;font-size:8px;display:flex;align-items:center;justify-content:center;}
+.pdf-logo-n{font-size:7px;font-weight:700;color:#1D9E75;text-align:center;margin-top:2px;}
+.pdf-co{text-align:center;font-size:13px;font-weight:700;color:#E8520A;letter-spacing:0.4px;}
+.pdf-ref{text-align:right;font-size:7.5px;color:#555;line-height:1.7;}
+.pdf-ref strong{color:#1a1a1a;}
+.pdf-rpt-title{background:#f5f5f5;border-bottom:1px solid #ddd;text-align:center;padding:5px;font-size:10px;font-weight:700;letter-spacing:0.5px;}
+.pdf-info-grid{display:grid;grid-template-columns:1fr 1fr 1fr;border-bottom:1px solid #ddd;}
+.pdf-info-col{padding:5px 10px;border-right:1px solid #ddd;}
+.pdf-info-col:last-child{border-right:none;}
+.pdf-info-row{display:flex;gap:4px;margin-bottom:2px;align-items:baseline;}
+.pdf-lbl{font-weight:700;color:#333;min-width:88px;font-size:7.5px;white-space:nowrap;}
+.pdf-val{color:#1a1a1a;font-size:8px;}
+.pdf-val-hi{color:#E8520A;font-weight:700;font-size:8px;}
+.pdf-tbl{width:100%;border-collapse:collapse;table-layout:fixed;}
+.pdf-tbl th{background:#2c2c2c;color:#fff;font-size:7px;font-weight:700;padding:5px 3px;text-align:center;border:1px solid #444;line-height:1.3;}
+.pdf-tbl td{border:1px solid #ddd;vertical-align:top;padding:4px 3px;font-size:7.5px;line-height:1.4;}
+.pdf-tbl tr:nth-child(even) td{background:#fafafa;}
+.pdf-img{width:100%;height:50px;object-fit:cover;border-radius:2px;border:1px solid #ddd;display:block;}
+.pdf-no-img{width:100%;height:50px;background:#f5f5f5;border:1px dashed #ddd;border-radius:2px;display:flex;align-items:center;justify-content:center;font-size:7px;color:#ccc;}
+.pdf-s-open{background:#FEE2E2;color:#991B1B;border-radius:2px;padding:2px 4px;font-size:6.5px;font-weight:700;}
+.pdf-s-prog{background:#FEF3C7;color:#92400E;border-radius:2px;padding:2px 4px;font-size:6.5px;font-weight:700;}
+.pdf-s-done{background:#D1FAE5;color:#065F46;border-radius:2px;padding:2px 4px;font-size:6.5px;font-weight:700;}
+.pdf-sig-outer{border-top:2px solid #E8520A;}
+.pdf-sig-row{display:flex;}
+.pdf-sig-af{background:#f0faf5;flex:1;padding:8px 14px;border-right:1px solid #ddd;}
+.pdf-sig-cl{background:#f0f5fb;flex:1;padding:8px 14px;}
+.pdf-sig-lbl{font-size:7px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;padding:2px 7px;border-radius:3px;display:inline-block;margin-bottom:6px;}
+.pdf-lbl-af{background:#e1f5ee;color:#085041;}
+.pdf-lbl-cl{background:#e6f1fb;color:#185FA5;}
+.pdf-sig-persons{display:flex;}
+.pdf-sig-block{flex:1;text-align:center;padding:0 8px;}
+.pdf-sig-line{border-bottom:1px solid #555;height:20px;margin-bottom:3px;}
+.pdf-sig-name{font-size:7.5px;font-weight:700;}
+.pdf-sig-role-af{font-size:7px;color:#1D9E75;}
+.pdf-sig-role-cl{font-size:7px;color:#185FA5;}
+.pdf-footer{background:#2c2c2c;color:#aaa;display:flex;justify-content:space-between;padding:4px 14px;font-size:6.5px;}
+.pdf-footer strong{color:#E8520A;}
+
+@media print{
+  .navbar,.page-header,.tabs,.tab-content,.pdf-wrap>div:first-child,button,
+  #tab-list,#tab-new,.page-actions{display:none!important;}
+  body{background:#fff;}
+  .pdf-page{border:none;}
+  @page{size:A4 landscape;margin:8mm;}
+}
+</style>
+</head>
+<body>
+
+<div class="navbar">
+  <div class="nav-brand">
+    <div class="nav-logo"><div class="nav-logo-inner">AF</div></div>
+    <div class="nav-title">Al Fitr &nbsp;<span>Reports</span></div>
+  </div>
+  <div class="nav-right">
+    <span class="nav-user" id="nav-user"></span>
+    <button class="btn-logout" onclick="logout()">Logout</button>
+  </div>
+</div>
+
+<div class="page">
+  <div class="page-header">
+    <div>
+      <div class="page-title"><span>Site Delay</span> Analysis Reports</div>
+      <div class="page-subtitle">Linked to Job Orders — project info auto-fills</div>
+    </div>
+    <div><button class="btn btn-primary" onclick="showTab('new')">+ New Report</button></div>
+  </div>
+
+  <div class="tabs">
+    <div class="tab active" id="tab-btn-list"    onclick="showTab('list')">All Reports</div>
+    <div class="tab"        id="tab-btn-new"     onclick="showTab('new')">New Report</div>
+    <div class="tab"        id="tab-btn-preview" onclick="showTab('preview')" style="display:none">Preview / Export</div>
+  </div>
+
+  <!-- ═══ LIST ═══════════════════════════════════════════════════════ -->
+  <div id="tab-list">
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Submitted Reports</span>
+        <input type="text" placeholder="Search project or ref..." style="padding:5px 10px;border:1px solid #ddd;border-radius:4px;font-size:12px;width:220px;" oninput="filterReports(this.value)">
+      </div>
+      <div class="card-body">
+        <div id="report-list"><div class="empty-state">Loading...</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ NEW REPORT ══════════════════════════════════════════════════ -->
+  <div id="tab-new" style="display:none">
+
+    <!-- Job Order -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Job Order Link</span>
+        <span style="font-size:11px;color:#aaa">Project info auto-fills from selected Job Order</span>
+      </div>
+      <div class="card-body">
+        <div class="form-grid-2" style="align-items:end;">
+          <div class="field">
+            <label>Select Job Order *</label>
+            <select id="jo-select" onchange="onJoSelect()">
+              <option value="">— Select Job Order —</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Date *</label>
+            <input type="date" id="report-date">
+          </div>
+        </div>
+        <div class="locked-group" id="jo-info" style="display:none">
+          <div class="locked-label">🔒 Auto-filled from Job Order</div>
+          <div class="locked-grid">
+            <div><div class="locked-item-label">Project Name</div><div class="locked-item-val" id="jo-pname">—</div></div>
+            <div><div class="locked-item-label">Fire Contractor</div><div class="locked-item-val" id="jo-client">—</div></div>
+            <div><div class="locked-item-label">Location</div><div class="locked-item-val" id="jo-loc">—</div></div>
+            <div><div class="locked-item-label">Project Manager (Client)</div><div class="locked-item-val" id="jo-pm">—</div></div>
+            <div><div class="locked-item-label">Site Engineer (Client)</div><div class="locked-item-val" id="jo-se">—</div></div>
+            <div><div class="locked-item-label">Projects Incharge (Al Fitr)</div><div class="locked-item-val">Engr. Nazir Hussain</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Report details -->
+    <div class="card">
+      <div class="card-header"><span class="card-title">Report Details</span></div>
+      <div class="card-body">
+        <div class="form-grid-2">
+          <div class="field">
+            <label>Reported By *</label>
+            <input type="text" id="reported-by" placeholder="e.g. Ramadasu">
+          </div>
+          <div class="field">
+            <label>Ref No</label>
+            <input type="text" id="ref-preview" readonly placeholder="Auto-generated on submit" style="color:#E8520A;font-weight:600;">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Delay items -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Delay Items</span>
+        <span style="font-size:11px;color:#aaa" id="row-count-label">0 items</span>
+      </div>
+      <div class="card-body" style="padding:0;">
+        <div class="delay-table-wrap">
+          <table class="delay-table">
+            <thead>
+              <tr>
+                <th style="width:36px">#</th>
+                <th style="width:65px">Floor</th>
+                <th style="width:100px">Area / Zone</th>
+                <th style="min-width:150px">Description</th>
+                <th style="width:90px">Site Photo</th>
+                <th style="width:90px">Drawing Photo</th>
+                <th style="width:120px">Reason of Delay</th>
+                <th style="width:130px">Action By</th>
+                <th style="width:90px">Status</th>
+                <th style="min-width:110px">Remarks</th>
+                <th style="width:105px">Target Date</th>
+                <th style="width:36px"></th>
+              </tr>
+            </thead>
+            <tbody id="delay-rows"></tbody>
+          </table>
+        </div>
+        <button class="add-row-btn" onclick="addRow()">+ Add Delay Item</button>
+      </div>
+    </div>
+
+    <!-- Signatures -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Signature Block</span>
+        <span style="font-size:11px;color:#aaa">Unchecked names will not appear on the PDF</span>
+      </div>
+      <div class="card-body">
+        <div class="sig-grid">
+          <div>
+            <div class="sig-group-title sig-af">Al Fitr Electromechanical Works LLC</div><br>
+            <label class="sig-check-row"><input type="checkbox" id="sig-ramadasu" checked> Ramadasu <span class="sig-role-tag">— Reported By</span></label>
+            <label class="sig-check-row"><input type="checkbox" id="sig-nazir" checked> Engr. Nazir Hussain <span class="sig-role-tag">— Projects Incharge</span></label>
+          </div>
+          <div>
+            <div class="sig-group-title sig-cl" id="client-sig-title">Client</div><br>
+            <label class="sig-check-row"><input type="checkbox" id="sig-ibrahim" checked> <span id="lbl-ibrahim">Site Engineer</span> <span class="sig-role-tag">— Site Engineer</span></label>
+            <label class="sig-check-row"><input type="checkbox" id="sig-hussein" checked> <span id="lbl-hussein">Project Manager</span> <span class="sig-role-tag">— Project Manager</span></label>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Form actions -->
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-bottom:24px;">
+      <button class="btn" onclick="showTab('list')">Cancel</button>
+      <button class="btn btn-teal" onclick="previewReport()">👁 Preview PDF</button>
+      <button class="btn btn-primary" id="submit-btn" onclick="submitReport()">Submit Report</button>
+    </div>
+  </div>
+
+  <!-- ═══ PREVIEW ═════════════════════════════════════════════════════ -->
+  <div id="tab-preview" style="display:none">
+    <div style="display:flex;gap:10px;margin-bottom:14px;">
+      <button class="btn" onclick="showTab('new')">← Back to Form</button>
+      <button class="btn btn-dark" onclick="window.print()">🖨 Print / Save as PDF</button>
+    </div>
+    <div class="pdf-wrap">
+      <div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;">PDF Preview — Landscape A4</div>
+      <div class="pdf-page" id="pdf-output"></div>
+    </div>
+  </div>
+
+</div><!-- /page -->
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── Config ─────────────────────────────────────────────────────────
+const API = '';  // same origin
+
+// ── State ──────────────────────────────────────────────────────────
+let jobOrders  = [];
+let allReports = [];
+let selectedJo = null;
+let rowPhotos  = {};   // { rowId: { site: File, drawing: File } }
+let rowCounter = 0;
+
+// ── Boot ───────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('report-date').value = new Date().toISOString().slice(0,10);
+  loadUser();
+  loadJobOrders();
+  loadReports();
+  addRow(); // start with one empty row
+});
+
+// ── Auth ───────────────────────────────────────────────────────────
+function tok() { return localStorage.getItem('token') || sessionStorage.getItem('token'); }
+function authH(json) {
+  const h = { 'Authorization': `Bearer ${tok()}` };
+  if (json) h['Content-Type'] = 'application/json';
+  return h;
+}
+function logout() {
+  localStorage.removeItem('token');
+  sessionStorage.removeItem('token');
+  window.location.href = '/';
+}
+
+async function loadUser() {
+  try {
+    const r = await fetch(`${API}/api/users/me`, { headers: authH() });
+    if (!r.ok) { window.location.href = '/'; return; }
+    const d = await r.json();
+    document.getElementById('nav-user').textContent = d.user?.name || '';
+    document.getElementById('reported-by').value    = d.user?.name || '';
+  } catch { window.location.href = '/'; }
+}
+
+// ── Job Orders ─────────────────────────────────────────────────────
+async function loadJobOrders() {
+  try {
+    const r = await fetch(`${API}/api/job-orders`, { headers: authH() });
+    const d = await r.json();
+    jobOrders = d.jobOrders || [];
+    const sel = document.getElementById('jo-select');
+    jobOrders.forEach(jo => {
+      const o = document.createElement('option');
+      o.value = jo.id;
+      o.textContent = `${jo.jobOrderNumber || jo.id} — ${jo.projectName || jo.name || ''}`;
+      sel.appendChild(o);
+    });
+  } catch(e) { console.error(e); }
+}
+
+function onJoSelect() {
+  const id = document.getElementById('jo-select').value;
+  selectedJo = jobOrders.find(j => j.id === id) || null;
+  const info = document.getElementById('jo-info');
+  if (!selectedJo) { info.style.display = 'none'; return; }
+  info.style.display = 'block';
+  document.getElementById('jo-pname').textContent  = selectedJo.projectName    || selectedJo.name || '—';
+  document.getElementById('jo-client').textContent = selectedJo.clientCompany  || '—';
+  document.getElementById('jo-loc').textContent    = selectedJo.location       || '—';
+  document.getElementById('jo-pm').textContent     = selectedJo.projectManager || '—';
+  document.getElementById('jo-se').textContent     = selectedJo.siteEngineer   || '—';
+  document.getElementById('client-sig-title').textContent = `Client — ${selectedJo.clientCompany || ''}`;
+  document.getElementById('lbl-ibrahim').textContent = selectedJo.siteEngineer   || 'Site Engineer';
+  document.getElementById('lbl-hussein').textContent = selectedJo.projectManager || 'Project Manager';
+}
+
+// ── Reports List ───────────────────────────────────────────────────
+async function loadReports() {
+  try {
+    const r = await fetch(`${API}/api/delay-reports`, { headers: authH() });
+    const d = await r.json();
+    allReports = d.delayReports || [];
+    renderList(allReports);
+  } catch { renderList([]); }
+}
+
+function renderList(reports) {
+  const el = document.getElementById('report-list');
+  if (!reports.length) {
+    el.innerHTML = '<div class="empty-state">No reports yet. Click "New Report" to create one.</div>';
+    return;
+  }
+  el.innerHTML = reports.map(r => `
+    <div class="report-item" onclick="openReport('${r.id}')">
+      <div>
+        <div class="report-ref">${r.refNumber || '—'}</div>
+        <div class="report-meta">${r.projectName||'—'} &nbsp;·&nbsp; ${r.clientCompany||'—'} &nbsp;·&nbsp; JO: ${r.jobOrderNumber||'—'}</div>
+        <div class="report-date-info">Reported by ${r.reportedBy||'—'} &nbsp;·&nbsp; ${r.date||''}</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <span class="badge b-open">${(r.delayItems||[]).filter(i=>i.status==='Open').length} Open</span>
+        <span class="badge b-prog">${(r.delayItems||[]).filter(i=>i.status==='In Progress').length} In Progress</span>
+        <span class="badge b-done">${(r.delayItems||[]).filter(i=>i.status==='Resolved').length} Resolved</span>
+        <span style="color:#ccc;font-size:20px">›</span>
+      </div>
+    </div>`).join('');
+}
+
+function filterReports(q) {
+  const lq = q.toLowerCase();
+  renderList(allReports.filter(r =>
+    (r.refNumber||'').toLowerCase().includes(lq) ||
+    (r.projectName||'').toLowerCase().includes(lq) ||
+    (r.jobOrderNumber||'').toLowerCase().includes(lq)
+  ));
+}
+
+function openReport(id) {
+  const r = allReports.find(x => x.id === id);
+  if (!r) return;
+  renderPdf(r);
+  document.getElementById('tab-btn-preview').style.display = '';
+  showTab('preview');
+}
+
+// ── Delay Rows ─────────────────────────────────────────────────────
+function addRow() {
+  const tbody = document.getElementById('delay-rows');
+  const rid   = rowCounter++;
+  const tr    = document.createElement('tr');
+  tr.id       = `row-${rid}`;
+  tr.innerHTML = `
+    <td class="row-num">${tbody.rows.length + 1}</td>
+    <td><input class="cell-input" id="floor-${rid}" placeholder="GF / 1F"></td>
+    <td><input class="cell-input" id="zone-${rid}"  placeholder="Area or zone"></td>
+    <td><textarea class="cell-input" id="desc-${rid}" style="min-height:54px" placeholder="Describe the delay..."></textarea></td>
+    <td>
+      <div class="photo-slot" id="site-slot-${rid}">
+        📷 Upload<input type="file" accept="image/*" onchange="handlePhoto(event,${rid},'site')">
+      </div>
+    </td>
+    <td>
+      <div class="photo-slot" id="dwg-slot-${rid}">
+        📐 Upload<input type="file" accept="image/*" onchange="handlePhoto(event,${rid},'drawing')">
+      </div>
+    </td>
+    <td>
+      <select class="cell-select" id="reason-${rid}">
+        <option value="">Select reason</option>
+        <option>Civil delay</option>
+        <option>Interior fit-out delay</option>
+        <option>Material not available</option>
+        <option>Access restricted</option>
+        <option>Design change</option>
+        <option>Client hold</option>
+        <option>Drawing not issued</option>
+        <option>Other</option>
+      </select>
+    </td>
+    <td>
+      <input class="cell-input" id="action-by-${rid}"   placeholder="Name" style="margin-bottom:4px">
+      <input class="cell-input" id="action-note-${rid}" placeholder="Action note" style="font-size:11px">
+    </td>
+    <td>
+      <select class="cell-select" id="status-${rid}">
+        <option>Open</option>
+        <option>In Progress</option>
+        <option>Resolved</option>
+      </select>
+    </td>
+    <td><textarea class="cell-input" id="remarks-${rid}" style="min-height:54px" placeholder="Remarks..."></textarea></td>
+    <td><input class="cell-input" type="date" id="target-${rid}"></td>
+    <td><button class="del-row-btn" onclick="removeRow(${rid})">×</button></td>
+  `;
+  tbody.appendChild(tr);
+  updateRowCount();
+}
+
+function removeRow(rid) {
+  const tr = document.getElementById(`row-${rid}`);
+  if (tr) tr.remove();
+  delete rowPhotos[rid];
+  updateRowCount();
+  renumber();
+}
+
+function renumber() {
+  document.querySelectorAll('#delay-rows tr .row-num').forEach((el,i) => el.textContent = i+1);
+}
+
+function updateRowCount() {
+  const n = document.getElementById('delay-rows').rows.length;
+  document.getElementById('row-count-label').textContent = `${n} item${n!==1?'s':''}`;
+}
+
+function handlePhoto(e, rid, type) {
+  const file = e.target.files[0];
+  if (!file) return;
+  if (!rowPhotos[rid]) rowPhotos[rid] = {};
+  rowPhotos[rid][type] = file;
+  const slotId = type === 'site' ? `site-slot-${rid}` : `dwg-slot-${rid}`;
+  const url    = URL.createObjectURL(file);
+  document.getElementById(slotId).innerHTML = `
+    <img src="${url}" class="photo-preview" alt="">
+    <div class="photo-name">${file.name}</div>
+    <input type="file" accept="image/*" onchange="handlePhoto(event,${rid},'${type}')" style="position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;">
+  `;
+}
+
+function collectRows() {
+  return Array.from(document.querySelectorAll('#delay-rows tr')).map(tr => {
+    const rid = tr.id.replace('row-','');
+    return {
+      floor:         document.getElementById(`floor-${rid}`)?.value       || '',
+      areaZone:      document.getElementById(`zone-${rid}`)?.value        || '',
+      description:   document.getElementById(`desc-${rid}`)?.value        || '',
+      reasonOfDelay: document.getElementById(`reason-${rid}`)?.value      || '',
+      actionBy:      document.getElementById(`action-by-${rid}`)?.value   || '',
+      actionNote:    document.getElementById(`action-note-${rid}`)?.value  || '',
+      status:        document.getElementById(`status-${rid}`)?.value      || 'Open',
+      remarks:       document.getElementById(`remarks-${rid}`)?.value     || '',
+      targetDate:    document.getElementById(`target-${rid}`)?.value      || '',
+      _rid: rid,
+    };
+  });
+}
+
+// ── Submit ─────────────────────────────────────────────────────────
+async function submitReport() {
+  if (!selectedJo) { toast('Select a Job Order first.','error'); return; }
+  const rows = collectRows();
+  if (!rows.length) { toast('Add at least one delay item.','error'); return; }
+
+  const btn = document.getElementById('submit-btn');
+  btn.innerHTML = '<span class="spinner"></span> Saving...';
+  btn.disabled  = true;
+
+  try {
+    const fd = new FormData();
+    fd.append('jobOrderId',  selectedJo.id);
+    fd.append('date',        document.getElementById('report-date').value);
+    fd.append('reportedBy',  document.getElementById('reported-by').value);
+    fd.append('sigRamadasu', document.getElementById('sig-ramadasu').checked);
+    fd.append('sigNazir',    document.getElementById('sig-nazir').checked);
+    fd.append('sigIbrahim',  document.getElementById('sig-ibrahim').checked);
+    fd.append('sigHussein',  document.getElementById('sig-hussein').checked);
+    fd.append('delayItems',  JSON.stringify(rows));
+
+    rows.forEach(row => {
+      const p = rowPhotos[row._rid];
+      if (p?.site)    fd.append('sitePhotos',    p.site);
+      if (p?.drawing) fd.append('drawingPhotos', p.drawing);
+    });
+
+    const r = await fetch(`${API}/api/delay-reports`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${tok()}` },
+      body: fd,
+    });
+    const d = await r.json();
+    if (!r.ok) { toast(d.error || 'Error saving.','error'); return; }
+
+    toast('Report submitted successfully!','success');
+    await loadReports();
+    renderPdf(d.delayReport);
+    document.getElementById('tab-btn-preview').style.display = '';
+    showTab('preview');
+  } catch(e) {
+    console.error(e);
+    toast('Network error. Please try again.','error');
+  } finally {
+    btn.innerHTML = 'Submit Report';
+    btn.disabled  = false;
+  }
+}
+
+// ── Preview (before submit) ────────────────────────────────────────
+function previewReport() {
+  if (!selectedJo) { toast('Select a Job Order first.','error'); return; }
+  const rows = collectRows();
+  if (!rows.length) { toast('Add at least one delay item.','error'); return; }
+
+  const fake = {
+    refNumber:        'Preview — ref generated on submit',
+    jobOrderNumber:   selectedJo.jobOrderNumber || selectedJo.id,
+    projectName:      selectedJo.projectName    || selectedJo.name || '',
+    clientCompany:    selectedJo.clientCompany  || '',
+    location:         selectedJo.location       || '',
+    projectManager:   selectedJo.projectManager || '',
+    siteEngineer:     selectedJo.siteEngineer   || '',
+    siteSupervisor:   selectedJo.siteSupervisor || '',
+    projectsIncharge: 'Engr. Nazir Hussain',
+    date:             document.getElementById('report-date').value,
+    reportedBy:       document.getElementById('reported-by').value,
+    delayItems: rows.map((r,i) => ({
+      ...r, srNo: i+1,
+      sitePhotoUrl:    rowPhotos[r._rid]?.site    ? URL.createObjectURL(rowPhotos[r._rid].site)    : null,
+      drawingPhotoUrl: rowPhotos[r._rid]?.drawing ? URL.createObjectURL(rowPhotos[r._rid].drawing) : null,
+    })),
+    signatures: {
+      afSide: [
+        ...(document.getElementById('sig-ramadasu').checked ? [{ name: document.getElementById('reported-by').value||'Ramadasu', role:'Reported By' }] : []),
+        ...(document.getElementById('sig-nazir').checked    ? [{ name:'Engr. Nazir Hussain', role:'Projects Incharge' }] : []),
+      ],
+      clientSide: [
+        ...(document.getElementById('sig-ibrahim').checked ? [{ name: selectedJo.siteEngineer||'Site Engineer',   role:'Site Engineer'   }] : []),
+        ...(document.getElementById('sig-hussein').checked ? [{ name: selectedJo.projectManager||'Project Manager', role:'Project Manager' }] : []),
+      ],
+    },
+  };
+  renderPdf(fake);
+  document.getElementById('tab-btn-preview').style.display = '';
+  showTab('preview');
+}
+
+// ── Render PDF ─────────────────────────────────────────────────────
+function renderPdf(report) {
+  const dateFmt = (report.date||'').split('-').reverse().join('-') || '—';
+
+  const rowsHtml = (report.delayItems||[]).map((item,i) => {
+    const sc = item.status==='Open' ? 'pdf-s-open' : item.status==='In Progress' ? 'pdf-s-prog' : 'pdf-s-done';
+    const si = item.sitePhotoUrl    ? `<img src="${item.sitePhotoUrl}"    class="pdf-img" alt="">` : `<div class="pdf-no-img">No photo</div>`;
+    const di = item.drawingPhotoUrl ? `<img src="${item.drawingPhotoUrl}" class="pdf-img" alt="">` : `<div class="pdf-no-img">Not uploaded</div>`;
+    return `<tr>
+      <td style="text-align:center;font-weight:700;color:#555;font-size:8px">${String(i+1).padStart(2,'0')}</td>
+      <td style="text-align:center">${item.floor||'—'}</td>
+      <td>${item.areaZone||'—'}</td>
+      <td style="font-size:7.5px">${item.description||'—'}</td>
+      <td>${si}</td>
+      <td>${di}</td>
+      <td style="font-size:7.5px">${item.reasonOfDelay||'—'}</td>
+      <td style="font-size:7.5px"><strong>${item.actionBy||'—'}</strong><br><span style="color:#888;font-size:6.5px">${item.actionNote||''}</span></td>
+      <td><span class="${sc}">${item.status||'Open'}</span></td>
+      <td style="font-size:7px;color:#555;font-style:italic">${item.remarks||'—'}</td>
+      <td style="text-align:center;font-size:8px;color:#E8520A;font-weight:700">${item.targetDate||'—'}</td>
+    </tr>`;
+  }).join('');
+
+  // Sig block
+  const afSigs = report.signatures?.afSide    || [];
+  const clSigs = report.signatures?.clientSide || [];
+  let sigHtml  = '';
+  if (afSigs.length || clSigs.length) {
+    sigHtml = `<div class="pdf-sig-outer"><div class="pdf-sig-row">`;
+    if (afSigs.length) sigHtml += `
+      <div class="pdf-sig-af" style="${!clSigs.length?'border-right:none':''}">
+        <span class="pdf-sig-lbl pdf-lbl-af">Al Fitr Electromechanical Works LLC</span>
+        <div class="pdf-sig-persons">${afSigs.map(s=>`<div class="pdf-sig-block"><div class="pdf-sig-line"></div><div class="pdf-sig-name">${s.name}</div><div class="pdf-sig-role-af">${s.role}</div></div>`).join('')}</div>
+      </div>`;
+    if (clSigs.length) sigHtml += `
+      <div class="pdf-sig-cl">
+        <span class="pdf-sig-lbl pdf-lbl-cl">Client — ${report.clientCompany||''}</span>
+        <div class="pdf-sig-persons">${clSigs.map(s=>`<div class="pdf-sig-block"><div class="pdf-sig-line"></div><div class="pdf-sig-name">${s.name}</div><div class="pdf-sig-role-cl">${s.role}</div></div>`).join('')}</div>
+      </div>`;
+    sigHtml += `</div></div>`;
+  }
+
+  document.getElementById('pdf-output').innerHTML = `
+    <div class="pdf-hdr">
+      <div style="display:flex;flex-direction:column;align-items:center">
+        <div class="pdf-logo-c"><div class="pdf-logo-i">AF</div></div>
+        <div class="pdf-logo-n">AL FITR</div>
+      </div>
+      <div class="pdf-co">AL FITR ELECTROMECHANICAL WORKS LLC</div>
+      <div class="pdf-ref">
+        <div><strong>Ref No:</strong> ${report.refNumber||'—'}</div>
+        <div><strong>Date:</strong> ${dateFmt}</div>
+        <div><strong>Job Order:</strong> ${report.jobOrderNumber||'—'}</div>
+        <div><strong>Page:</strong> 1 of 1</div>
+      </div>
+    </div>
+    <div class="pdf-rpt-title">SITE DELAY ANALYSIS REPORT</div>
+    <div class="pdf-info-grid">
+      <div class="pdf-info-col">
+        <div class="pdf-info-row"><span class="pdf-lbl">Project Name:</span><span class="pdf-val">${report.projectName||'—'}</span></div>
+        <div class="pdf-info-row"><span class="pdf-lbl">Fire Contractor:</span><span class="pdf-val">${report.clientCompany||'—'}</span></div>
+        <div class="pdf-info-row"><span class="pdf-lbl">Site Supervisor:</span><span class="pdf-val">${report.siteSupervisor||'—'}</span></div>
+      </div>
+      <div class="pdf-info-col">
+        <div class="pdf-info-row"><span class="pdf-lbl">Location:</span><span class="pdf-val">${report.location||'—'}</span></div>
+        <div class="pdf-info-row"><span class="pdf-lbl">Project Manager:</span><span class="pdf-val">${report.projectManager||'—'} <span style="font-size:7px;color:#aaa">(Client)</span></span></div>
+        <div class="pdf-info-row"><span class="pdf-lbl">Site Engineer:</span><span class="pdf-val">${report.siteEngineer||'—'} <span style="font-size:7px;color:#aaa">(Client)</span></span></div>
+      </div>
+      <div class="pdf-info-col">
+        <div class="pdf-info-row"><span class="pdf-lbl">Date:</span><span class="pdf-val-hi">${dateFmt}</span></div>
+        <div class="pdf-info-row"><span class="pdf-lbl">Reported By:</span><span class="pdf-val">${report.reportedBy||'—'} <span style="font-size:7px;color:#aaa">(Al Fitr)</span></span></div>
+        <div class="pdf-info-row"><span class="pdf-lbl">Projects Incharge:</span><span class="pdf-val">${report.projectsIncharge||'Engr. Nazir Hussain'} <span style="font-size:7px;color:#aaa">(Al Fitr)</span></span></div>
+      </div>
+    </div>
+    <table class="pdf-tbl">
+      <colgroup>
+        <col style="width:3%"><col style="width:5%"><col style="width:8%">
+        <col style="width:14%"><col style="width:9%"><col style="width:9%">
+        <col style="width:10%"><col style="width:10%"><col style="width:6%">
+        <col style="width:13%"><col style="width:13%">
+      </colgroup>
+      <thead><tr>
+        <th>SR.<br>No</th><th>Floor</th><th>Area /<br>Zone</th>
+        <th>Description</th><th>Site Actual<br>Picture</th><th>Drawing Ref.<br>Picture</th>
+        <th>Reason of<br>Delay</th><th>Action By</th><th>Status</th>
+        <th>Remarks</th><th>Target<br>Resolution</th>
+      </tr></thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>
+    ${sigHtml}
+    <div class="pdf-footer">
+      <span>Al Fitr Electromechanical Works LLC — Sharjah, UAE</span>
+      <span><strong>${report.refNumber||'—'}</strong> — Site Delay Analysis Report — ${report.projectName||''}</span>
+      <span>Generated: ${dateFmt} — Confidential</span>
+    </div>
+  `;
+}
+
+// ── Tabs ───────────────────────────────────────────────────────────
+function showTab(name) {
+  ['list','new','preview'].forEach(t => {
+    document.getElementById(`tab-${t}`).style.display    = t===name ? '' : 'none';
+    const btn = document.getElementById(`tab-btn-${t}`);
+    if (btn) btn.classList.toggle('active', t===name);
+  });
+}
+
+// ── Toast ──────────────────────────────────────────────────────────
+function toast(msg, type='success') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className   = `toast show ${type}`;
+  setTimeout(() => el.className='toast', 3500);
+}
+</script>
+</body>
+</html>

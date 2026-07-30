@@ -3604,8 +3604,8 @@ function attachDrFormHandlers() {
       });
       const siteFile = row.querySelector('.drSitePhoto').files[0];
       const drawingFile = row.querySelector('.drDrawingPhoto').files[0];
-      if (siteFile) fd.append(`sitePhoto_${idx}`, siteFile);
-      if (drawingFile) fd.append(`drawingPhoto_${idx}`, drawingFile);
+      if (siteFile) fd.append('sitePhotos', siteFile);
+      if (drawingFile) fd.append('drawingPhotos', drawingFile);
     });
 
     fd.append('jobOrderId', jobOrderId);
@@ -3635,27 +3635,27 @@ function buildDrPdfHtml(d) {
   const dateFmt = (d.date||'').split('-').reverse().join('-') || '—';
   const afSigs  = d.signatures?.afSide    || [];
   const clSigs  = d.signatures?.clientSide || [];
-  // Always show Prepared By + Project In-Charge on Al Fitr side
+  // Always show Al Fitr side with real names — fallback to stored report fields
   const afSignatories = afSigs.length ? afSigs : [
-    { name: d.reportedBy || '—', role: 'Prepared By' },
-    { name: d.projectsIncharge || 'Engr. Nazir Hussain', role: 'Project In-Charge' },
+    { name: d.reportedBy    || d.preparedBy || '—',          role: 'Prepared By'      },
+    { name: d.projectsIncharge || 'Engr. Nazir Hussain',     role: 'Project In-Charge' },
   ];
   const rowsHtml = (d.delayItems||[]).map((item,i) => {
     const sc = item.status==='Open' ? 'background:#FEE2E2;color:#991B1B' : item.status==='In Progress' ? 'background:#FEF3C7;color:#92400E' : 'background:#D1FAE5;color:#065F46';
     const si = item.sitePhotoUrl    ? `<img src="${item.sitePhotoUrl}"    style="width:100%;height:50px;object-fit:cover;border-radius:2px;border:1px solid #ddd;display:block;">` : `<div style="width:100%;height:50px;background:#f5f5f5;border:1px dashed #ddd;border-radius:2px;display:flex;align-items:center;justify-content:center;font-size:7px;color:#ccc;">No photo</div>`;
     const di = item.drawingPhotoUrl ? `<img src="${item.drawingPhotoUrl}" style="width:100%;height:50px;object-fit:cover;border-radius:2px;border:1px solid #ddd;display:block;">` : `<div style="width:100%;height:50px;background:#f5f5f5;border:1px dashed #ddd;border-radius:2px;display:flex;align-items:center;justify-content:center;font-size:7px;color:#ccc;">Not uploaded</div>`;
     return `<tr>
-      <td style="text-align:center;vertical-align:middle;font-weight:700;color:#555;font-size:8px;border:1px solid #ddd;padding:4px 3px;">${String(i+1).padStart(2,'0')}</td>
-      <td style="text-align:left;vertical-align:middle;font-size:8px;border:1px solid #ddd;padding:4px 3px;">${item.floor||'—'}</td>
-      <td style="text-align:center;vertical-align:middle;font-size:7.5px;word-wrap:break-word;border:1px solid #ddd;padding:4px 3px;">${item.areaZone||'—'}</td>
-      <td style="text-align:left;vertical-align:middle;font-size:7.5px;word-wrap:break-word;border:1px solid #ddd;padding:4px 3px;">${item.description||'—'}</td>
-      <td style="border:1px solid #ddd;padding:4px 3px;">${si}</td>
-      <td style="border:1px solid #ddd;padding:4px 3px;">${di}</td>
-      <td style="text-align:center;vertical-align:middle;font-size:7.5px;word-wrap:break-word;border:1px solid #ddd;padding:4px 3px;">${item.reasonOfDelay||'—'}</td>
-      <td style="text-align:center;vertical-align:middle;font-size:7.5px;word-wrap:break-word;border:1px solid #ddd;padding:4px 3px;"><strong>${item.actionBy||'—'}</strong></td>
-      <td style="text-align:center;vertical-align:middle;border:1px solid #ddd;padding:4px 3px;"><span style="border-radius:2px;padding:2px 4px;font-size:6.5px;font-weight:700;${sc};">${item.status||'Open'}</span></td>
-      <td style="text-align:left;vertical-align:middle;font-size:7px;color:#555;word-wrap:break-word;border:1px solid #ddd;padding:4px 3px;">${item.remarks||'—'}</td>
-      <td style="text-align:center;vertical-align:middle;font-size:8px;color:#E8520A;font-weight:700;border:1px solid #ddd;padding:4px 3px;">${item.targetDate||'—'}</td>
+      <td class="tc" style="font-weight:700;color:#555;font-size:8px;border:1px solid #ddd;padding:4px 3px;">${String(i+1).padStart(2,'0')}</td>
+      <td class="tc" style="font-size:8px;border:1px solid #ddd;padding:4px 3px;">${item.floor||'—'}</td>
+      <td class="tc" style="font-size:7.5px;border:1px solid #ddd;padding:4px 3px;">${item.areaZone||'—'}</td>
+      <td class="tl" style="font-size:7.5px;border:1px solid #ddd;padding:4px 3px;">${item.description||'—'}</td>
+      <td class="tc" style="border:1px solid #ddd;padding:4px 3px;">${si}</td>
+      <td class="tc" style="border:1px solid #ddd;padding:4px 3px;">${di}</td>
+      <td class="tc" style="font-size:7.5px;border:1px solid #ddd;padding:4px 3px;">${item.reasonOfDelay||'—'}</td>
+      <td class="tc" style="font-size:7.5px;border:1px solid #ddd;padding:4px 3px;"><strong>${item.actionBy||'—'}</strong></td>
+      <td class="tc" style="border:1px solid #ddd;padding:4px 3px;"><span style="border-radius:2px;padding:2px 4px;font-size:6.5px;font-weight:700;${sc};">${item.status||'Open'}</span></td>
+      <td class="tl" style="font-size:7px;color:#555;border:1px solid #ddd;padding:4px 3px;">${item.remarks||'—'}</td>
+      <td class="tc" style="font-size:8px;color:#E8520A;font-weight:700;border:1px solid #ddd;padding:4px 3px;">${item.targetDate||'—'}</td>
     </tr>`;
   }).join('');
 
@@ -3672,18 +3672,24 @@ function buildDrPdfHtml(d) {
     </div>` : ''}
   </div>`;
   const co = state.company || {};
+  const logoHeight = co.logoSize === 'large' ? 64 : co.logoSize === 'small' ? 36 : 52;
   const logoHtml = co.logoPath
-    ? `<img src="${co.logoPath}" style="height:48px;max-width:80px;object-fit:contain;" alt="logo">`
-    : `<div style="width:42px;height:42px;border-radius:50%;border:2px solid #1D9E75;display:flex;align-items:center;justify-content:center;"><div style="width:26px;height:26px;border-radius:50%;background:#1D9E75;color:#fff;font-weight:700;font-size:8px;display:flex;align-items:center;justify-content:center;">AF</div></div><div style="font-size:7px;font-weight:700;color:#1D9E75;text-align:center;margin-top:2px;">AL FITR</div>`;
+    ? `<img src="${co.logoPath}" style="height:${logoHeight}px;max-width:120px;object-fit:contain;display:block;" alt="logo">`
+    : `<div style="display:flex;flex-direction:column;align-items:center;"><div style="width:42px;height:42px;border-radius:50%;border:2px solid #1D9E75;display:flex;align-items:center;justify-content:center;"><div style="width:26px;height:26px;border-radius:50%;background:#1D9E75;color:#fff;font-weight:700;font-size:8px;display:flex;align-items:center;justify-content:center;">AF</div></div><div style="font-size:7px;font-weight:700;color:#1D9E75;text-align:center;margin-top:2px;">AL FITR</div></div>`;
 
   return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${d.refNumber}</title>
-  <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:Arial,sans-serif;font-size:9px;color:#1a1a1a;}@page{size:A4 landscape;margin:8mm;}
-  td,th{vertical-align:middle;}
-  .center-col{text-align:center;vertical-align:middle;}
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:Arial,sans-serif;font-size:9px;color:#1a1a1a;}
+    @page{size:A4 landscape;margin:8mm;}
+    table{border-collapse:collapse;width:100%;}
+    td,th{vertical-align:middle;word-wrap:break-word;overflow-wrap:break-word;}
+    .tc{text-align:center !important;vertical-align:middle !important;}
+    .tl{text-align:left !important;vertical-align:middle !important;}
   </style>
   </head><body>
-  <div style="border-bottom:3px solid #E8520A;display:grid;grid-template-columns:80px 1fr auto;align-items:center;padding:8px 14px;gap:10px;">
-    <div style="display:flex;flex-direction:column;align-items:center;">${logoHtml}</div>
+  <div style="border-bottom:3px solid #E8520A;display:grid;grid-template-columns:90px 1fr auto;align-items:center;padding:8px 14px;gap:10px;">
+    <div style="display:flex;align-items:center;justify-content:center;">${logoHtml}</div>
     <div style="text-align:center;font-size:13px;font-weight:700;color:#E8520A;letter-spacing:0.4px;">AL FITR ELECTROMECHANICAL WORKS LLC</div>
     <div style="text-align:right;font-size:7.5px;color:#555;line-height:1.7;">
       <div><strong>Ref No:</strong> ${d.refNumber||'—'}</div>

@@ -123,12 +123,12 @@ router.post('/', requirePermission('manageReports'), photoUpload, async (req, re
 
     const signatures = {
       afSide: [
-        ...(isTrue(body.sigRamadasu) ? [{ name: body.reportedBy || 'Ramadasu',        role: 'Reported By'      }] : []),
-        ...(isTrue(body.sigNazir)    ? [{ name: 'Engr. Nazir Hussain',                role: 'Projects Incharge'}] : []),
+        ...(isTrue(body.sigRamadasu) ? [{ name: body.reportedBy || jo.preparedBy || 'Ramadasu',   role: 'Prepared By'       }] : []),
+        ...(isTrue(body.sigNazir)    ? [{ name: jo.projectsIncharge || 'Projects Incharge',        role: 'Project In-Charge' }] : []),
       ],
       clientSide: [
-        ...(isTrue(body.sigIbrahim) ? [{ name: jo.siteEngineer   || 'Site Engineer',   role: 'Site Engineer'   }] : []),
-        ...(isTrue(body.sigHussein) ? [{ name: jo.projectManager || 'Project Manager', role: 'Project Manager' }] : []),
+        ...(isTrue(body.sigIbrahim) ? [{ name: jo.siteEngineer   || 'Client Engineer',  role: 'Client Engineer'  }] : []),
+        ...(isTrue(body.sigHussein) ? [{ name: jo.projectManager || 'Project Manager',  role: 'Project Manager'  }] : []),
       ],
     };
 

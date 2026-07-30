@@ -17,6 +17,7 @@ body{font-family:Arial,sans-serif;background:#f0f2f5;color:#1a1a1a;font-size:13p
 .nav-title span{color:#E8520A;}
 .nav-right{display:flex;align-items:center;gap:10px;}
 .nav-user{color:#aaa;font-size:12px;}
+.nav-role{font-size:10px;padding:2px 8px;border-radius:3px;background:#2c2c2c;color:#E8520A;font-weight:700;}
 .btn-logout{background:transparent;border:1px solid #444;color:#aaa;padding:4px 12px;border-radius:4px;cursor:pointer;font-size:12px;}
 
 /* ── Layout ── */
@@ -39,6 +40,9 @@ body{font-family:Arial,sans-serif;background:#f0f2f5;color:#1a1a1a;font-size:13p
 .btn-teal{background:#1D9E75;color:#fff;border-color:#1D9E75;}
 .btn-teal:hover{background:#157a5b;}
 .btn-dark{background:#2c2c2c;color:#fff;border-color:#2c2c2c;}
+.btn-danger{background:#fff;color:#dc2626;border-color:#fca5a5;}
+.btn-danger:hover{background:#fef2f2;}
+.btn-sm{padding:4px 10px;font-size:11px;}
 
 /* ── Cards ── */
 .card{background:#fff;border:1px solid #e5e7eb;border-radius:8px;margin-bottom:16px;}
@@ -73,7 +77,7 @@ body{font-family:Arial,sans-serif;background:#f0f2f5;color:#1a1a1a;font-size:13p
 .cell-input{width:100%;padding:5px 7px;border:1px solid #ddd;border-radius:4px;font-size:12px;color:#1a1a1a;background:#fff;}
 .cell-input:focus{border-color:#E8520A;outline:none;}
 .cell-select{width:100%;padding:5px;border:1px solid #ddd;border-radius:4px;font-size:11px;background:#fff;}
-.photo-slot{border:1px dashed #ccc;border-radius:4px;padding:6px 4px;text-align:center;cursor:pointer;font-size:10px;color:#aaa;background:#fafafa;position:relative;min-height:36px;display:flex;align-items:center;justify-content:center;}
+.photo-slot{border:1px dashed #ccc;border-radius:4px;padding:6px 4px;text-align:center;cursor:pointer;font-size:10px;color:#aaa;background:#fafafa;position:relative;min-height:36px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:2px;}
 .photo-slot:hover{border-color:#E8520A;color:#E8520A;}
 .photo-slot input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;}
 .photo-preview{width:100%;height:52px;object-fit:cover;border-radius:3px;border:1px solid #e5e7eb;display:block;}
@@ -83,7 +87,7 @@ body{font-family:Arial,sans-serif;background:#f0f2f5;color:#1a1a1a;font-size:13p
 .add-row-btn{display:flex;align-items:center;gap:6px;color:#E8520A;cursor:pointer;font-size:12px;font-weight:500;padding:10px 14px;border-top:1px solid #f0f0f0;width:100%;background:none;border-left:none;border-right:none;border-bottom:none;text-align:left;}
 .add-row-btn:hover{background:#fff5f2;}
 
-/* ── Signature checkboxes ── */
+/* ── Sig checkboxes ── */
 .sig-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
 .sig-group-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;padding:3px 8px;border-radius:3px;display:inline-block;}
 .sig-af{background:#e1f5ee;color:#085041;}
@@ -93,16 +97,25 @@ body{font-family:Arial,sans-serif;background:#f0f2f5;color:#1a1a1a;font-size:13p
 .sig-role-tag{color:#aaa;font-size:10px;}
 
 /* ── Report list ── */
-.report-item{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:14px 16px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;margin-bottom:10px;}
+.report-item{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:14px 16px;display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;transition:border-color 0.15s;}
 .report-item:hover{border-color:#E8520A;box-shadow:0 2px 8px rgba(232,82,10,0.08);}
 .report-ref{font-size:13px;font-weight:700;color:#E8520A;}
 .report-meta{font-size:12px;color:#555;margin-top:3px;}
 .report-date-info{font-size:11px;color:#aaa;margin-top:2px;}
+.report-actions{display:flex;align-items:center;gap:6px;flex-shrink:0;}
 .badge{padding:3px 8px;border-radius:3px;font-size:10px;font-weight:700;display:inline-block;margin-right:4px;}
 .b-open{background:#FEE2E2;color:#991B1B;}
 .b-prog{background:#FEF3C7;color:#92400E;}
 .b-done{background:#D1FAE5;color:#065F46;}
 .empty-state{text-align:center;padding:40px;color:#aaa;font-size:13px;}
+
+/* ── Delete confirm modal ── */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:500;display:none;align-items:center;justify-content:center;}
+.modal-overlay.show{display:flex;}
+.modal{background:#fff;border-radius:10px;padding:24px;width:380px;max-width:90vw;}
+.modal-title{font-size:15px;font-weight:700;color:#1a1a1a;margin-bottom:8px;}
+.modal-body{font-size:13px;color:#555;line-height:1.6;margin-bottom:20px;}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end;}
 
 /* ── Toast ── */
 .toast{position:fixed;bottom:24px;right:24px;padding:10px 18px;border-radius:6px;font-size:12px;z-index:9999;display:none;align-items:center;gap:8px;color:#fff;}
@@ -122,8 +135,8 @@ body{font-family:Arial,sans-serif;background:#f0f2f5;color:#1a1a1a;font-size:13p
 .pdf-logo-i{width:26px;height:26px;border-radius:50%;background:#1D9E75;color:#fff;font-weight:700;font-size:8px;display:flex;align-items:center;justify-content:center;}
 .pdf-logo-n{font-size:7px;font-weight:700;color:#1D9E75;text-align:center;margin-top:2px;}
 .pdf-co{text-align:center;font-size:13px;font-weight:700;color:#E8520A;letter-spacing:0.4px;}
-.pdf-ref{text-align:right;font-size:7.5px;color:#555;line-height:1.7;}
-.pdf-ref strong{color:#1a1a1a;}
+.pdf-ref-box{text-align:right;font-size:7.5px;color:#555;line-height:1.7;}
+.pdf-ref-box strong{color:#1a1a1a;}
 .pdf-rpt-title{background:#f5f5f5;border-bottom:1px solid #ddd;text-align:center;padding:5px;font-size:10px;font-weight:700;letter-spacing:0.5px;}
 .pdf-info-grid{display:grid;grid-template-columns:1fr 1fr 1fr;border-bottom:1px solid #ddd;}
 .pdf-info-col{padding:5px 10px;border-right:1px solid #ddd;}
@@ -157,9 +170,27 @@ body{font-family:Arial,sans-serif;background:#f0f2f5;color:#1a1a1a;font-size:13p
 .pdf-footer{background:#2c2c2c;color:#aaa;display:flex;justify-content:space-between;padding:4px 14px;font-size:6.5px;}
 .pdf-footer strong{color:#E8520A;}
 
+/* ── View modal ── */
+.view-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:600;display:none;align-items:flex-start;justify-content:center;padding:20px;overflow-y:auto;}
+.view-modal-overlay.show{display:flex;}
+.view-modal{background:#fff;border-radius:10px;width:100%;max-width:1100px;overflow:hidden;}
+.view-modal-header{background:#1a1a1a;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;}
+.view-modal-title{color:#fff;font-size:14px;font-weight:700;}
+.view-modal-close{color:#aaa;background:none;border:none;font-size:22px;cursor:pointer;line-height:1;}
+.view-modal-body{padding:20px;}
+.view-info-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px;}
+.view-info-item label{font-size:10px;color:#888;font-weight:700;text-transform:uppercase;display:block;margin-bottom:2px;}
+.view-info-item span{font-size:13px;color:#1a1a1a;font-weight:500;}
+.view-tbl{width:100%;border-collapse:collapse;font-size:12px;}
+.view-tbl th{background:#f5f5f5;padding:8px 10px;text-align:left;font-size:11px;color:#555;border-bottom:2px solid #e5e7eb;font-weight:700;}
+.view-tbl td{padding:8px 10px;border-bottom:1px solid #f0f0f0;vertical-align:top;}
+.view-tbl tr:last-child td{border-bottom:none;}
+.view-photo{width:60px;height:44px;object-fit:cover;border-radius:4px;border:1px solid #e5e7eb;cursor:pointer;}
+.view-no-photo{width:60px;height:44px;background:#f5f5f5;border:1px dashed #ddd;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:9px;color:#ccc;}
+
 @media print{
-  .navbar,.page-header,.tabs,.tab-content,.pdf-wrap>div:first-child,button,
-  #tab-list,#tab-new,.page-actions{display:none!important;}
+  .navbar,.page-header,.tabs,#tab-list,#tab-new,.page-actions,
+  button,.modal-overlay,.view-modal-overlay{display:none!important;}
   body{background:#fff;}
   .pdf-page{border:none;}
   @page{size:A4 landscape;margin:8mm;}
@@ -168,6 +199,7 @@ body{font-family:Arial,sans-serif;background:#f0f2f5;color:#1a1a1a;font-size:13p
 </head>
 <body>
 
+<!-- Navbar -->
 <div class="navbar">
   <div class="nav-brand">
     <div class="nav-logo"><div class="nav-logo-inner">AF</div></div>
@@ -175,26 +207,28 @@ body{font-family:Arial,sans-serif;background:#f0f2f5;color:#1a1a1a;font-size:13p
   </div>
   <div class="nav-right">
     <span class="nav-user" id="nav-user"></span>
+    <span class="nav-role" id="nav-role"></span>
     <button class="btn-logout" onclick="logout()">Logout</button>
   </div>
 </div>
 
+<!-- Page -->
 <div class="page">
   <div class="page-header">
     <div>
       <div class="page-title"><span>Site Delay</span> Analysis Reports</div>
       <div class="page-subtitle">Linked to Job Orders — project info auto-fills</div>
     </div>
-    <div><button class="btn btn-primary" onclick="showTab('new')">+ New Report</button></div>
+    <div id="new-btn-wrap"><button class="btn btn-primary" onclick="openNew()">+ New Report</button></div>
   </div>
 
   <div class="tabs">
     <div class="tab active" id="tab-btn-list"    onclick="showTab('list')">All Reports</div>
-    <div class="tab"        id="tab-btn-new"     onclick="showTab('new')">New Report</div>
+    <div class="tab"        id="tab-btn-form"    onclick="showTab('form')" style="display:none">New Report</div>
     <div class="tab"        id="tab-btn-preview" onclick="showTab('preview')" style="display:none">Preview / Export</div>
   </div>
 
-  <!-- ═══ LIST ═══════════════════════════════════════════════════════ -->
+  <!-- ═══ LIST ══════════════════════════════════════════════════════ -->
   <div id="tab-list">
     <div class="card">
       <div class="card-header">
@@ -207,17 +241,15 @@ body{font-family:Arial,sans-serif;background:#f0f2f5;color:#1a1a1a;font-size:13p
     </div>
   </div>
 
-  <!-- ═══ NEW REPORT ══════════════════════════════════════════════════ -->
-  <div id="tab-new" style="display:none">
-
-    <!-- Job Order -->
+  <!-- ═══ FORM (New / Edit) ══════════════════════════════════════════ -->
+  <div id="tab-form" style="display:none">
     <div class="card">
       <div class="card-header">
-        <span class="card-title">Job Order Link</span>
+        <span class="card-title" id="form-mode-label">New Report</span>
         <span style="font-size:11px;color:#aaa">Project info auto-fills from selected Job Order</span>
       </div>
       <div class="card-body">
-        <div class="form-grid-2" style="align-items:end;">
+        <div class="form-grid-2" style="align-items:end">
           <div class="field">
             <label>Select Job Order *</label>
             <select id="jo-select" onchange="onJoSelect()">
@@ -243,7 +275,6 @@ body{font-family:Arial,sans-serif;background:#f0f2f5;color:#1a1a1a;font-size:13p
       </div>
     </div>
 
-    <!-- Report details -->
     <div class="card">
       <div class="card-header"><span class="card-title">Report Details</span></div>
       <div class="card-body">
@@ -260,13 +291,12 @@ body{font-family:Arial,sans-serif;background:#f0f2f5;color:#1a1a1a;font-size:13p
       </div>
     </div>
 
-    <!-- Delay items -->
     <div class="card">
       <div class="card-header">
         <span class="card-title">Delay Items</span>
         <span style="font-size:11px;color:#aaa" id="row-count-label">0 items</span>
       </div>
-      <div class="card-body" style="padding:0;">
+      <div class="card-body" style="padding:0">
         <div class="delay-table-wrap">
           <table class="delay-table">
             <thead>
@@ -292,7 +322,6 @@ body{font-family:Arial,sans-serif;background:#f0f2f5;color:#1a1a1a;font-size:13p
       </div>
     </div>
 
-    <!-- Signatures -->
     <div class="card">
       <div class="card-header">
         <span class="card-title">Signature Block</span>
@@ -314,40 +343,63 @@ body{font-family:Arial,sans-serif;background:#f0f2f5;color:#1a1a1a;font-size:13p
       </div>
     </div>
 
-    <!-- Form actions -->
     <div style="display:flex;gap:10px;justify-content:flex-end;margin-bottom:24px;">
-      <button class="btn" onclick="showTab('list')">Cancel</button>
+      <button class="btn" onclick="cancelForm()">Cancel</button>
       <button class="btn btn-teal" onclick="previewReport()">👁 Preview PDF</button>
       <button class="btn btn-primary" id="submit-btn" onclick="submitReport()">Submit Report</button>
     </div>
   </div>
 
-  <!-- ═══ PREVIEW ═════════════════════════════════════════════════════ -->
+  <!-- ═══ PREVIEW ════════════════════════════════════════════════════ -->
   <div id="tab-preview" style="display:none">
-    <div style="display:flex;gap:10px;margin-bottom:14px;">
-      <button class="btn" onclick="showTab('new')">← Back to Form</button>
+    <div style="display:flex;gap:10px;margin-bottom:14px;align-items:center;">
+      <button class="btn" id="preview-back-btn" onclick="showTab('form')">← Back to Form</button>
       <button class="btn btn-dark" onclick="window.print()">🖨 Print / Save as PDF</button>
+      <span id="preview-edit-btn-wrap"></span>
     </div>
     <div class="pdf-wrap">
       <div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;">PDF Preview — Landscape A4</div>
       <div class="pdf-page" id="pdf-output"></div>
     </div>
   </div>
+</div>
 
-</div><!-- /page -->
+<!-- ── View Modal ── -->
+<div class="view-modal-overlay" id="view-modal-overlay">
+  <div class="view-modal">
+    <div class="view-modal-header">
+      <div class="view-modal-title" id="view-modal-title">Report Details</div>
+      <button class="view-modal-close" onclick="closeViewModal()">×</button>
+    </div>
+    <div class="view-modal-body" id="view-modal-body"></div>
+  </div>
+</div>
+
+<!-- ── Delete Confirm Modal ── -->
+<div class="modal-overlay" id="delete-modal">
+  <div class="modal">
+    <div class="modal-title">⚠️ Delete Report</div>
+    <div class="modal-body" id="delete-modal-body">Are you sure you want to permanently delete this report? This cannot be undone.</div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeDeleteModal()">Cancel</button>
+      <button class="btn btn-danger" id="confirm-delete-btn" onclick="confirmDelete()">Delete Permanently</button>
+    </div>
+  </div>
+</div>
 
 <div class="toast" id="toast"></div>
 
 <script>
-// ── Config ─────────────────────────────────────────────────────────
-const API = '';  // same origin
-
-// ── State ──────────────────────────────────────────────────────────
-let jobOrders  = [];
-let allReports = [];
-let selectedJo = null;
-let rowPhotos  = {};   // { rowId: { site: File, drawing: File } }
-let rowCounter = 0;
+const API = '';
+let jobOrders    = [];
+let allReports   = [];
+let selectedJo   = null;
+let rowPhotos    = {};
+let rowCounter   = 0;
+let editingId    = null;   // null = new, string = editing existing
+let deleteTargetId = null;
+let currentUser  = null;   // { id, name, role }
+let previewingFromList = false; // track if preview came from list (view) or form
 
 // ── Boot ───────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
@@ -355,29 +407,26 @@ document.addEventListener('DOMContentLoaded', () => {
   loadUser();
   loadJobOrders();
   loadReports();
-  addRow(); // start with one empty row
 });
 
 // ── Auth ───────────────────────────────────────────────────────────
 function tok() { return localStorage.getItem('token') || sessionStorage.getItem('token'); }
-function authH(json) {
-  const h = { 'Authorization': `Bearer ${tok()}` };
-  if (json) h['Content-Type'] = 'application/json';
-  return h;
-}
-function logout() {
-  localStorage.removeItem('token');
-  sessionStorage.removeItem('token');
-  window.location.href = '/';
-}
+function authH() { return { 'Authorization': `Bearer ${tok()}` }; }
+function logout() { localStorage.removeItem('token'); sessionStorage.removeItem('token'); window.location.href = '/'; }
+function isSuperAdmin() { return currentUser?.role === 'Super Admin'; }
+function canManage()    { return ['Super Admin','Admin','Engineer'].includes(currentUser?.role); }
 
 async function loadUser() {
   try {
     const r = await fetch(`${API}/api/users/me`, { headers: authH() });
     if (!r.ok) { window.location.href = '/'; return; }
     const d = await r.json();
-    document.getElementById('nav-user').textContent = d.user?.name || '';
-    document.getElementById('reported-by').value    = d.user?.name || '';
+    currentUser = d.user;
+    document.getElementById('nav-user').textContent  = currentUser?.name || '';
+    document.getElementById('nav-role').textContent  = currentUser?.role || '';
+    document.getElementById('reported-by').value     = currentUser?.name || '';
+    // Hide New Report button for Viewer
+    if (!canManage()) document.getElementById('new-btn-wrap').style.display = 'none';
   } catch { window.location.href = '/'; }
 }
 
@@ -391,7 +440,7 @@ async function loadJobOrders() {
     jobOrders.forEach(jo => {
       const o = document.createElement('option');
       o.value = jo.id;
-      o.textContent = `${jo.jobOrderNumber || jo.id} — ${jo.projectName || jo.name || ''}`;
+      o.textContent = `${jo.jobOrderNumber||jo.id} — ${jo.projectName||jo.name||''}`;
       sel.appendChild(o);
     });
   } catch(e) { console.error(e); }
@@ -408,7 +457,7 @@ function onJoSelect() {
   document.getElementById('jo-loc').textContent    = selectedJo.location       || '—';
   document.getElementById('jo-pm').textContent     = selectedJo.projectManager || '—';
   document.getElementById('jo-se').textContent     = selectedJo.siteEngineer   || '—';
-  document.getElementById('client-sig-title').textContent = `Client — ${selectedJo.clientCompany || ''}`;
+  document.getElementById('client-sig-title').textContent = `Client — ${selectedJo.clientCompany||''}`;
   document.getElementById('lbl-ibrahim').textContent = selectedJo.siteEngineer   || 'Site Engineer';
   document.getElementById('lbl-hussein').textContent = selectedJo.projectManager || 'Project Manager';
 }
@@ -429,20 +478,32 @@ function renderList(reports) {
     el.innerHTML = '<div class="empty-state">No reports yet. Click "New Report" to create one.</div>';
     return;
   }
-  el.innerHTML = reports.map(r => `
-    <div class="report-item" onclick="openReport('${r.id}')">
-      <div>
-        <div class="report-ref">${r.refNumber || '—'}</div>
+  el.innerHTML = reports.map(r => {
+    const open  = (r.delayItems||[]).filter(i=>i.status==='Open').length;
+    const prog  = (r.delayItems||[]).filter(i=>i.status==='In Progress').length;
+    const done  = (r.delayItems||[]).filter(i=>i.status==='Resolved').length;
+    const canEdit = canManage();
+    const canDel  = isSuperAdmin();
+    return `
+    <div class="report-item">
+      <div style="flex:1;min-width:0;">
+        <div class="report-ref">${r.refNumber||'—'}</div>
         <div class="report-meta">${r.projectName||'—'} &nbsp;·&nbsp; ${r.clientCompany||'—'} &nbsp;·&nbsp; JO: ${r.jobOrderNumber||'—'}</div>
         <div class="report-date-info">Reported by ${r.reportedBy||'—'} &nbsp;·&nbsp; ${r.date||''}</div>
+        <div style="margin-top:5px">
+          <span class="badge b-open">${open} Open</span>
+          <span class="badge b-prog">${prog} In Progress</span>
+          <span class="badge b-done">${done} Resolved</span>
+        </div>
       </div>
-      <div style="display:flex;align-items:center;gap:6px;">
-        <span class="badge b-open">${(r.delayItems||[]).filter(i=>i.status==='Open').length} Open</span>
-        <span class="badge b-prog">${(r.delayItems||[]).filter(i=>i.status==='In Progress').length} In Progress</span>
-        <span class="badge b-done">${(r.delayItems||[]).filter(i=>i.status==='Resolved').length} Resolved</span>
-        <span style="color:#ccc;font-size:20px">›</span>
+      <div class="report-actions">
+        <button class="btn btn-sm" onclick="viewReport('${r.id}')">👁 View</button>
+        <button class="btn btn-sm btn-teal" onclick="pdfReport('${r.id}')">📄 PDF</button>
+        ${canEdit ? `<button class="btn btn-sm btn-primary" onclick="editReport('${r.id}')">✏️ Edit</button>` : ''}
+        ${canDel  ? `<button class="btn btn-sm btn-danger" onclick="openDeleteModal('${r.id}','${(r.refNumber||'').replace(/'/g,"\\'")}')">🗑 Delete</button>` : ''}
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 function filterReports(q) {
@@ -454,61 +515,180 @@ function filterReports(q) {
   ));
 }
 
-function openReport(id) {
+// ── View Modal ─────────────────────────────────────────────────────
+function viewReport(id) {
   const r = allReports.find(x => x.id === id);
   if (!r) return;
+  document.getElementById('view-modal-title').textContent = `${r.refNumber||'Report'} — ${r.projectName||''}`;
+  document.getElementById('view-modal-body').innerHTML = `
+    <div class="view-info-grid">
+      <div class="view-info-item"><label>Ref No</label><span style="color:#E8520A;font-weight:700">${r.refNumber||'—'}</span></div>
+      <div class="view-info-item"><label>Job Order</label><span>${r.jobOrderNumber||'—'}</span></div>
+      <div class="view-info-item"><label>Date</label><span>${r.date||'—'}</span></div>
+      <div class="view-info-item"><label>Project Name</label><span>${r.projectName||'—'}</span></div>
+      <div class="view-info-item"><label>Fire Contractor</label><span>${r.clientCompany||'—'}</span></div>
+      <div class="view-info-item"><label>Location</label><span>${r.location||'—'}</span></div>
+      <div class="view-info-item"><label>Project Manager</label><span>${r.projectManager||'—'} <span style="font-size:10px;color:#aaa">(Client)</span></span></div>
+      <div class="view-info-item"><label>Site Engineer</label><span>${r.siteEngineer||'—'} <span style="font-size:10px;color:#aaa">(Client)</span></span></div>
+      <div class="view-info-item"><label>Reported By</label><span>${r.reportedBy||'—'} <span style="font-size:10px;color:#aaa">(Al Fitr)</span></span></div>
+    </div>
+    <div style="font-size:11px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;">Delay Items (${(r.delayItems||[]).length})</div>
+    <table class="view-tbl">
+      <thead><tr>
+        <th>#</th><th>Floor</th><th>Area/Zone</th><th>Description</th>
+        <th>Site Photo</th><th>Drawing Photo</th>
+        <th>Reason</th><th>Action By</th><th>Status</th><th>Remarks</th><th>Target Date</th>
+      </tr></thead>
+      <tbody>
+        ${(r.delayItems||[]).map((item,i) => {
+          const sc = item.status==='Open' ? 'b-open' : item.status==='In Progress' ? 'b-prog' : 'b-done';
+          const si = item.sitePhotoUrl    ? `<img src="${item.sitePhotoUrl}"    class="view-photo" onclick="window.open('${item.sitePhotoUrl}')">` : `<div class="view-no-photo">—</div>`;
+          const di = item.drawingPhotoUrl ? `<img src="${item.drawingPhotoUrl}" class="view-photo" onclick="window.open('${item.drawingPhotoUrl}')">` : `<div class="view-no-photo">—</div>`;
+          return `<tr>
+            <td style="text-align:center;font-weight:700;color:#888">${i+1}</td>
+            <td>${item.floor||'—'}</td><td>${item.areaZone||'—'}</td>
+            <td>${item.description||'—'}</td>
+            <td>${si}</td><td>${di}</td>
+            <td style="font-size:11px">${item.reasonOfDelay||'—'}</td>
+            <td style="font-size:11px"><strong>${item.actionBy||'—'}</strong><br><span style="color:#888;font-size:10px">${item.actionNote||''}</span></td>
+            <td><span class="badge ${sc}">${item.status||'—'}</span></td>
+            <td style="font-size:11px;color:#555;font-style:italic">${item.remarks||'—'}</td>
+            <td style="font-size:11px;color:#E8520A;font-weight:600">${item.targetDate||'—'}</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>
+    <div style="margin-top:16px;display:flex;gap:10px;justify-content:flex-end;">
+      ${canManage() ? `<button class="btn btn-primary btn-sm" onclick="closeViewModal();editReport('${r.id}')">✏️ Edit</button>` : ''}
+      <button class="btn btn-teal btn-sm" onclick="closeViewModal();pdfReport('${r.id}')">📄 View PDF</button>
+      ${isSuperAdmin() ? `<button class="btn btn-danger btn-sm" onclick="closeViewModal();openDeleteModal('${r.id}','${(r.refNumber||'').replace(/'/g,"\\'")}')">🗑 Delete</button>` : ''}
+    </div>
+  `;
+  document.getElementById('view-modal-overlay').classList.add('show');
+}
+
+function closeViewModal() {
+  document.getElementById('view-modal-overlay').classList.remove('show');
+}
+
+// ── PDF from list ──────────────────────────────────────────────────
+function pdfReport(id) {
+  const r = allReports.find(x => x.id === id);
+  if (!r) return;
+  previewingFromList = true;
   renderPdf(r);
   document.getElementById('tab-btn-preview').style.display = '';
+  document.getElementById('preview-back-btn').onclick = () => { showTab('list'); };
+  // Show edit button in preview toolbar if allowed
+  const wrap = document.getElementById('preview-edit-btn-wrap');
+  wrap.innerHTML = canManage()
+    ? `<button class="btn btn-primary btn-sm" onclick="editReport('${r.id}')">✏️ Edit This Report</button>`
+    : '';
   showTab('preview');
 }
 
+// ── Edit ───────────────────────────────────────────────────────────
+function editReport(id) {
+  const r = allReports.find(x => x.id === id);
+  if (!r) return;
+  editingId = id;
+  resetForm();
+  document.getElementById('form-mode-label').textContent = 'Edit Report';
+  document.getElementById('tab-btn-form').style.display  = '';
+  document.getElementById('tab-btn-form').textContent    = 'Edit Report';
+  // Set JO
+  document.getElementById('jo-select').value = r.jobOrderId || '';
+  onJoSelect();
+  document.getElementById('report-date').value   = r.date || '';
+  document.getElementById('reported-by').value   = r.reportedBy || '';
+  document.getElementById('ref-preview').value   = r.refNumber || '';
+  // Populate delay rows
+  (r.delayItems||[]).forEach(item => {
+    addRow(item);
+  });
+  // Sig checkboxes
+  const afNames = (r.signatures?.afSide||[]).map(s=>s.role);
+  const clNames = (r.signatures?.clientSide||[]).map(s=>s.role);
+  document.getElementById('sig-ramadasu').checked = afNames.includes('Reported By');
+  document.getElementById('sig-nazir').checked    = afNames.includes('Projects Incharge');
+  document.getElementById('sig-ibrahim').checked  = clNames.includes('Site Engineer');
+  document.getElementById('sig-hussein').checked  = clNames.includes('Project Manager');
+  showTab('form');
+}
+
+// ── New Report ─────────────────────────────────────────────────────
+function openNew() {
+  editingId = null;
+  resetForm();
+  document.getElementById('form-mode-label').textContent = 'New Report';
+  document.getElementById('tab-btn-form').style.display  = '';
+  document.getElementById('tab-btn-form').textContent    = 'New Report';
+  addRow();
+  showTab('form');
+}
+
+function cancelForm() {
+  document.getElementById('tab-btn-form').style.display = 'none';
+  showTab('list');
+}
+
+function resetForm() {
+  editingId = null;
+  rowPhotos = {};
+  rowCounter = 0;
+  selectedJo = null;
+  document.getElementById('jo-select').value    = '';
+  document.getElementById('jo-info').style.display = 'none';
+  document.getElementById('report-date').value  = new Date().toISOString().slice(0,10);
+  document.getElementById('reported-by').value  = currentUser?.name || '';
+  document.getElementById('ref-preview').value  = '';
+  document.getElementById('delay-rows').innerHTML = '';
+  document.getElementById('sig-ramadasu').checked = true;
+  document.getElementById('sig-nazir').checked    = true;
+  document.getElementById('sig-ibrahim').checked  = true;
+  document.getElementById('sig-hussein').checked  = true;
+  updateRowCount();
+}
+
 // ── Delay Rows ─────────────────────────────────────────────────────
-function addRow() {
+function addRow(prefill) {
   const tbody = document.getElementById('delay-rows');
   const rid   = rowCounter++;
+  const p     = prefill || {};
   const tr    = document.createElement('tr');
   tr.id       = `row-${rid}`;
   tr.innerHTML = `
-    <td class="row-num">${tbody.rows.length + 1}</td>
-    <td><input class="cell-input" id="floor-${rid}" placeholder="GF / 1F"></td>
-    <td><input class="cell-input" id="zone-${rid}"  placeholder="Area or zone"></td>
-    <td><textarea class="cell-input" id="desc-${rid}" style="min-height:54px" placeholder="Describe the delay..."></textarea></td>
+    <td class="row-num">${tbody.rows.length+1}</td>
+    <td><input class="cell-input" id="floor-${rid}"       value="${esc(p.floor||'')}"     placeholder="GF/1F"></td>
+    <td><input class="cell-input" id="zone-${rid}"        value="${esc(p.areaZone||'')}"  placeholder="Area or zone"></td>
+    <td><textarea class="cell-input" id="desc-${rid}"     style="min-height:54px" placeholder="Describe the delay...">${esc(p.description||'')}</textarea></td>
     <td>
       <div class="photo-slot" id="site-slot-${rid}">
-        📷 Upload<input type="file" accept="image/*" onchange="handlePhoto(event,${rid},'site')">
+        ${p.sitePhotoUrl ? `<img src="${p.sitePhotoUrl}" class="photo-preview" alt=""><div class="photo-name">Existing photo</div><input type="file" accept="image/*" onchange="handlePhoto(event,${rid},'site')">` : `📷 Upload<input type="file" accept="image/*" onchange="handlePhoto(event,${rid},'site')">`}
       </div>
     </td>
     <td>
       <div class="photo-slot" id="dwg-slot-${rid}">
-        📐 Upload<input type="file" accept="image/*" onchange="handlePhoto(event,${rid},'drawing')">
+        ${p.drawingPhotoUrl ? `<img src="${p.drawingPhotoUrl}" class="photo-preview" alt=""><div class="photo-name">Existing photo</div><input type="file" accept="image/*" onchange="handlePhoto(event,${rid},'drawing')">` : `📐 Upload<input type="file" accept="image/*" onchange="handlePhoto(event,${rid},'drawing')">`}
       </div>
     </td>
     <td>
       <select class="cell-select" id="reason-${rid}">
         <option value="">Select reason</option>
-        <option>Civil delay</option>
-        <option>Interior fit-out delay</option>
-        <option>Material not available</option>
-        <option>Access restricted</option>
-        <option>Design change</option>
-        <option>Client hold</option>
-        <option>Drawing not issued</option>
-        <option>Other</option>
+        ${['Civil delay','Interior fit-out delay','Material not available','Access restricted','Design change','Client hold','Drawing not issued','Other'].map(o=>`<option${p.reasonOfDelay===o?' selected':''}>${o}</option>`).join('')}
       </select>
     </td>
     <td>
-      <input class="cell-input" id="action-by-${rid}"   placeholder="Name" style="margin-bottom:4px">
-      <input class="cell-input" id="action-note-${rid}" placeholder="Action note" style="font-size:11px">
+      <input class="cell-input" id="action-by-${rid}"   value="${esc(p.actionBy||'')}"   placeholder="Name" style="margin-bottom:4px">
+      <input class="cell-input" id="action-note-${rid}" value="${esc(p.actionNote||'')}" placeholder="Action note" style="font-size:11px">
     </td>
     <td>
       <select class="cell-select" id="status-${rid}">
-        <option>Open</option>
-        <option>In Progress</option>
-        <option>Resolved</option>
+        ${['Open','In Progress','Resolved'].map(s=>`<option${p.status===s?' selected':''}>${s}</option>`).join('')}
       </select>
     </td>
-    <td><textarea class="cell-input" id="remarks-${rid}" style="min-height:54px" placeholder="Remarks..."></textarea></td>
-    <td><input class="cell-input" type="date" id="target-${rid}"></td>
+    <td><textarea class="cell-input" id="remarks-${rid}" style="min-height:54px" placeholder="Remarks...">${esc(p.remarks||'')}</textarea></td>
+    <td><input class="cell-input" type="date" id="target-${rid}" value="${p.targetDate||''}"></td>
     <td><button class="del-row-btn" onclick="removeRow(${rid})">×</button></td>
   `;
   tbody.appendChild(tr);
@@ -524,7 +704,7 @@ function removeRow(rid) {
 }
 
 function renumber() {
-  document.querySelectorAll('#delay-rows tr .row-num').forEach((el,i) => el.textContent = i+1);
+  document.querySelectorAll('#delay-rows tr .row-num').forEach((el,i)=>el.textContent=i+1);
 }
 
 function updateRowCount() {
@@ -537,13 +717,9 @@ function handlePhoto(e, rid, type) {
   if (!file) return;
   if (!rowPhotos[rid]) rowPhotos[rid] = {};
   rowPhotos[rid][type] = file;
-  const slotId = type === 'site' ? `site-slot-${rid}` : `dwg-slot-${rid}`;
-  const url    = URL.createObjectURL(file);
-  document.getElementById(slotId).innerHTML = `
-    <img src="${url}" class="photo-preview" alt="">
-    <div class="photo-name">${file.name}</div>
-    <input type="file" accept="image/*" onchange="handlePhoto(event,${rid},'${type}')" style="position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;">
-  `;
+  const url  = URL.createObjectURL(file);
+  const slot = document.getElementById(type==='site'?`site-slot-${rid}`:`dwg-slot-${rid}`);
+  slot.innerHTML = `<img src="${url}" class="photo-preview" alt=""><div class="photo-name">${file.name}</div><input type="file" accept="image/*" onchange="handlePhoto(event,${rid},'${type}')" style="position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;">`;
 }
 
 function collectRows() {
@@ -564,7 +740,7 @@ function collectRows() {
   });
 }
 
-// ── Submit ─────────────────────────────────────────────────────────
+// ── Submit (Create or Update) ──────────────────────────────────────
 async function submitReport() {
   if (!selectedJo) { toast('Select a Job Order first.','error'); return; }
   const rows = collectRows();
@@ -584,43 +760,82 @@ async function submitReport() {
     fd.append('sigIbrahim',  document.getElementById('sig-ibrahim').checked);
     fd.append('sigHussein',  document.getElementById('sig-hussein').checked);
     fd.append('delayItems',  JSON.stringify(rows));
-
     rows.forEach(row => {
       const p = rowPhotos[row._rid];
       if (p?.site)    fd.append('sitePhotos',    p.site);
       if (p?.drawing) fd.append('drawingPhotos', p.drawing);
     });
 
-    const r = await fetch(`${API}/api/delay-reports`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${tok()}` },
-      body: fd,
-    });
-    const d = await r.json();
-    if (!r.ok) { toast(d.error || 'Error saving.','error'); return; }
+    const isEdit = !!editingId;
+    const url    = isEdit ? `${API}/api/delay-reports/${editingId}` : `${API}/api/delay-reports`;
+    const method = isEdit ? 'PUT' : 'POST';
 
-    toast('Report submitted successfully!','success');
+    const r = await fetch(url, { method, headers: { 'Authorization': `Bearer ${tok()}` }, body: fd });
+    const d = await r.json();
+    if (!r.ok) { toast(d.error||'Error saving.','error'); return; }
+
+    toast(isEdit ? 'Report updated successfully!' : 'Report submitted successfully!', 'success');
     await loadReports();
+    previewingFromList = true;
     renderPdf(d.delayReport);
     document.getElementById('tab-btn-preview').style.display = '';
+    document.getElementById('preview-back-btn').onclick = () => { showTab('list'); };
+    document.getElementById('preview-edit-btn-wrap').innerHTML = '';
+    document.getElementById('tab-btn-form').style.display = 'none';
     showTab('preview');
   } catch(e) {
     console.error(e);
     toast('Network error. Please try again.','error');
   } finally {
-    btn.innerHTML = 'Submit Report';
+    btn.innerHTML = isEdit ? 'Update Report' : 'Submit Report';
     btn.disabled  = false;
   }
 }
 
-// ── Preview (before submit) ────────────────────────────────────────
+// ── Delete ─────────────────────────────────────────────────────────
+function openDeleteModal(id, ref) {
+  deleteTargetId = id;
+  document.getElementById('delete-modal-body').textContent =
+    `Are you sure you want to permanently delete report "${ref}"? This cannot be undone.`;
+  document.getElementById('delete-modal').classList.add('show');
+}
+
+function closeDeleteModal() {
+  document.getElementById('delete-modal').classList.remove('show');
+  deleteTargetId = null;
+}
+
+async function confirmDelete() {
+  if (!deleteTargetId) return;
+  const btn = document.getElementById('confirm-delete-btn');
+  btn.innerHTML = '<span class="spinner"></span>';
+  btn.disabled  = true;
+  try {
+    const r = await fetch(`${API}/api/delay-reports/${deleteTargetId}`, {
+      method: 'DELETE',
+      headers: authH(),
+    });
+    if (!r.ok) { const d=await r.json(); toast(d.error||'Delete failed.','error'); return; }
+    toast('Report deleted.','success');
+    closeDeleteModal();
+    await loadReports();
+  } catch(e) {
+    console.error(e);
+    toast('Network error.','error');
+  } finally {
+    btn.innerHTML = 'Delete Permanently';
+    btn.disabled  = false;
+  }
+}
+
+// ── Preview from form ──────────────────────────────────────────────
 function previewReport() {
   if (!selectedJo) { toast('Select a Job Order first.','error'); return; }
   const rows = collectRows();
   if (!rows.length) { toast('Add at least one delay item.','error'); return; }
-
+  previewingFromList = false;
   const fake = {
-    refNumber:        'Preview — ref generated on submit',
+    refNumber:        editingId ? (document.getElementById('ref-preview').value||'Editing…') : 'Preview — ref generated on submit',
     jobOrderNumber:   selectedJo.jobOrderNumber || selectedJo.id,
     projectName:      selectedJo.projectName    || selectedJo.name || '',
     clientCompany:    selectedJo.clientCompany  || '',
@@ -638,24 +853,25 @@ function previewReport() {
     })),
     signatures: {
       afSide: [
-        ...(document.getElementById('sig-ramadasu').checked ? [{ name: document.getElementById('reported-by').value||'Ramadasu', role:'Reported By' }] : []),
-        ...(document.getElementById('sig-nazir').checked    ? [{ name:'Engr. Nazir Hussain', role:'Projects Incharge' }] : []),
+        ...(document.getElementById('sig-ramadasu').checked ? [{name:document.getElementById('reported-by').value||'Ramadasu',role:'Reported By'}] : []),
+        ...(document.getElementById('sig-nazir').checked    ? [{name:'Engr. Nazir Hussain',role:'Projects Incharge'}] : []),
       ],
       clientSide: [
-        ...(document.getElementById('sig-ibrahim').checked ? [{ name: selectedJo.siteEngineer||'Site Engineer',   role:'Site Engineer'   }] : []),
-        ...(document.getElementById('sig-hussein').checked ? [{ name: selectedJo.projectManager||'Project Manager', role:'Project Manager' }] : []),
+        ...(document.getElementById('sig-ibrahim').checked ? [{name:selectedJo.siteEngineer||'Site Engineer',role:'Site Engineer'}] : []),
+        ...(document.getElementById('sig-hussein').checked ? [{name:selectedJo.projectManager||'Project Manager',role:'Project Manager'}] : []),
       ],
     },
   };
   renderPdf(fake);
   document.getElementById('tab-btn-preview').style.display = '';
+  document.getElementById('preview-back-btn').onclick = () => showTab('form');
+  document.getElementById('preview-edit-btn-wrap').innerHTML = '';
   showTab('preview');
 }
 
 // ── Render PDF ─────────────────────────────────────────────────────
 function renderPdf(report) {
   const dateFmt = (report.date||'').split('-').reverse().join('-') || '—';
-
   const rowsHtml = (report.delayItems||[]).map((item,i) => {
     const sc = item.status==='Open' ? 'pdf-s-open' : item.status==='In Progress' ? 'pdf-s-prog' : 'pdf-s-done';
     const si = item.sitePhotoUrl    ? `<img src="${item.sitePhotoUrl}"    class="pdf-img" alt="">` : `<div class="pdf-no-img">No photo</div>`;
@@ -665,8 +881,7 @@ function renderPdf(report) {
       <td style="text-align:center">${item.floor||'—'}</td>
       <td>${item.areaZone||'—'}</td>
       <td style="font-size:7.5px">${item.description||'—'}</td>
-      <td>${si}</td>
-      <td>${di}</td>
+      <td>${si}</td><td>${di}</td>
       <td style="font-size:7.5px">${item.reasonOfDelay||'—'}</td>
       <td style="font-size:7.5px"><strong>${item.actionBy||'—'}</strong><br><span style="color:#888;font-size:6.5px">${item.actionNote||''}</span></td>
       <td><span class="${sc}">${item.status||'Open'}</span></td>
@@ -675,38 +890,21 @@ function renderPdf(report) {
     </tr>`;
   }).join('');
 
-  // Sig block
   const afSigs = report.signatures?.afSide    || [];
   const clSigs = report.signatures?.clientSide || [];
   let sigHtml  = '';
   if (afSigs.length || clSigs.length) {
     sigHtml = `<div class="pdf-sig-outer"><div class="pdf-sig-row">`;
-    if (afSigs.length) sigHtml += `
-      <div class="pdf-sig-af" style="${!clSigs.length?'border-right:none':''}">
-        <span class="pdf-sig-lbl pdf-lbl-af">Al Fitr Electromechanical Works LLC</span>
-        <div class="pdf-sig-persons">${afSigs.map(s=>`<div class="pdf-sig-block"><div class="pdf-sig-line"></div><div class="pdf-sig-name">${s.name}</div><div class="pdf-sig-role-af">${s.role}</div></div>`).join('')}</div>
-      </div>`;
-    if (clSigs.length) sigHtml += `
-      <div class="pdf-sig-cl">
-        <span class="pdf-sig-lbl pdf-lbl-cl">Client — ${report.clientCompany||''}</span>
-        <div class="pdf-sig-persons">${clSigs.map(s=>`<div class="pdf-sig-block"><div class="pdf-sig-line"></div><div class="pdf-sig-name">${s.name}</div><div class="pdf-sig-role-cl">${s.role}</div></div>`).join('')}</div>
-      </div>`;
+    if (afSigs.length) sigHtml += `<div class="pdf-sig-af" style="${!clSigs.length?'border-right:none':''}"><span class="pdf-sig-lbl pdf-lbl-af">Al Fitr Electromechanical Works LLC</span><div class="pdf-sig-persons">${afSigs.map(s=>`<div class="pdf-sig-block"><div class="pdf-sig-line"></div><div class="pdf-sig-name">${s.name}</div><div class="pdf-sig-role-af">${s.role}</div></div>`).join('')}</div></div>`;
+    if (clSigs.length) sigHtml += `<div class="pdf-sig-cl"><span class="pdf-sig-lbl pdf-lbl-cl">Client — ${report.clientCompany||''}</span><div class="pdf-sig-persons">${clSigs.map(s=>`<div class="pdf-sig-block"><div class="pdf-sig-line"></div><div class="pdf-sig-name">${s.name}</div><div class="pdf-sig-role-cl">${s.role}</div></div>`).join('')}</div></div>`;
     sigHtml += `</div></div>`;
   }
 
   document.getElementById('pdf-output').innerHTML = `
     <div class="pdf-hdr">
-      <div style="display:flex;flex-direction:column;align-items:center">
-        <div class="pdf-logo-c"><div class="pdf-logo-i">AF</div></div>
-        <div class="pdf-logo-n">AL FITR</div>
-      </div>
+      <div style="display:flex;flex-direction:column;align-items:center"><div class="pdf-logo-c"><div class="pdf-logo-i">AF</div></div><div class="pdf-logo-n">AL FITR</div></div>
       <div class="pdf-co">AL FITR ELECTROMECHANICAL WORKS LLC</div>
-      <div class="pdf-ref">
-        <div><strong>Ref No:</strong> ${report.refNumber||'—'}</div>
-        <div><strong>Date:</strong> ${dateFmt}</div>
-        <div><strong>Job Order:</strong> ${report.jobOrderNumber||'—'}</div>
-        <div><strong>Page:</strong> 1 of 1</div>
-      </div>
+      <div class="pdf-ref-box"><div><strong>Ref No:</strong> ${report.refNumber||'—'}</div><div><strong>Date:</strong> ${dateFmt}</div><div><strong>Job Order:</strong> ${report.jobOrderNumber||'—'}</div><div><strong>Page:</strong> 1 of 1</div></div>
     </div>
     <div class="pdf-rpt-title">SITE DELAY ANALYSIS REPORT</div>
     <div class="pdf-info-grid">
@@ -727,18 +925,8 @@ function renderPdf(report) {
       </div>
     </div>
     <table class="pdf-tbl">
-      <colgroup>
-        <col style="width:3%"><col style="width:5%"><col style="width:8%">
-        <col style="width:14%"><col style="width:9%"><col style="width:9%">
-        <col style="width:10%"><col style="width:10%"><col style="width:6%">
-        <col style="width:13%"><col style="width:13%">
-      </colgroup>
-      <thead><tr>
-        <th>SR.<br>No</th><th>Floor</th><th>Area /<br>Zone</th>
-        <th>Description</th><th>Site Actual<br>Picture</th><th>Drawing Ref.<br>Picture</th>
-        <th>Reason of<br>Delay</th><th>Action By</th><th>Status</th>
-        <th>Remarks</th><th>Target<br>Resolution</th>
-      </tr></thead>
+      <colgroup><col style="width:3%"><col style="width:5%"><col style="width:8%"><col style="width:14%"><col style="width:9%"><col style="width:9%"><col style="width:10%"><col style="width:10%"><col style="width:6%"><col style="width:13%"><col style="width:13%"></colgroup>
+      <thead><tr><th>SR.<br>No</th><th>Floor</th><th>Area /<br>Zone</th><th>Description</th><th>Site Actual<br>Picture</th><th>Drawing Ref.<br>Picture</th><th>Reason of<br>Delay</th><th>Action By</th><th>Status</th><th>Remarks</th><th>Target<br>Resolution</th></tr></thead>
       <tbody>${rowsHtml}</tbody>
     </table>
     ${sigHtml}
@@ -746,20 +934,21 @@ function renderPdf(report) {
       <span>Al Fitr Electromechanical Works LLC — Sharjah, UAE</span>
       <span><strong>${report.refNumber||'—'}</strong> — Site Delay Analysis Report — ${report.projectName||''}</span>
       <span>Generated: ${dateFmt} — Confidential</span>
-    </div>
-  `;
+    </div>`;
 }
 
 // ── Tabs ───────────────────────────────────────────────────────────
 function showTab(name) {
-  ['list','new','preview'].forEach(t => {
-    document.getElementById(`tab-${t}`).style.display    = t===name ? '' : 'none';
+  ['list','form','preview'].forEach(t => {
+    document.getElementById(`tab-${t}`).style.display = t===name ? '' : 'none';
     const btn = document.getElementById(`tab-btn-${t}`);
     if (btn) btn.classList.toggle('active', t===name);
   });
 }
 
-// ── Toast ──────────────────────────────────────────────────────────
+// ── Utils ──────────────────────────────────────────────────────────
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
 function toast(msg, type='success') {
   const el = document.getElementById('toast');
   el.textContent = msg;

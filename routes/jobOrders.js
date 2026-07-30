@@ -23,9 +23,6 @@ router.get('/:id', (req, res) => {
   res.json({ jobOrder: jo });
 });
 
-// Manual creation — for a real job that already happened (backlog/historical data entry)
-// or any job that doesn't have a quotation on file. quotationId stays null so it's always
-// clear, later, which Job Orders came from the normal quote-to-job flow and which didn't.
 router.post('/', requirePermission('manageReports'), async (req, res) => {
   const state = db.get();
   const body = req.body || {};
@@ -44,9 +41,13 @@ router.post('/', requirePermission('manageReports'), async (req, res) => {
     type: body.type || 'SUP',
     clientId: body.clientId || null, clientCompany: body.clientCompany.trim(),
     subject: body.subject || '', siteDetail: body.siteDetail || '',
+    location: body.location || '',
     sitesCovered: [],
-    siteEngineer: body.siteEngineer || '', projectManager: body.projectManager || '',
-    siteSupervisor: body.siteSupervisor || '', projectsIncharge: body.projectsIncharge || '',
+    siteEngineer:     body.siteEngineer     || '',
+    projectManager:   body.projectManager   || '',
+    siteSupervisor:   body.siteSupervisor   || '',
+    projectsIncharge: body.projectsIncharge || '',
+    preparedBy:       body.preparedBy       || '',
     value: Number(body.value || 0),
     status: body.status || 'Open',
     createdById: req.user.id, createdByName: req.user.name,
@@ -57,8 +58,6 @@ router.post('/', requirePermission('manageReports'), async (req, res) => {
   res.status(201).json({ jobOrder: jo });
 });
 
-// Edits the core fields — same permission as manual creation, since fixing/completing
-// historical entries is the same kind of work.
 router.put('/:id', requirePermission('manageReports'), async (req, res) => {
   const state = db.get();
   const jo = state.jobOrders.find(j => j.id === req.params.id);
@@ -74,7 +73,7 @@ router.put('/:id', requirePermission('manageReports'), async (req, res) => {
     }
     if (newNumber) jo.jobOrderNumber = newNumber;
   }
-  for (const f of ['clientId', 'clientCompany', 'subject', 'siteDetail', 'type', 'status']) {
+  for (const f of ['clientId', 'clientCompany', 'subject', 'siteDetail', 'location', 'type', 'status']) {
     if (f in body) jo[f] = body[f];
   }
   if ('value' in body) jo.value = Number(body.value || 0);
@@ -83,14 +82,13 @@ router.put('/:id', requirePermission('manageReports'), async (req, res) => {
   res.json({ jobOrder: jo });
 });
 
-// Sets the named site team once on the Job Order — every Delay Report raised against
-// this job then pulls these names automatically instead of asking again each time.
+// Sets the named site team — Al Fitr side + Client side
 router.put('/:id/site-team', requirePermission('manageReports'), async (req, res) => {
   const state = db.get();
   const jo = state.jobOrders.find(j => j.id === req.params.id);
   if (!jo) return res.status(404).json({ error: 'Job Order not found.' });
   const body = req.body || {};
-  for (const f of ['siteEngineer', 'projectManager', 'siteSupervisor', 'projectsIncharge']) {
+  for (const f of ['siteEngineer', 'projectManager', 'siteSupervisor', 'projectsIncharge', 'preparedBy']) {
     if (f in body) jo[f] = String(body[f] || '').trim();
   }
   jo.updatedAt = Date.now();

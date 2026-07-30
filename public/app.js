@@ -712,7 +712,15 @@ function renderQuotations() {
 }
 
 /* ---------------- Job Orders ---------------- */
-const JO_STATUS_BADGE = { Open: 'badge-in', 'In Progress': 'badge-low', Completed: 'badge-in', 'On Hold': 'badge-low', Cancelled: 'badge-out' };
+const JO_STATUS_BADGE = { Open: 'badge-in', Pending: 'badge-low', 'In Process': 'badge-low', Resolved: 'badge-out', 'In Progress': 'badge-low', Completed: 'badge-in', 'On Hold': 'badge-low', Cancelled: 'badge-out' };
+
+const UAE_EMIRATES = ['Abu Dhabi','Dubai','Sharjah','Ajman','Fujairah','Ras Al Khaimah','Umm Al Quwain','Other'];
+
+const DELAY_REASONS = [
+  'Site Clearance Pending','Material Pending','Change in Route','Conduit Blockage',
+  'Change in Drawing','Client Approval Pending','Consultant Approval Pending',
+  'Access Not Available','Work Permit Pending','Coordination Issue','Other'
+];
 
 function renderJobOrders() {
   const list = [...state.jobOrders].sort((a, b) => b.createdAt - a.createdAt);
@@ -767,11 +775,19 @@ function renderJoForm(payload) {
   <div class="field"><label>Subject / Project Name</label><input id="jo_subject" value="${payload.subject || ''}" placeholder="e.g. Fire Alarm Installation — Tower B"></div>
   <div class="field"><label>Site Detail</label><input id="jo_siteDetail" value="${payload.siteDetail || ''}"></div>
   <div class="grid2">
-    <div class="field"><label>Value</label><input id="jo_value" type="number" value="${payload.value ?? ''}" placeholder="0"></div>
+    <div class="field"><label>Location (Emirate)</label>
+      <select id="jo_location">
+        <option value="">— Select Emirate —</option>
+        ${UAE_EMIRATES.map(e => `<option value="${e}" ${(payload.location||payload.siteDetail)===e?'selected':''}>${e}</option>`).join('')}
+      </select>
+    </div>
     <div class="field"><label>Status</label>
-      <select id="jo_status">${Object.keys(JO_STATUS_BADGE).map(s => `<option ${payload.status === s ? 'selected' : ''}>${s}</option>`).join('')}</select>
+      <select id="jo_status">
+        ${['Open','Pending','In Process','Resolved'].map(s => `<option ${payload.status === s ? 'selected' : ''}>${s}</option>`).join('')}
+      </select>
     </div>
   </div>
+  <div class="field"><label>Value</label><input id="jo_value" type="number" value="${payload.value ?? ''}" placeholder="0"></div>
   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">
     <button class="btn btn-ghost" id="modalCancel">Cancel</button>
     <button class="btn btn-primary" id="saveJoBtn">${isEdit ? 'Save Changes' : 'Create Job Order'}</button>
@@ -799,11 +815,16 @@ function renderJobOrderView(jo) {
     ${can('manageReports') ? `<button class="btn btn-outline btn-sm" id="editSiteTeamBtn">${hasSiteTeam ? 'Edit' : '+ Set Site Team'}</button>` : ''}
   </div>
   ${hasSiteTeam ? `
+    <div style="background:#e1f5ee;border-radius:5px;padding:6px 10px;font-size:10px;font-weight:700;color:#085041;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">Al Fitr Team</div>
+    <div class="grid2" style="margin-bottom:10px;">
+      <div><div class="k muted">Projects Incharge</div><div>${jo.projectsIncharge || '—'}</div></div>
+      <div><div class="k muted">Prepared By</div><div>${jo.preparedBy || '—'}</div></div>
+    </div>
+    <div style="background:#e6f1fb;border-radius:5px;padding:6px 10px;font-size:10px;font-weight:700;color:#185FA5;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">Client Team</div>
     <div class="grid2" style="margin-bottom:18px;">
-      <div><div class="k muted">Site Engineer</div><div>${jo.siteEngineer || '—'}</div></div>
+      <div><div class="k muted">Client Engineer</div><div>${jo.siteEngineer || '—'}</div></div>
       <div><div class="k muted">Project Manager</div><div>${jo.projectManager || '—'}</div></div>
       <div><div class="k muted">Site Supervisor</div><div>${jo.siteSupervisor || '—'}</div></div>
-      <div><div class="k muted">Projects Incharge</div><div>${jo.projectsIncharge || '—'}</div></div>
     </div>
   ` : `<p class="muted" style="font-size:12px;margin-bottom:18px;">No site team set yet — set it once here, and every Delay Report for this job will use it automatically.</p>`}
 
@@ -852,13 +873,20 @@ function renderJobOrderView(jo) {
 function renderSiteTeamForm(jo) {
   return `
   <div class="muted" style="margin-bottom:12px;font-size:12px;">For ${jo.jobOrderNumber} — ${jo.clientCompany}</div>
-  <div class="field"><label>Site Engineer</label><input id="st_siteEngineer" value="${jo.siteEngineer || ''}" placeholder="e.g. Engr. Sarah Khan"></div>
-  <div class="field"><label>Project Manager</label><input id="st_projectManager" value="${jo.projectManager || ''}"></div>
-  <div class="field"><label>Site Supervisor</label><input id="st_siteSupervisor" value="${jo.siteSupervisor || ''}"></div>
-  <div class="field"><label>Projects Incharge</label><input id="st_projectsIncharge" value="${jo.projectsIncharge || ''}"></div>
+  <div style="background:#e1f5ee;border-radius:6px;padding:10px 12px;margin-bottom:12px;font-size:11px;font-weight:700;color:#085041;text-transform:uppercase;letter-spacing:0.05em;">Al Fitr Team</div>
+  <div class="grid2">
+    <div class="field"><label>Projects Incharge (Al Fitr)</label><input id="st_projectsIncharge" value="${jo.projectsIncharge || ''}" placeholder="e.g. Engr. Nazir Hussain"></div>
+    <div class="field"><label>Prepared By / Reported By</label><input id="st_preparedBy" value="${jo.preparedBy || ''}" placeholder="e.g. Ramadasu"></div>
+  </div>
+  <div style="background:#e6f1fb;border-radius:6px;padding:10px 12px;margin:12px 0;font-size:11px;font-weight:700;color:#185FA5;text-transform:uppercase;letter-spacing:0.05em;">Client Team</div>
+  <div class="grid2">
+    <div class="field"><label>Client Engineer Name</label><input id="st_siteEngineer" value="${jo.siteEngineer || ''}" placeholder="e.g. Engr. Ibrahim"></div>
+    <div class="field"><label>Project Manager (Client)</label><input id="st_projectManager" value="${jo.projectManager || ''}" placeholder="e.g. Engr. Hussein"></div>
+  </div>
+  <div class="field"><label>Site Supervisor</label><input id="st_siteSupervisor" value="${jo.siteSupervisor || ''}" placeholder="e.g. Engr. Ahmed"></div>
   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">
     <button class="btn btn-ghost" id="modalCancel">Cancel</button>
-    <button class="btn btn-primary" id="saveSiteTeamBtn">Save</button>
+    <button class="btn btn-primary" id="saveSiteTeamBtn">Save Site Team</button>
   </div>
   `;
 }
@@ -935,19 +963,25 @@ function renderDelayReportForm(payload) {
   <button class="btn btn-ghost btn-sm" id="addDrItemBtn" type="button" style="margin-bottom:16px;">+ Add Delay Item</button>
 
   <label>Signatures to Include</label>
-  <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:16px;">
-    <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500;color:var(--ink);text-transform:none;letter-spacing:0;">
-      <input type="checkbox" id="sig_reportedBy" checked style="width:auto;"> Reported By — ${payload.reportedBy || state.user.name}
-    </label>
-    <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500;color:var(--ink);text-transform:none;letter-spacing:0;">
-      <input type="checkbox" id="sig_projectsIncharge" ${jo && jo.projectsIncharge ? 'checked' : ''} style="width:auto;"> Projects Incharge — ${jo?.projectsIncharge || '—'}
-    </label>
-    <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500;color:var(--ink);text-transform:none;letter-spacing:0;">
-      <input type="checkbox" id="sig_siteEngineer" ${jo && jo.siteEngineer ? 'checked' : ''} style="width:auto;"> Site Engineer — ${jo?.siteEngineer || '—'}
-    </label>
-    <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500;color:var(--ink);text-transform:none;letter-spacing:0;">
-      <input type="checkbox" id="sig_projectManager" ${jo && jo.projectManager ? 'checked' : ''} style="width:auto;"> Project Manager — ${jo?.projectManager || '—'}
-    </label>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+    <div>
+      <div style="background:#e1f5ee;border-radius:5px;padding:5px 10px;font-size:10px;font-weight:700;color:#085041;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">Al Fitr (always shown)</div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500;color:var(--ink);text-transform:none;letter-spacing:0;margin-bottom:6px;">
+        <input type="checkbox" id="sig_reportedBy" checked style="width:auto;"> Prepared By — ${payload.reportedBy || state.user.name}
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500;color:var(--ink);text-transform:none;letter-spacing:0;">
+        <input type="checkbox" id="sig_projectsIncharge" checked style="width:auto;"> Project In-Charge — ${jo?.projectsIncharge || '—'}
+      </label>
+    </div>
+    <div>
+      <div style="background:#e6f1fb;border-radius:5px;padding:5px 10px;font-size:10px;font-weight:700;color:#185FA5;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">Client (optional)</div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500;color:var(--ink);text-transform:none;letter-spacing:0;margin-bottom:6px;">
+        <input type="checkbox" id="sig_projectManager" ${jo && jo.projectManager ? 'checked' : ''} style="width:auto;"> Project Manager — ${jo?.projectManager || '—'}
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500;color:var(--ink);text-transform:none;letter-spacing:0;">
+        <input type="checkbox" id="sig_siteEngineer" ${jo && jo.siteEngineer ? 'checked' : ''} style="width:auto;"> Client Engineer — ${jo?.siteEngineer || '—'}
+      </label>
+    </div>
   </div>
 
   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">
@@ -967,8 +1001,13 @@ function renderDrItemRow(it, idx) {
     </div>
     <div class="field"><label>Description</label><input class="drDescription" data-idx="${idx}" value="${it.description || ''}"></div>
     <div class="grid2">
-      <div class="field"><label>Reason of Delay</label><input class="drReason" data-idx="${idx}" value="${it.reasonOfDelay || ''}"></div>
-      <div class="field"><label>Action By</label><input class="drActionBy" data-idx="${idx}" value="${it.actionBy || ''}" placeholder="e.g. Contractor, Client"></div>
+      <div class="field"><label>Reason of Delay</label>
+        <select class="drReason" data-idx="${idx}">
+          <option value="">— Select reason —</option>
+          ${DELAY_REASONS.map(r => `<option value="${r}" ${it.reasonOfDelay===r?'selected':''}>${r}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field"><label>Action By</label><input class="drActionBy" data-idx="${idx}" value="${it.actionBy || ''}" placeholder="e.g. Engr. Ibrahim"></div>
     </div>
     <div class="grid3">
       <div class="field"><label>Status</label>
@@ -3448,10 +3487,11 @@ function attachSiteTeamFormHandlers() {
   if (saveBtn) saveBtn.addEventListener('click', async () => {
     try {
       const res = await api('PUT', `/api/job-orders/${jo.id}/site-team`, {
-        siteEngineer: val('st_siteEngineer').trim(),
-        projectManager: val('st_projectManager').trim(),
-        siteSupervisor: val('st_siteSupervisor').trim(),
+        siteEngineer:     val('st_siteEngineer').trim(),
+        projectManager:   val('st_projectManager').trim(),
+        siteSupervisor:   val('st_siteSupervisor').trim(),
         projectsIncharge: val('st_projectsIncharge').trim(),
+        preparedBy:       val('st_preparedBy').trim(),
       });
       await loadAll();
       showToast('Site team saved.', 'ok');
@@ -3478,6 +3518,7 @@ function attachJoFormHandlers() {
       clientId: val('jo_clientPick') || null, clientCompany,
       jobOrderNumber: val('jo_number').trim(),
       type: val('jo_type'), subject: val('jo_subject'), siteDetail: val('jo_siteDetail'),
+      location: val('jo_location'),
       value: Number(val('jo_value') || 0), status: val('jo_status'),
     };
     try {
@@ -3571,10 +3612,10 @@ function attachDrFormHandlers() {
     fd.append('date', val('drDate'));
     fd.append('reportedBy', val('drReportedBy'));
     fd.append('delayItems', JSON.stringify(delayItems));
-    fd.append('includeReportedBySignature', document.getElementById('sig_reportedBy').checked);
-    fd.append('includeProjectsInchargeSignature', document.getElementById('sig_projectsIncharge').checked);
-    fd.append('includeSiteEngineerSignature', document.getElementById('sig_siteEngineer').checked);
-    fd.append('includeProjectManagerSignature', document.getElementById('sig_projectManager').checked);
+    fd.append('sigRamadasu',  document.getElementById('sig_reportedBy').checked);
+    fd.append('sigNazir',     document.getElementById('sig_projectsIncharge').checked);
+    fd.append('sigIbrahim',   document.getElementById('sig_siteEngineer').checked);
+    fd.append('sigHussein',   document.getElementById('sig_projectManager').checked);
 
     try {
       const isEdit = state.modal.type === 'editDr' && !!p.id;
@@ -3594,44 +3635,55 @@ function buildDrPdfHtml(d) {
   const dateFmt = (d.date||'').split('-').reverse().join('-') || '—';
   const afSigs  = d.signatures?.afSide    || [];
   const clSigs  = d.signatures?.clientSide || [];
+  // Always show Prepared By + Project In-Charge on Al Fitr side
+  const afSignatories = afSigs.length ? afSigs : [
+    { name: d.reportedBy || '—', role: 'Prepared By' },
+    { name: d.projectsIncharge || 'Engr. Nazir Hussain', role: 'Project In-Charge' },
+  ];
   const rowsHtml = (d.delayItems||[]).map((item,i) => {
     const sc = item.status==='Open' ? 'background:#FEE2E2;color:#991B1B' : item.status==='In Progress' ? 'background:#FEF3C7;color:#92400E' : 'background:#D1FAE5;color:#065F46';
     const si = item.sitePhotoUrl    ? `<img src="${item.sitePhotoUrl}"    style="width:100%;height:50px;object-fit:cover;border-radius:2px;border:1px solid #ddd;display:block;">` : `<div style="width:100%;height:50px;background:#f5f5f5;border:1px dashed #ddd;border-radius:2px;display:flex;align-items:center;justify-content:center;font-size:7px;color:#ccc;">No photo</div>`;
     const di = item.drawingPhotoUrl ? `<img src="${item.drawingPhotoUrl}" style="width:100%;height:50px;object-fit:cover;border-radius:2px;border:1px solid #ddd;display:block;">` : `<div style="width:100%;height:50px;background:#f5f5f5;border:1px dashed #ddd;border-radius:2px;display:flex;align-items:center;justify-content:center;font-size:7px;color:#ccc;">Not uploaded</div>`;
     return `<tr>
-      <td style="text-align:center;font-weight:700;color:#555;font-size:8px;">${String(i+1).padStart(2,'0')}</td>
-      <td style="text-align:center;font-size:8px;">${item.floor||'—'}</td>
-      <td style="font-size:7.5px;">${item.areaZone||'—'}</td>
-      <td style="font-size:7.5px;">${item.description||'—'}</td>
-      <td>${si}</td><td>${di}</td>
-      <td style="font-size:7.5px;">${item.reasonOfDelay||'—'}</td>
-      <td style="font-size:7.5px;"><strong>${item.actionBy||'—'}</strong><br><span style="color:#888;font-size:6.5px;">${item.actionNote||''}</span></td>
-      <td><span style="border-radius:2px;padding:2px 4px;font-size:6.5px;font-weight:700;${sc};">${item.status||'Open'}</span></td>
-      <td style="font-size:7px;color:#555;font-style:italic;">${item.remarks||'—'}</td>
-      <td style="text-align:center;font-size:8px;color:#E8520A;font-weight:700;">${item.targetDate||'—'}</td>
+      <td style="text-align:center;vertical-align:middle;font-weight:700;color:#555;font-size:8px;border:1px solid #ddd;padding:4px 3px;">${String(i+1).padStart(2,'0')}</td>
+      <td style="text-align:left;vertical-align:middle;font-size:8px;border:1px solid #ddd;padding:4px 3px;">${item.floor||'—'}</td>
+      <td style="text-align:center;vertical-align:middle;font-size:7.5px;word-wrap:break-word;border:1px solid #ddd;padding:4px 3px;">${item.areaZone||'—'}</td>
+      <td style="text-align:left;vertical-align:middle;font-size:7.5px;word-wrap:break-word;border:1px solid #ddd;padding:4px 3px;">${item.description||'—'}</td>
+      <td style="border:1px solid #ddd;padding:4px 3px;">${si}</td>
+      <td style="border:1px solid #ddd;padding:4px 3px;">${di}</td>
+      <td style="text-align:center;vertical-align:middle;font-size:7.5px;word-wrap:break-word;border:1px solid #ddd;padding:4px 3px;">${item.reasonOfDelay||'—'}</td>
+      <td style="text-align:center;vertical-align:middle;font-size:7.5px;word-wrap:break-word;border:1px solid #ddd;padding:4px 3px;"><strong>${item.actionBy||'—'}</strong></td>
+      <td style="text-align:center;vertical-align:middle;border:1px solid #ddd;padding:4px 3px;"><span style="border-radius:2px;padding:2px 4px;font-size:6.5px;font-weight:700;${sc};">${item.status||'Open'}</span></td>
+      <td style="text-align:left;vertical-align:middle;font-size:7px;color:#555;word-wrap:break-word;border:1px solid #ddd;padding:4px 3px;">${item.remarks||'—'}</td>
+      <td style="text-align:center;vertical-align:middle;font-size:8px;color:#E8520A;font-weight:700;border:1px solid #ddd;padding:4px 3px;">${item.targetDate||'—'}</td>
     </tr>`;
   }).join('');
 
-  let sigHtml = '';
-  if (afSigs.length || clSigs.length) {
-    const afBlocks = afSigs.map(s=>`<div style="flex:1;text-align:center;padding:0 8px;"><div style="border-bottom:1px solid #555;height:20px;margin-bottom:3px;"></div><div style="font-size:7.5px;font-weight:700;">${s.name}</div><div style="font-size:7px;color:#1D9E75;">${s.role}</div></div>`).join('');
-    const clBlocks = clSigs.map(s=>`<div style="flex:1;text-align:center;padding:0 8px;"><div style="border-bottom:1px solid #555;height:20px;margin-bottom:3px;"></div><div style="font-size:7.5px;font-weight:700;">${s.name}</div><div style="font-size:7px;color:#185FA5;">${s.role}</div></div>`).join('');
-    sigHtml = `<div style="border-top:2px solid #E8520A;display:flex;">
-      ${afSigs.length ? `<div style="background:#f0faf5;flex:1;padding:8px 14px;${clSigs.length?'border-right:1px solid #ddd;':''}"><span style="font-size:7px;font-weight:700;text-transform:uppercase;background:#e1f5ee;color:#085041;padding:2px 7px;border-radius:3px;display:inline-block;margin-bottom:6px;">Al Fitr Electromechanical Works LLC</span><div style="display:flex;">${afBlocks}</div></div>` : ''}
-      ${clSigs.length ? `<div style="background:#f0f5fb;flex:1;padding:8px 14px;"><span style="font-size:7px;font-weight:700;text-transform:uppercase;background:#e6f1fb;color:#185FA5;padding:2px 7px;border-radius:3px;display:inline-block;margin-bottom:6px;">Client — ${d.clientCompany||''}</span><div style="display:flex;">${clBlocks}</div></div>` : ''}
-    </div>`;
-  }
+  const afBlocks = afSignatories.map(s=>`<div style="flex:1;text-align:center;padding:0 8px;"><div style="border-bottom:1px solid #555;height:20px;margin-bottom:3px;"></div><div style="font-size:7.5px;font-weight:700;">${s.name||'—'}</div><div style="font-size:7px;color:#1D9E75;">${s.role}</div></div>`).join('');
+  const clBlocks = clSigs.map(s=>`<div style="flex:1;text-align:center;padding:0 8px;"><div style="border-bottom:1px solid #555;height:20px;margin-bottom:3px;"></div><div style="font-size:7.5px;font-weight:700;">${s.name||'—'}</div><div style="font-size:7px;color:#185FA5;">${s.role}</div></div>`).join('');
+  const sigHtml = `<div style="border-top:2px solid #E8520A;display:flex;">
+    <div style="background:#f0faf5;flex:1;padding:8px 14px;${clSigs.length?'border-right:1px solid #ddd;':''}">
+      <span style="font-size:7px;font-weight:700;text-transform:uppercase;background:#e1f5ee;color:#085041;padding:2px 7px;border-radius:3px;display:inline-block;margin-bottom:6px;">Al Fitr Electromechanical Works LLC</span>
+      <div style="display:flex;">${afBlocks}</div>
+    </div>
+    ${clSigs.length ? `<div style="background:#f0f5fb;flex:1;padding:8px 14px;">
+      <span style="font-size:7px;font-weight:700;text-transform:uppercase;background:#e6f1fb;color:#185FA5;padding:2px 7px;border-radius:3px;display:inline-block;margin-bottom:6px;">Client — ${d.clientCompany||''}</span>
+      <div style="display:flex;">${clBlocks}</div>
+    </div>` : ''}
+  </div>`;
+  const co = state.company || {};
+  const logoHtml = co.logoPath
+    ? `<img src="${co.logoPath}" style="height:48px;max-width:80px;object-fit:contain;" alt="logo">`
+    : `<div style="width:42px;height:42px;border-radius:50%;border:2px solid #1D9E75;display:flex;align-items:center;justify-content:center;"><div style="width:26px;height:26px;border-radius:50%;background:#1D9E75;color:#fff;font-weight:700;font-size:8px;display:flex;align-items:center;justify-content:center;">AF</div></div><div style="font-size:7px;font-weight:700;color:#1D9E75;text-align:center;margin-top:2px;">AL FITR</div>`;
 
   return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${d.refNumber}</title>
-  <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:Arial,sans-serif;font-size:9px;color:#1a1a1a;}@page{size:A4 landscape;margin:8mm;}</style>
+  <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:Arial,sans-serif;font-size:9px;color:#1a1a1a;}@page{size:A4 landscape;margin:8mm;}
+  td,th{vertical-align:middle;}
+  .center-col{text-align:center;vertical-align:middle;}
+  </style>
   </head><body>
-  <div style="border-bottom:3px solid #E8520A;display:grid;grid-template-columns:72px 1fr auto;align-items:center;padding:8px 14px;gap:10px;">
-    <div style="display:flex;flex-direction:column;align-items:center;">
-      <div style="width:42px;height:42px;border-radius:50%;border:2px solid #1D9E75;display:flex;align-items:center;justify-content:center;">
-        <div style="width:26px;height:26px;border-radius:50%;background:#1D9E75;color:#fff;font-weight:700;font-size:8px;display:flex;align-items:center;justify-content:center;">AF</div>
-      </div>
-      <div style="font-size:7px;font-weight:700;color:#1D9E75;text-align:center;margin-top:2px;">AL FITR</div>
-    </div>
+  <div style="border-bottom:3px solid #E8520A;display:grid;grid-template-columns:80px 1fr auto;align-items:center;padding:8px 14px;gap:10px;">
+    <div style="display:flex;flex-direction:column;align-items:center;">${logoHtml}</div>
     <div style="text-align:center;font-size:13px;font-weight:700;color:#E8520A;letter-spacing:0.4px;">AL FITR ELECTROMECHANICAL WORKS LLC</div>
     <div style="text-align:right;font-size:7.5px;color:#555;line-height:1.7;">
       <div><strong>Ref No:</strong> ${d.refNumber||'—'}</div>
@@ -3661,7 +3713,12 @@ function buildDrPdfHtml(d) {
   <table style="width:100%;border-collapse:collapse;table-layout:fixed;">
     <colgroup><col style="width:3%"><col style="width:5%"><col style="width:8%"><col style="width:14%"><col style="width:9%"><col style="width:9%"><col style="width:10%"><col style="width:10%"><col style="width:6%"><col style="width:13%"><col style="width:13%"></colgroup>
     <thead><tr style="background:#2c2c2c;">
-      ${['SR.<br>No','Floor','Area /<br>Zone','Description','Site Actual<br>Picture','Drawing Ref.<br>Picture','Reason of<br>Delay','Action By','Status','Remarks','Target<br>Resolution'].map(h=>`<th style="color:#fff;font-size:7px;font-weight:700;padding:5px 3px;text-align:center;border:1px solid #444;line-height:1.3;">${h}</th>`).join('')}
+      ${[
+        {h:'SR.<br>No',c:true},{h:'Floor',c:false},{h:'Area /<br>Zone',c:true},
+        {h:'Description',c:false},{h:'Site Actual<br>Picture',c:true},{h:'Drawing Ref.<br>Picture',c:true},
+        {h:'Reason of<br>Delay',c:true},{h:'Action By',c:true},{h:'Status',c:true},
+        {h:'Remarks',c:false},{h:'Target<br>Resolution',c:true}
+      ].map(({h,c})=>`<th style="color:#fff;font-size:7px;font-weight:700;padding:5px 3px;text-align:${c?'center':'left'};border:1px solid #444;line-height:1.3;">${h}</th>`).join('')}
     </tr></thead>
     <tbody>${rowsHtml}</tbody>
   </table>

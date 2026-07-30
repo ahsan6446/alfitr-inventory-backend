@@ -869,19 +869,34 @@ function renderDelayReports() {
   return `
   <div class="card">
     <div class="tbl-wrap"><table>
-      <thead><tr><th>Ref #</th><th>Job Order</th><th>Project</th><th>Date</th><th>Reported By</th><th>Items</th><th></th></tr></thead>
+      <thead><tr><th>Ref #</th><th>Job Order</th><th>Project</th><th>Date</th><th>Reported By</th><th>Items</th><th>Status</th><th style="text-align:right;">Actions</th></tr></thead>
       <tbody>
-      ${list.length === 0 ? `<tr><td colspan="7"><div class="empty"><div class="big">⏱️</div>No delay reports yet — raise one from a Job Order.</div></td></tr>` :
-        list.map(d => `
-        <tr>
-          <td style="font-family:var(--mono);font-weight:700;">${d.refNumber}</td>
-          <td style="font-family:var(--mono);font-size:12px;">${d.jobOrderNumber}</td>
-          <td>${d.projectName || '—'}</td>
-          <td>${fmtDate(d.date)}</td>
-          <td>${d.reportedBy}</td>
-          <td>${d.delayItems.length}</td>
-          <td><button class="btn btn-outline btn-sm" data-view-dr="${d.id}">Open</button></td>
-        </tr>`).join('')}
+      ${list.length === 0 ? `<tr><td colspan="8"><div class="empty"><div class="big">⏱️</div>No delay reports yet — raise one from a Job Order.</div></td></tr>` :
+        list.map(d => {
+          const openCount = (d.delayItems||[]).filter(i=>i.status==='Open').length;
+          const progCount = (d.delayItems||[]).filter(i=>i.status==='In Progress').length;
+          const doneCount = (d.delayItems||[]).filter(i=>i.status==='Resolved').length;
+          return `
+          <tr>
+            <td style="font-family:var(--mono);font-weight:700;color:var(--orange);">${d.refNumber}</td>
+            <td style="font-family:var(--mono);font-size:12px;">${d.jobOrderNumber}</td>
+            <td>${d.projectName || '—'}</td>
+            <td>${fmtDate(d.date)}</td>
+            <td>${d.reportedBy}</td>
+            <td>${d.delayItems.length}</td>
+            <td>
+              ${openCount  ? `<span class="tag" style="background:#FEE2E2;color:#991B1B;margin-right:3px;">${openCount} Open</span>` : ''}
+              ${progCount  ? `<span class="tag" style="background:#FEF3C7;color:#92400E;margin-right:3px;">${progCount} In Progress</span>` : ''}
+              ${doneCount  ? `<span class="tag" style="background:#D1FAE5;color:#065F46;">${doneCount} Resolved</span>` : ''}
+            </td>
+            <td style="text-align:right;white-space:nowrap;">
+              <button class="btn btn-outline btn-sm" data-view-dr="${d.id}" style="margin-right:3px;">👁 View</button>
+              <button class="btn btn-outline btn-sm" data-pdf-dr="${d.id}" style="margin-right:3px;">📄 PDF</button>
+              ${can('manageReports') ? `<button class="btn btn-outline btn-sm" data-edit-dr="${d.id}" style="margin-right:3px;">✏️ Edit</button>` : ''}
+              ${state.user.role === 'Super Admin' ? `<button class="btn btn-outline btn-sm" data-delete-dr="${d.id}" style="color:#dc2626;border-color:#fca5a5;">🗑 Delete</button>` : ''}
+            </td>
+          </tr>`;
+        }).join('')}
       </tbody>
     </table></div>
   </div>
@@ -1001,7 +1016,14 @@ function renderDelayReportView(d) {
     ${d.signatures.afSide.map(s => `<div class="sign-line">${s.name || '—'}<br><span style="font-size:11px;">${s.role}</span></div>`).join('')}
     ${d.signatures.clientSide.map(s => `<div class="sign-line">${s.name || '—'}<br><span style="font-size:11px;">${s.role}</span></div>`).join('')}
   </div>
-  <div style="display:flex;justify-content:flex-end;margin-top:18px;"><button class="btn btn-ghost" id="modalCancel">Close</button></div>
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-top:18px;">
+    <div style="display:flex;gap:8px;">
+      ${can('manageReports') ? `<button class="btn btn-outline btn-sm" id="editDrBtn" data-edit-dr="${d.id}">✏️ Edit Report</button>` : ''}
+      <button class="btn btn-outline btn-sm" id="pdfDrBtn" data-pdf-dr="${d.id}">📄 Export PDF</button>
+      ${state.user.role === 'Super Admin' ? `<button class="btn btn-outline btn-sm" id="deleteDrBtn" data-delete-dr="${d.id}" style="color:#dc2626;border-color:#fca5a5;">🗑 Delete</button>` : ''}
+    </div>
+    <button class="btn btn-ghost" id="modalCancel">Close</button>
+  </div>
   `;
 }
 
@@ -1961,7 +1983,8 @@ function renderModal() {
   if (type === 'viewPo') return modalWrap(renderPoView(payload), `Purchase Order ${payload.poNumber}`, true);
   if (type === 'siteTeam') return modalWrap(renderSiteTeamForm(payload), 'Set Site Team');
   if (type === 'newJo') return modalWrap(renderJoForm(payload), payload.id ? 'Edit Job Order' : 'New Job Order');
-  if (type === 'newDr') return modalWrap(renderDelayReportForm(payload), 'New Delay Report', true);
+  if (type === 'newDr')  return modalWrap(renderDelayReportForm(payload), 'New Delay Report', true);
+  if (type === 'editDr') return modalWrap(renderDelayReportForm(payload), `Edit Report — ${payload.refNumber || ''}`, true);
   if (type === 'viewDr') return modalWrap(renderDelayReportView(payload), `Delay Report ${payload.refNumber}`, true);
   return '';
 }
@@ -2448,6 +2471,38 @@ function attachHandlers() {
   });
   document.querySelectorAll('[data-view-dr]').forEach(b => b.addEventListener('click', e => {
     openModal('viewDr', findDelayReport(e.currentTarget.getAttribute('data-view-dr')));
+  }));
+
+  // PDF export — open print-ready view
+  document.querySelectorAll('[data-pdf-dr]').forEach(b => b.addEventListener('click', e => {
+    const dr = findDelayReport(e.currentTarget.getAttribute('data-pdf-dr'));
+    if (!dr) return;
+    const win = window.open('', '_blank');
+    win.document.write(buildDrPdfHtml(dr));
+    win.document.close();
+    setTimeout(() => win.print(), 600);
+  }));
+
+  // Edit — open the new-report form pre-filled
+  document.querySelectorAll('[data-edit-dr]').forEach(b => b.addEventListener('click', e => {
+    const dr = findDelayReport(e.currentTarget.getAttribute('data-edit-dr'));
+    if (!dr) return;
+    closeModal();
+    openModal('editDr', dr);
+  }));
+
+  // Delete — Super Admin only, confirm before deleting
+  document.querySelectorAll('[data-delete-dr]').forEach(b => b.addEventListener('click', async e => {
+    const id  = e.currentTarget.getAttribute('data-delete-dr');
+    const dr  = findDelayReport(id);
+    if (!dr) return;
+    if (!confirm(`Delete delay report ${dr.refNumber}?\n\nThis cannot be undone.`)) return;
+    try {
+      await api('DELETE', '/api/delay-reports/' + id);
+      await loadAll();
+      showToast('Delay report deleted.', 'ok');
+      closeModal();
+    } catch(err) { showToast(err.message || 'Delete failed.', 'err'); }
   }));
 
   const newJoBtn = document.getElementById('newJoBtn');
@@ -3461,7 +3516,7 @@ function syncDrFormIntoPayload() {
 }
 
 function attachDrFormHandlers() {
-  if (!state.modal || state.modal.type !== 'newDr') return;
+  if (!state.modal || (state.modal.type !== 'newDr' && state.modal.type !== 'editDr')) return;
   const p = state.modal.payload;
 
   const jobOrderPick = document.getElementById('drJobOrderPick');
@@ -3522,13 +3577,101 @@ function attachDrFormHandlers() {
     fd.append('includeProjectManagerSignature', document.getElementById('sig_projectManager').checked);
 
     try {
-      const res = await api('POST', '/api/delay-reports', fd, true);
+      const isEdit = state.modal.type === 'editDr' && !!p.id;
+      const res = isEdit
+        ? await api('PUT', '/api/delay-reports/' + p.id, fd, true)
+        : await api('POST', '/api/delay-reports', fd, true);
       await loadAll();
-      showToast('Delay report submitted.', 'ok');
+      showToast(isEdit ? 'Delay report updated.' : 'Delay report submitted.', 'ok');
       closeModal();
       openModal('viewDr', res.delayReport);
     } catch (e) { showToast(e.message, 'err'); }
   });
+}
+
+/* ---- Delay Report PDF builder ---- */
+function buildDrPdfHtml(d) {
+  const dateFmt = (d.date||'').split('-').reverse().join('-') || '—';
+  const afSigs  = d.signatures?.afSide    || [];
+  const clSigs  = d.signatures?.clientSide || [];
+  const rowsHtml = (d.delayItems||[]).map((item,i) => {
+    const sc = item.status==='Open' ? 'background:#FEE2E2;color:#991B1B' : item.status==='In Progress' ? 'background:#FEF3C7;color:#92400E' : 'background:#D1FAE5;color:#065F46';
+    const si = item.sitePhotoUrl    ? `<img src="${item.sitePhotoUrl}"    style="width:100%;height:50px;object-fit:cover;border-radius:2px;border:1px solid #ddd;display:block;">` : `<div style="width:100%;height:50px;background:#f5f5f5;border:1px dashed #ddd;border-radius:2px;display:flex;align-items:center;justify-content:center;font-size:7px;color:#ccc;">No photo</div>`;
+    const di = item.drawingPhotoUrl ? `<img src="${item.drawingPhotoUrl}" style="width:100%;height:50px;object-fit:cover;border-radius:2px;border:1px solid #ddd;display:block;">` : `<div style="width:100%;height:50px;background:#f5f5f5;border:1px dashed #ddd;border-radius:2px;display:flex;align-items:center;justify-content:center;font-size:7px;color:#ccc;">Not uploaded</div>`;
+    return `<tr>
+      <td style="text-align:center;font-weight:700;color:#555;font-size:8px;">${String(i+1).padStart(2,'0')}</td>
+      <td style="text-align:center;font-size:8px;">${item.floor||'—'}</td>
+      <td style="font-size:7.5px;">${item.areaZone||'—'}</td>
+      <td style="font-size:7.5px;">${item.description||'—'}</td>
+      <td>${si}</td><td>${di}</td>
+      <td style="font-size:7.5px;">${item.reasonOfDelay||'—'}</td>
+      <td style="font-size:7.5px;"><strong>${item.actionBy||'—'}</strong><br><span style="color:#888;font-size:6.5px;">${item.actionNote||''}</span></td>
+      <td><span style="border-radius:2px;padding:2px 4px;font-size:6.5px;font-weight:700;${sc};">${item.status||'Open'}</span></td>
+      <td style="font-size:7px;color:#555;font-style:italic;">${item.remarks||'—'}</td>
+      <td style="text-align:center;font-size:8px;color:#E8520A;font-weight:700;">${item.targetDate||'—'}</td>
+    </tr>`;
+  }).join('');
+
+  let sigHtml = '';
+  if (afSigs.length || clSigs.length) {
+    const afBlocks = afSigs.map(s=>`<div style="flex:1;text-align:center;padding:0 8px;"><div style="border-bottom:1px solid #555;height:20px;margin-bottom:3px;"></div><div style="font-size:7.5px;font-weight:700;">${s.name}</div><div style="font-size:7px;color:#1D9E75;">${s.role}</div></div>`).join('');
+    const clBlocks = clSigs.map(s=>`<div style="flex:1;text-align:center;padding:0 8px;"><div style="border-bottom:1px solid #555;height:20px;margin-bottom:3px;"></div><div style="font-size:7.5px;font-weight:700;">${s.name}</div><div style="font-size:7px;color:#185FA5;">${s.role}</div></div>`).join('');
+    sigHtml = `<div style="border-top:2px solid #E8520A;display:flex;">
+      ${afSigs.length ? `<div style="background:#f0faf5;flex:1;padding:8px 14px;${clSigs.length?'border-right:1px solid #ddd;':''}"><span style="font-size:7px;font-weight:700;text-transform:uppercase;background:#e1f5ee;color:#085041;padding:2px 7px;border-radius:3px;display:inline-block;margin-bottom:6px;">Al Fitr Electromechanical Works LLC</span><div style="display:flex;">${afBlocks}</div></div>` : ''}
+      ${clSigs.length ? `<div style="background:#f0f5fb;flex:1;padding:8px 14px;"><span style="font-size:7px;font-weight:700;text-transform:uppercase;background:#e6f1fb;color:#185FA5;padding:2px 7px;border-radius:3px;display:inline-block;margin-bottom:6px;">Client — ${d.clientCompany||''}</span><div style="display:flex;">${clBlocks}</div></div>` : ''}
+    </div>`;
+  }
+
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${d.refNumber}</title>
+  <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:Arial,sans-serif;font-size:9px;color:#1a1a1a;}@page{size:A4 landscape;margin:8mm;}</style>
+  </head><body>
+  <div style="border-bottom:3px solid #E8520A;display:grid;grid-template-columns:72px 1fr auto;align-items:center;padding:8px 14px;gap:10px;">
+    <div style="display:flex;flex-direction:column;align-items:center;">
+      <div style="width:42px;height:42px;border-radius:50%;border:2px solid #1D9E75;display:flex;align-items:center;justify-content:center;">
+        <div style="width:26px;height:26px;border-radius:50%;background:#1D9E75;color:#fff;font-weight:700;font-size:8px;display:flex;align-items:center;justify-content:center;">AF</div>
+      </div>
+      <div style="font-size:7px;font-weight:700;color:#1D9E75;text-align:center;margin-top:2px;">AL FITR</div>
+    </div>
+    <div style="text-align:center;font-size:13px;font-weight:700;color:#E8520A;letter-spacing:0.4px;">AL FITR ELECTROMECHANICAL WORKS LLC</div>
+    <div style="text-align:right;font-size:7.5px;color:#555;line-height:1.7;">
+      <div><strong>Ref No:</strong> ${d.refNumber||'—'}</div>
+      <div><strong>Date:</strong> ${dateFmt}</div>
+      <div><strong>Job Order:</strong> ${d.jobOrderNumber||'—'}</div>
+      <div><strong>Page:</strong> 1 of 1</div>
+    </div>
+  </div>
+  <div style="background:#f5f5f5;border-bottom:1px solid #ddd;text-align:center;padding:5px;font-size:10px;font-weight:700;letter-spacing:0.5px;">SITE DELAY ANALYSIS REPORT</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;border-bottom:1px solid #ddd;">
+    <div style="padding:5px 10px;border-right:1px solid #ddd;">
+      <div style="display:flex;gap:4px;margin-bottom:2px;"><span style="font-weight:700;color:#333;min-width:88px;font-size:7.5px;">Project Name:</span><span style="font-size:8px;">${d.projectName||'—'}</span></div>
+      <div style="display:flex;gap:4px;margin-bottom:2px;"><span style="font-weight:700;color:#333;min-width:88px;font-size:7.5px;">Fire Contractor:</span><span style="font-size:8px;">${d.clientCompany||'—'}</span></div>
+      <div style="display:flex;gap:4px;"><span style="font-weight:700;color:#333;min-width:88px;font-size:7.5px;">Site Supervisor:</span><span style="font-size:8px;">${d.siteSupervisor||'—'}</span></div>
+    </div>
+    <div style="padding:5px 10px;border-right:1px solid #ddd;">
+      <div style="display:flex;gap:4px;margin-bottom:2px;"><span style="font-weight:700;color:#333;min-width:88px;font-size:7.5px;">Location:</span><span style="font-size:8px;">${d.location||'—'}</span></div>
+      <div style="display:flex;gap:4px;margin-bottom:2px;"><span style="font-weight:700;color:#333;min-width:88px;font-size:7.5px;">Project Manager:</span><span style="font-size:8px;">${d.projectManager||'—'} <span style="font-size:7px;color:#aaa;">(Client)</span></span></div>
+      <div style="display:flex;gap:4px;"><span style="font-weight:700;color:#333;min-width:88px;font-size:7.5px;">Site Engineer:</span><span style="font-size:8px;">${d.siteEngineer||'—'} <span style="font-size:7px;color:#aaa;">(Client)</span></span></div>
+    </div>
+    <div style="padding:5px 10px;">
+      <div style="display:flex;gap:4px;margin-bottom:2px;"><span style="font-weight:700;color:#333;min-width:88px;font-size:7.5px;">Date:</span><span style="font-size:8px;color:#E8520A;font-weight:700;">${dateFmt}</span></div>
+      <div style="display:flex;gap:4px;margin-bottom:2px;"><span style="font-weight:700;color:#333;min-width:88px;font-size:7.5px;">Reported By:</span><span style="font-size:8px;">${d.reportedBy||'—'} <span style="font-size:7px;color:#aaa;">(Al Fitr)</span></span></div>
+      <div style="display:flex;gap:4px;"><span style="font-weight:700;color:#333;min-width:88px;font-size:7.5px;">Projects Incharge:</span><span style="font-size:8px;">${d.projectsIncharge||'Engr. Nazir Hussain'} <span style="font-size:7px;color:#aaa;">(Al Fitr)</span></span></div>
+    </div>
+  </div>
+  <table style="width:100%;border-collapse:collapse;table-layout:fixed;">
+    <colgroup><col style="width:3%"><col style="width:5%"><col style="width:8%"><col style="width:14%"><col style="width:9%"><col style="width:9%"><col style="width:10%"><col style="width:10%"><col style="width:6%"><col style="width:13%"><col style="width:13%"></colgroup>
+    <thead><tr style="background:#2c2c2c;">
+      ${['SR.<br>No','Floor','Area /<br>Zone','Description','Site Actual<br>Picture','Drawing Ref.<br>Picture','Reason of<br>Delay','Action By','Status','Remarks','Target<br>Resolution'].map(h=>`<th style="color:#fff;font-size:7px;font-weight:700;padding:5px 3px;text-align:center;border:1px solid #444;line-height:1.3;">${h}</th>`).join('')}
+    </tr></thead>
+    <tbody>${rowsHtml}</tbody>
+  </table>
+  ${sigHtml}
+  <div style="background:#2c2c2c;color:#aaa;display:flex;justify-content:space-between;padding:4px 14px;font-size:6.5px;">
+    <span>Al Fitr Electromechanical Works LLC — Sharjah, UAE</span>
+    <span><strong style="color:#E8520A;">${d.refNumber||'—'}</strong> — Site Delay Analysis Report — ${d.projectName||''}</span>
+    <span>Generated: ${dateFmt} — Confidential</span>
+  </div>
+  </body></html>`;
 }
 
 /* ---- Settings ---- */

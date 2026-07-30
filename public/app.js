@@ -773,7 +773,7 @@ function renderJoForm(payload) {
     </div>
   </div>
   <div class="field"><label>Subject / Project Name</label><input id="jo_subject" value="${payload.subject || ''}" placeholder="e.g. Fire Alarm Installation — Tower B"></div>
-  <div class="field"><label>Site Detail</label><input id="jo_siteDetail" value="${payload.siteDetail || ''}"></div>
+  <div class="field"><label>Scope of Work</label><input id="jo_siteDetail" value="${payload.siteDetail || ''}" placeholder="Brief description of work scope"></div>
   <div class="grid2">
     <div class="field"><label>Location (Emirate)</label>
       <select id="jo_location">
@@ -945,8 +945,8 @@ function renderDelayReportForm(payload) {
   </div>
   ${jo ? `
   <div class="grid2" style="margin-bottom:14px;">
-    <div><div class="k muted">Project</div><div>${jo.subject || '—'}</div></div>
-    <div><div class="k muted">Location</div><div>${jo.siteDetail || '—'}</div></div>
+    <div><div class="k muted">Project</div><div>${jo.subject || jo.name || '—'}</div></div>
+      <div><div class="k muted">Scope of Work</div><div>${jo.siteDetail || '—'}</div></div>
   </div>
   ${!(jo.siteEngineer || jo.projectManager || jo.siteSupervisor || jo.projectsIncharge) ? `<div class="banner-warn">⚠ This Job Order has no site team set yet — signatures below will be blank until you set it (open the Job Order and click "Set Site Team").</div>` : ''}
   ` : ''}
@@ -3703,17 +3703,17 @@ function buildDrPdfHtml(d) {
     <div style="padding:5px 10px;border-right:1px solid #ddd;">
       <div style="display:flex;gap:4px;margin-bottom:2px;"><span style="font-weight:700;color:#333;min-width:88px;font-size:7.5px;">Project Name:</span><span style="font-size:8px;">${d.projectName||'—'}</span></div>
       <div style="display:flex;gap:4px;margin-bottom:2px;"><span style="font-weight:700;color:#333;min-width:88px;font-size:7.5px;">Fire Contractor:</span><span style="font-size:8px;">${d.clientCompany||'—'}</span></div>
-      <div style="display:flex;gap:4px;"><span style="font-weight:700;color:#333;min-width:88px;font-size:7.5px;">Site Supervisor:</span><span style="font-size:8px;">${d.siteSupervisor||'—'}</span></div>
+      <div style="display:flex;gap:4px;"><span style="font-weight:700;color:#333;min-width:88px;font-size:7.5px;">Scope of Work:</span><span style="font-size:8px;">${d.scopeOfWork||d.siteDetail||'—'}</span></div>
     </div>
     <div style="padding:5px 10px;border-right:1px solid #ddd;">
       <div style="display:flex;gap:4px;margin-bottom:2px;"><span style="font-weight:700;color:#333;min-width:88px;font-size:7.5px;">Location:</span><span style="font-size:8px;">${d.location||'—'}</span></div>
       <div style="display:flex;gap:4px;margin-bottom:2px;"><span style="font-weight:700;color:#333;min-width:88px;font-size:7.5px;">Project Manager:</span><span style="font-size:8px;">${d.projectManager||'—'} <span style="font-size:7px;color:#aaa;">(Client)</span></span></div>
-      <div style="display:flex;gap:4px;"><span style="font-weight:700;color:#333;min-width:88px;font-size:7.5px;">Site Engineer:</span><span style="font-size:8px;">${d.siteEngineer||'—'} <span style="font-size:7px;color:#aaa;">(Client)</span></span></div>
+      <div style="display:flex;gap:4px;"><span style="font-weight:700;color:#333;min-width:88px;font-size:7.5px;">Client Engineer:</span><span style="font-size:8px;">${d.siteEngineer||'—'} <span style="font-size:7px;color:#aaa;">(Client)</span></span></div>
     </div>
     <div style="padding:5px 10px;">
       <div style="display:flex;gap:4px;margin-bottom:2px;"><span style="font-weight:700;color:#333;min-width:88px;font-size:7.5px;">Date:</span><span style="font-size:8px;color:#E8520A;font-weight:700;">${dateFmt}</span></div>
       <div style="display:flex;gap:4px;margin-bottom:2px;"><span style="font-weight:700;color:#333;min-width:88px;font-size:7.5px;">Reported By:</span><span style="font-size:8px;">${d.reportedBy||'—'} <span style="font-size:7px;color:#aaa;">(Al Fitr)</span></span></div>
-      <div style="display:flex;gap:4px;"><span style="font-weight:700;color:#333;min-width:88px;font-size:7.5px;">Projects Incharge:</span><span style="font-size:8px;">${d.projectsIncharge||'Engr. Nazir Hussain'} <span style="font-size:7px;color:#aaa;">(Al Fitr)</span></span></div>
+      <div style="display:flex;gap:4px;"><span style="font-weight:700;color:#333;min-width:88px;font-size:7.5px;">Projects Incharge:</span><span style="font-size:8px;">${d.projectsIncharge||'—'} <span style="font-size:7px;color:#aaa;">(Al Fitr)</span></span></div>
     </div>
   </div>
   <table style="width:100%;border-collapse:collapse;table-layout:fixed;">

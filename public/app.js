@@ -778,7 +778,7 @@ function renderJoForm(payload) {
     <div class="field"><label>Location (Emirate)</label>
       <select id="jo_location">
         <option value="">— Select Emirate —</option>
-        ${UAE_EMIRATES.map(e => `<option value="${e}" ${(payload.location||payload.siteDetail)===e?'selected':''}>${e}</option>`).join('')}
+        ${UAE_EMIRATES.map(e => `<option value="${e}" ${(payload.location||'')===e?'selected':''}>${e}</option>`).join('')}
       </select>
     </div>
     <div class="field"><label>Status</label>
@@ -787,7 +787,42 @@ function renderJoForm(payload) {
       </select>
     </div>
   </div>
-  <div class="field"><label>Value</label><input id="jo_value" type="number" value="${payload.value ?? ''}" placeholder="0"></div>
+  <div class="field"><label>Value (AED)</label><input id="jo_value" type="number" value="${payload.value ?? ''}" placeholder="0"></div>
+
+  <div style="border-top:1px solid var(--rule);margin:14px 0 12px;padding-top:14px;">
+    <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:10px;">Linked Quotation Reference</div>
+    <div class="field">
+      <label>Link to Approved / Accepted Quotation (optional)</label>
+      <select id="jo_quotationId" onchange="onJoQuotationSelect()">
+        <option value="">— None / Manual Entry —</option>
+        ${(state.quotations||[])
+          .filter(q => ['Accepted','Sent','Approved'].includes(q.status))
+          .sort((a,b) => b.createdAt - a.createdAt)
+          .map(q => `<option value="${q.id}" data-number="${q.quotationNumber||''}" data-client="${q.clientCompany||''}" data-subject="${q.subject||''}" data-site="${q.siteDetail||''}" ${payload.quotationId===q.id?'selected':''}>${q.quotationNumber||'(no number)'} — ${q.clientCompany} — ${q.status}</option>`).join('')}
+      </select>
+    </div>
+    <div id="jo_qtn_ref_display" style="font-size:12px;color:var(--teal);font-weight:500;margin-top:4px;${payload.quotationNumber?'':'display:none'}">
+      ✓ Linked: ${payload.quotationNumber || ''}
+    </div>
+  </div>
+
+  <div style="border-top:1px solid var(--rule);margin:14px 0 12px;padding-top:14px;">
+    <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:10px;">Documents</div>
+    <div class="grid2">
+      <div class="field">
+        <label>Customer LPO</label>
+        ${payload.lpoFileUrl ? `<div style="font-size:12px;color:var(--teal);margin-bottom:6px;">✓ <a href="${payload.lpoFileUrl}" target="_blank" style="color:var(--teal);">${payload.lpoFileName||'View LPO'}</a></div>` : ''}
+        <input type="file" id="jo_lpoFile" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" style="font-size:12px;padding:6px;">
+        <div style="font-size:10px;color:var(--muted);margin-top:3px;">PDF, JPG, PNG, Word — max 20MB</div>
+      </div>
+      <div class="field">
+        <label>Approved Quotation Document</label>
+        ${payload.quoteFileUrl ? `<div style="font-size:12px;color:var(--teal);margin-bottom:6px;">✓ <a href="${payload.quoteFileUrl}" target="_blank" style="color:var(--teal);">${payload.quoteFileName||'View Quote'}</a></div>` : ''}
+        <input type="file" id="jo_quoteFile" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" style="font-size:12px;padding:6px;">
+        <div style="font-size:10px;color:var(--muted);margin-top:3px;">PDF, JPG, PNG, Word — max 20MB</div>
+      </div>
+    </div>
+  </div>
   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">
     <button class="btn btn-ghost" id="modalCancel">Cancel</button>
     <button class="btn btn-primary" id="saveJoBtn">${isEdit ? 'Save Changes' : 'Create Job Order'}</button>
@@ -809,6 +844,24 @@ function renderJobOrderView(jo) {
     <div><div class="k muted">Value</div><div style="font-weight:600;">${state.company.currency} ${fmtMoney(jo.value)}</div></div>
   </div>
   <div style="margin:10px 0 16px;">${jo.subject || jo.siteDetail || ''}</div>
+
+  ${jo.quotationNumber ? `
+  <div style="background:#f0faf5;border:1px solid #d1fae5;border-radius:6px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;gap:10px;">
+    <span style="font-size:18px;">📋</span>
+    <div>
+      <div style="font-size:10px;font-weight:700;color:#085041;text-transform:uppercase;letter-spacing:0.05em;">Linked Quotation</div>
+      <div style="font-size:13px;font-weight:700;color:#1D9E75;">${jo.quotationNumber}</div>
+    </div>
+  </div>` : ''}
+
+  ${(jo.lpoFileUrl || jo.quoteFileUrl) ? `
+  <div style="margin-bottom:14px;">
+    <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;">Documents</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      ${jo.lpoFileUrl   ? `<a href="${jo.lpoFileUrl}"   target="_blank" class="btn btn-outline btn-sm">📄 Customer LPO — ${jo.lpoFileName||'View'}</a>`         : ''}
+      ${jo.quoteFileUrl ? `<a href="${jo.quoteFileUrl}" target="_blank" class="btn btn-outline btn-sm">📄 Approved Quote — ${jo.quoteFileName||'View'}</a>` : ''}
+    </div>
+  </div>` : ''}
 
   <div class="card-head" style="margin-top:6px;">
     <div class="card-title">Site Team</div>
@@ -3501,6 +3554,23 @@ function attachSiteTeamFormHandlers() {
   });
 }
 
+/* ---- Job Order quotation auto-fill ---- */
+function onJoQuotationSelect() {
+  const sel = document.getElementById('jo_quotationId');
+  const opt = sel.options[sel.selectedIndex];
+  const ref = document.getElementById('jo_qtn_ref_display');
+  if (!sel.value) { if (ref) ref.style.display = 'none'; return; }
+  // Auto-fill client, subject, siteDetail from selected quotation
+  const client  = opt.dataset.client  || '';
+  const subject = opt.dataset.subject || '';
+  const site    = opt.dataset.site    || '';
+  const number  = opt.dataset.number  || '';
+  if (client  && document.getElementById('jo_clientCompany')) document.getElementById('jo_clientCompany').value = client;
+  if (subject && document.getElementById('jo_subject'))        document.getElementById('jo_subject').value       = subject;
+  if (site    && document.getElementById('jo_siteDetail'))     document.getElementById('jo_siteDetail').value    = site;
+  if (ref) { ref.textContent = `✓ Linked: ${number}`; ref.style.display = ''; }
+}
+
 /* ---- Job Order create/edit form handler ---- */
 function attachJoFormHandlers() {
   if (!state.modal || state.modal.type !== 'newJo') return;
@@ -3514,17 +3584,34 @@ function attachJoFormHandlers() {
   if (saveBtn) saveBtn.addEventListener('click', async () => {
     const clientCompany = val('jo_clientCompany').trim();
     if (!clientCompany) { showToast('Client company name is required.', 'err'); return; }
-    const body = {
-      clientId: val('jo_clientPick') || null, clientCompany,
-      jobOrderNumber: val('jo_number').trim(),
-      type: val('jo_type'), subject: val('jo_subject'), siteDetail: val('jo_siteDetail'),
-      location: val('jo_location'),
-      value: Number(val('jo_value') || 0), status: val('jo_status'),
-    };
+
+    const fd = new FormData();
+    fd.append('clientId',       val('jo_clientPick') || '');
+    fd.append('clientCompany',  clientCompany);
+    fd.append('jobOrderNumber', val('jo_number').trim());
+    fd.append('type',           val('jo_type'));
+    fd.append('subject',        val('jo_subject'));
+    fd.append('siteDetail',     val('jo_siteDetail'));
+    fd.append('location',       val('jo_location'));
+    fd.append('value',          val('jo_value') || 0);
+    fd.append('status',         val('jo_status'));
+    fd.append('quotationId',    val('jo_quotationId') || '');
+
+    const lpoInput   = document.getElementById('jo_lpoFile');
+    const quoteInput = document.getElementById('jo_quoteFile');
+    if (lpoInput?.files[0])   fd.append('lpoFile',   lpoInput.files[0]);
+    if (quoteInput?.files[0]) fd.append('quoteFile', quoteInput.files[0]);
+
     try {
       let saved;
-      if (p.id) saved = (await api('PUT', '/api/job-orders/' + p.id, body)).jobOrder;
-      else saved = (await api('POST', '/api/job-orders', body)).jobOrder;
+      const headers = { 'Authorization': `Bearer ${state.token}` };
+      if (p.id) {
+        const r = await fetch('/api/job-orders/' + p.id, { method: 'PUT', headers, body: fd });
+        const d = await r.json(); if (!r.ok) throw new Error(d.error); saved = d.jobOrder;
+      } else {
+        const r = await fetch('/api/job-orders', { method: 'POST', headers, body: fd });
+        const d = await r.json(); if (!r.ok) throw new Error(d.error); saved = d.jobOrder;
+      }
       await loadAll();
       showToast(p.id ? 'Job Order updated.' : 'Job Order created.', 'ok');
       closeModal();
@@ -3695,6 +3782,7 @@ function buildDrPdfHtml(d) {
       <div><strong>Ref No:</strong> ${d.refNumber||'—'}</div>
       <div><strong>Date:</strong> ${dateFmt}</div>
       <div><strong>Job Order:</strong> ${d.jobOrderNumber||'—'}</div>
+      ${d.quotationNumber ? `<div><strong>Quote Ref:</strong> ${d.quotationNumber}</div>` : ''}
       <div><strong>Page:</strong> 1 of 1</div>
     </div>
   </div>

@@ -549,8 +549,6 @@ function renderDashboard() {
   const dnTrendCls = dnThisMonth >= dnLastMonth ? 'trend-up' : 'trend-down';
 
   return `
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"><\/script>
-
   <!-- Alert banner -->
   ${alerts.length > 0 ? `
   <div class="dash-alert">
@@ -702,8 +700,8 @@ function renderDashboard() {
   ${showValue ? `<div class="shared-note">Stock value (at cost) ${state.branch==='All'?'all branches':'for '+state.branch}: ${state.company.currency} ${fmtMoney(stockValue)}</div>` : ''}
 
   <script>
-  (function() {
-    if (typeof Chart === 'undefined') { setTimeout(arguments.callee, 300); return; }
+  (function initCharts() {
+    if (typeof Chart === 'undefined') { setTimeout(initCharts, 200); return; }
 
     Chart.defaults.font.family = 'Arial, sans-serif';
     Chart.defaults.font.size   = 11;

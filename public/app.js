@@ -482,309 +482,288 @@ function renderDashboard() {
   const dns      = state.branch === 'All' ? state.dns   : state.dns.filter(d => d.location === state.branch);
   const now      = new Date();
   const thisMonth = (d) => { const dt = new Date(d); return dt.getMonth()===now.getMonth() && dt.getFullYear()===now.getFullYear(); };
+  const lastMonth = (d) => { const dt = new Date(d); const lm = new Date(now.getFullYear(), now.getMonth()-1,1); return dt.getMonth()===lm.getMonth() && dt.getFullYear()===lm.getFullYear(); };
 
-  // ── Inventory KPIs
+  // ── Inventory
   const total    = items.length;
   const inStock  = items.filter(i => i.status === 'IN STOCK').length;
   const lowCrit  = items.filter(i => i.status === 'LOW STOCK' || i.status === 'CRITICAL').length;
   const outStock = items.filter(i => i.status === 'OUT OF STOCK').length;
   const alerts   = items.filter(i => i.status !== 'IN STOCK').sort((a,b) => a.qty - b.qty).slice(0, 6);
 
-  // ── Sales KPIs
-  const quotes        = state.quotations || [];
-  const activeQuotes  = quotes.filter(q => ['Draft','Sent','PendingApproval','Approved'].includes(q.status)).length;
-  const acceptedQ     = quotes.filter(q => q.status === 'Accepted').length;
-  const jobOrders     = state.jobOrders || [];
-  const activeJOs     = jobOrders.filter(j => j.status === 'Open' || j.status === 'In Process').length;
+  // ── Sales
+  const quotes       = state.quotations || [];
+  const qDraft       = quotes.filter(q => q.status === 'Draft').length;
+  const qPending     = quotes.filter(q => q.status === 'PendingApproval').length;
+  const qSent        = quotes.filter(q => q.status === 'Sent').length;
+  const qAccepted    = quotes.filter(q => q.status === 'Accepted').length;
+  const qDeclined    = quotes.filter(q => q.status === 'Declined').length;
+  const qApproved    = quotes.filter(q => q.status === 'Approved').length;
+  const activeQuotes = qDraft + qPending + qSent + qApproved;
+  const jobOrders    = state.jobOrders || [];
+  const activeJOs    = jobOrders.filter(j => j.status === 'Open' || j.status === 'In Process').length;
+  const recentJOs    = [...jobOrders].sort((a,b) => b.createdAt - a.createdAt).slice(0, 5);
 
-  // ── Projects KPIs
-  const mrs            = state.materialRequests || [];
-  const openMRs        = mrs.filter(m => computeMrStatus(m) !== 'Fulfilled' && computeMrStatus(m) !== 'Cancelled').length;
-  const delayReports   = state.delayReports || [];
-  const openDelays     = delayReports.reduce((acc, r) => acc + (r.delayItems||[]).filter(i => i.status === 'Open').length, 0);
+  // ── Projects
+  const mrs          = state.materialRequests || [];
+  const openMRs      = mrs.filter(m => { const s = computeMrStatus(m); return s !== 'Fulfilled' && s !== 'Cancelled'; }).length;
+  const drs          = state.delayReports || [];
+  const allDelayItems= drs.reduce((acc,r) => { (r.delayItems||[]).forEach(i => acc.push(i.status)); return acc; }, []);
+  const dOpen        = allDelayItems.filter(s => s === 'Open').length;
+  const dProg        = allDelayItems.filter(s => s === 'In Progress').length;
+  const dDone        = allDelayItems.filter(s => s === 'Resolved').length;
 
-  // ── Procurement KPIs
-  const prs            = state.purchaseRequests || [];
-  const pendingPRs     = prs.filter(p => p.status === 'Requested' || p.status === 'Approved').length;
-  const pos            = state.purchaseOrders || [];
-  const openPOs        = pos.filter(p => p.status !== 'Received' && p.status !== 'Cancelled').length;
+  // ── Procurement
+  const prs          = state.purchaseRequests || [];
+  const pos          = state.purchaseOrders   || [];
+  const pendingPRs   = prs.filter(p => p.status === 'Requested' || p.status === 'Approved').length;
+  const openPOs      = pos.filter(p => p.status !== 'Received' && p.status !== 'Cancelled').length;
+  const prReq        = prs.filter(p => p.status === 'Requested').length;
+  const prAppr       = prs.filter(p => p.status === 'Approved').length;
+  const prOrd        = pos.filter(p => p.status === 'Ordered' || p.status === 'Sent').length;
+  const prRcv        = pos.filter(p => p.status === 'Received').length;
 
-  // ── Delivery Notes KPIs
-  const issuedThisMonth = dns.filter(d => d.status === 'Issued' && thisMonth(d.date)).length;
-  const recentDns       = [...dns].sort((a,b) => b.createdAt - a.createdAt).slice(0, 5);
+  // ── Delivery Notes
+  const dnThisMonth  = dns.filter(d => d.status === 'Issued' && thisMonth(d.date)).length;
+  const dnLastMonth  = dns.filter(d => d.status === 'Issued' && lastMonth(d.date)).length;
+  const recentDns    = [...dns].sort((a,b) => b.createdAt - a.createdAt).slice(0, 5);
 
-  // ── Recent movements
-  const recentMv = [...state.movements].filter(m => {
-    if (state.branch === 'All') return true;
-    const it = findItem(m.itemId); return it && it.location === state.branch;
-  }).sort((a,b) => b.createdAt - a.createdAt).slice(0, 6);
+  // ── Monthly DN trend (last 6 months)
+  const monthLabels = [];
+  const monthDnData = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    monthLabels.push(d.toLocaleDateString('en-GB', { month: 'short' }));
+    monthDnData.push(dns.filter(dn => {
+      const dt = new Date(dn.date);
+      return dn.status === 'Issued' && dt.getMonth() === d.getMonth() && dt.getFullYear() === d.getFullYear();
+    }).length);
+  }
+
+  // ── Stock value
+  const showValue  = can('viewStockValue');
+  const stockValue = items.reduce((s, i) => s + (Number(i.stockValue) || 0), 0);
+
+  // ── Trend arrows
+  const dnTrend = dnThisMonth >= dnLastMonth ? '↑' : '↓';
+  const dnTrendCls = dnThisMonth >= dnLastMonth ? 'trend-up' : 'trend-down';
 
   return `
-  <!-- Company-wide KPI bar -->
-  <div class="dash-kpi-bar">
-    <div class="dash-kpi">
-      <div class="dash-kpi-num">${total}</div>
-      <div class="dash-kpi-lbl">Total Items</div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"><\/script>
+
+  <!-- Alert banner -->
+  ${alerts.length > 0 ? `
+  <div class="dash-alert">
+    <span class="dash-alert-icon">⚠️</span>
+    <span><strong>${outStock} items out of stock</strong> · ${lowCrit} items low/critical — inventory needs attention.</span>
+    <button class="btn btn-ghost btn-sm" data-tab="inventory" style="margin-left:auto;">View Inventory →</button>
+  </div>` : ''}
+
+  <!-- KPI Strip -->
+  <div class="dash-kpi-strip">
+    <div class="dash-kpi-card" style="border-top:3px solid #1D9E75;">
+      <div class="dash-kpi-label">Total Inventory</div>
+      <div class="dash-kpi-value" style="color:#1D9E75;">${total}</div>
+      <div class="dash-kpi-sub">${inStock} in stock · ${outStock} out</div>
     </div>
-    <div class="dash-kpi good">
-      <div class="dash-kpi-num">${inStock}</div>
-      <div class="dash-kpi-lbl">In Stock</div>
+    <div class="dash-kpi-card" style="border-top:3px solid #E8520A;">
+      <div class="dash-kpi-label">Quotations</div>
+      <div class="dash-kpi-value" style="color:#E8520A;">${quotes.length}</div>
+      <div class="dash-kpi-sub">${activeQuotes} active · ${qAccepted} accepted</div>
     </div>
-    <div class="dash-kpi warn">
-      <div class="dash-kpi-num">${lowCrit}</div>
-      <div class="dash-kpi-lbl">Low / Critical</div>
+    <div class="dash-kpi-card" style="border-top:3px solid #00627B;">
+      <div class="dash-kpi-label">Job Orders</div>
+      <div class="dash-kpi-value" style="color:#00627B;">${jobOrders.length}</div>
+      <div class="dash-kpi-sub">${activeJOs} open / in-process</div>
     </div>
-    <div class="dash-kpi bad">
-      <div class="dash-kpi-num">${outStock}</div>
-      <div class="dash-kpi-lbl">Out of Stock</div>
+    <div class="dash-kpi-card" style="border-top:3px solid #E8520A;">
+      <div class="dash-kpi-label">DNs This Month</div>
+      <div class="dash-kpi-value" style="color:#E8520A;">${dnThisMonth} <span class="dash-trend ${dnTrendCls}">${dnTrend}</span></div>
+      <div class="dash-kpi-sub">vs ${dnLastMonth} last month</div>
     </div>
-    <div class="dash-kpi brand">
-      <div class="dash-kpi-num">${issuedThisMonth}</div>
-      <div class="dash-kpi-lbl">DNs This Month</div>
+    <div class="dash-kpi-card" style="border-top:3px solid #dc2626;">
+      <div class="dash-kpi-label">Open Delays</div>
+      <div class="dash-kpi-value" style="color:#dc2626;">${dOpen}</div>
+      <div class="dash-kpi-sub">${dProg} in progress · ${dDone} resolved</div>
     </div>
-    <div class="dash-kpi accent">
-      <div class="dash-kpi-num">${activeJOs}</div>
-      <div class="dash-kpi-lbl">Active Job Orders</div>
-    </div>
-    <div class="dash-kpi purple">
-      <div class="dash-kpi-num">${openDelays}</div>
-      <div class="dash-kpi-lbl">Open Delays</div>
-    </div>
-    <div class="dash-kpi teal">
-      <div class="dash-kpi-num">${pendingPRs}</div>
-      <div class="dash-kpi-lbl">Pending PRs</div>
+    <div class="dash-kpi-card" style="border-top:3px solid #7F77DD;">
+      <div class="dash-kpi-label">Pending PRs</div>
+      <div class="dash-kpi-value" style="color:#7F77DD;">${pendingPRs}</div>
+      <div class="dash-kpi-sub">${openPOs} open POs</div>
     </div>
   </div>
 
-  <!-- Module cards grid -->
-  <div class="dash-modules">
+  <!-- Charts Row -->
+  <div class="dash-charts-row">
 
-    <!-- INVENTORY MODULE -->
-    <div class="dash-module-card">
-      <div class="dash-module-header">
-        <span class="dash-module-icon">📦</span>
-        <span class="dash-module-title">Inventory</span>
-        <button class="btn btn-ghost btn-sm" data-tab="inventory">Open →</button>
+    <!-- Inventory Donut -->
+    <div class="dash-chart-card">
+      <div class="dash-chart-title">Inventory Status</div>
+      <div style="position:relative;height:180px;display:flex;align-items:center;justify-content:center;">
+        <canvas id="invDonutChart"></canvas>
       </div>
-      <div class="dash-module-kpis">
-        <div class="dash-mini-kpi"><span class="dash-mini-num">${total}</span><span class="dash-mini-lbl">Items</span></div>
-        <div class="dash-mini-kpi good"><span class="dash-mini-num">${inStock}</span><span class="dash-mini-lbl">In Stock</span></div>
-        <div class="dash-mini-kpi warn"><span class="dash-mini-num">${lowCrit}</span><span class="dash-mini-lbl">Low/Critical</span></div>
-        <div class="dash-mini-kpi bad"><span class="dash-mini-num">${outStock}</span><span class="dash-mini-lbl">Out of Stock</span></div>
-      </div>
-      <!-- Stock status donut chart -->
-      <div style="display:flex;align-items:center;gap:14px;margin-top:10px;">
-        <canvas id="invDonut" width="80" height="80" style="flex-shrink:0;"></canvas>
-        <div style="font-size:11px;color:var(--ink-soft);line-height:1.8;">
-          <div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#1D9E75;margin-right:5px;"></span>In Stock (${inStock})</div>
-          <div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#E8520A;margin-right:5px;"></span>Low/Critical (${lowCrit})</div>
-          <div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#dc2626;margin-right:5px;"></span>Out of Stock (${outStock})</div>
-        </div>
-      </div>
-      ${alerts.length > 0 ? `
-      <div style="margin-top:12px;border-top:1px solid var(--rule);padding-top:10px;">
-        <div style="font-size:11px;font-weight:700;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Reorder Alerts</div>
-        ${alerts.map(i => `
-        <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid var(--rule);font-size:12px;">
-          <span style="color:var(--ink)">${i.description}</span>
-          <span>${statusBadge(i.status)}</span>
-        </div>`).join('')}
-      </div>` : ''}
-    </div>
-
-    <!-- SALES MODULE -->
-    <div class="dash-module-card">
-      <div class="dash-module-header">
-        <span class="dash-module-icon">💼</span>
-        <span class="dash-module-title">Sales</span>
-        <button class="btn btn-ghost btn-sm" data-tab="quotations">Open →</button>
-      </div>
-      <div class="dash-module-kpis">
-        <div class="dash-mini-kpi"><span class="dash-mini-num">${quotes.length}</span><span class="dash-mini-lbl">Total Quotes</span></div>
-        <div class="dash-mini-kpi warn"><span class="dash-mini-num">${activeQuotes}</span><span class="dash-mini-lbl">Active</span></div>
-        <div class="dash-mini-kpi good"><span class="dash-mini-num">${acceptedQ}</span><span class="dash-mini-lbl">Accepted</span></div>
-        <div class="dash-mini-kpi accent"><span class="dash-mini-num">${jobOrders.length}</span><span class="dash-mini-lbl">Job Orders</span></div>
-      </div>
-      <!-- Quotation status bar chart -->
-      <div style="margin-top:12px;">
-        <canvas id="quoteBar" width="240" height="90"></canvas>
-      </div>
-      <div style="margin-top:10px;border-top:1px solid var(--rule);padding-top:10px;">
-        <div style="font-size:11px;font-weight:700;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Recent Job Orders</div>
-        ${jobOrders.slice(0,4).map(j => `
-        <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--rule);font-size:12px;">
-          <span style="font-family:var(--mono);color:var(--teal)">${j.jobOrderNumber}</span>
-          <span style="color:var(--ink-soft);max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${j.clientCompany}</span>
-          <span class="badge ${j.status==='Open'?'badge-in':'badge-low'}">${j.status}</span>
-        </div>`).join('')}
+      <div class="dash-legend">
+        <div class="dash-legend-item"><span style="background:#1D9E75"></span>In Stock (${inStock})</div>
+        <div class="dash-legend-item"><span style="background:#E8520A"></span>Low/Critical (${lowCrit})</div>
+        <div class="dash-legend-item"><span style="background:#dc2626"></span>Out of Stock (${outStock})</div>
       </div>
     </div>
 
-    <!-- PROJECTS MODULE -->
-    <div class="dash-module-card">
-      <div class="dash-module-header">
-        <span class="dash-module-icon">🔧</span>
-        <span class="dash-module-title">Projects</span>
-        <button class="btn btn-ghost btn-sm" data-tab="materialRequests">Open →</button>
-      </div>
-      <div class="dash-module-kpis">
-        <div class="dash-mini-kpi"><span class="dash-mini-num">${mrs.length}</span><span class="dash-mini-lbl">Total MRs</span></div>
-        <div class="dash-mini-kpi warn"><span class="dash-mini-num">${openMRs}</span><span class="dash-mini-lbl">Open MRs</span></div>
-        <div class="dash-mini-kpi bad"><span class="dash-mini-num">${openDelays}</span><span class="dash-mini-lbl">Open Delays</span></div>
-        <div class="dash-mini-kpi"><span class="dash-mini-num">${delayReports.length}</span><span class="dash-mini-lbl">Delay Reports</span></div>
-      </div>
-      <!-- Delay items by status -->
-      <div style="margin-top:12px;">
-        <canvas id="delayBar" width="240" height="90"></canvas>
-      </div>
-      <div style="margin-top:10px;border-top:1px solid var(--rule);padding-top:10px;">
-        <div style="font-size:11px;font-weight:700;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Recent Delay Reports</div>
-        ${delayReports.slice(0,4).map(r => `
-        <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--rule);font-size:12px;">
-          <span style="font-family:var(--mono);color:var(--orange)">${r.refNumber}</span>
-          <span style="color:var(--ink-soft);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${r.projectName||'—'}</span>
-          <span class="badge badge-low">${(r.delayItems||[]).filter(i=>i.status==='Open').length} Open</span>
-        </div>`).join('')}
+    <!-- Quotation Status Bar -->
+    <div class="dash-chart-card">
+      <div class="dash-chart-title">Quotation Pipeline</div>
+      <div style="position:relative;height:180px;">
+        <canvas id="quoteBarChart"></canvas>
       </div>
     </div>
 
-    <!-- PROCUREMENT MODULE -->
-    <div class="dash-module-card">
-      <div class="dash-module-header">
-        <span class="dash-module-icon">🛒</span>
-        <span class="dash-module-title">Procurement</span>
-        <button class="btn btn-ghost btn-sm" data-tab="procurement">Open →</button>
+    <!-- DN Monthly Trend Line -->
+    <div class="dash-chart-card">
+      <div class="dash-chart-title">Delivery Notes — 6 Month Trend</div>
+      <div style="position:relative;height:180px;">
+        <canvas id="dnLineChart"></canvas>
       </div>
-      <div class="dash-module-kpis">
-        <div class="dash-mini-kpi"><span class="dash-mini-num">${prs.length}</span><span class="dash-mini-lbl">Total PRs</span></div>
-        <div class="dash-mini-kpi warn"><span class="dash-mini-num">${pendingPRs}</span><span class="dash-mini-lbl">Pending</span></div>
-        <div class="dash-mini-kpi"><span class="dash-mini-num">${pos.length}</span><span class="dash-mini-lbl">Total POs</span></div>
-        <div class="dash-mini-kpi accent"><span class="dash-mini-num">${openPOs}</span><span class="dash-mini-lbl">Open POs</span></div>
+    </div>
+
+    <!-- Delay Items Donut -->
+    <div class="dash-chart-card">
+      <div class="dash-chart-title">Delay Items Status</div>
+      <div style="position:relative;height:180px;display:flex;align-items:center;justify-content:center;">
+        <canvas id="delayDonutChart"></canvas>
       </div>
-      <div style="margin-top:12px;">
-        <canvas id="procBar" width="240" height="90"></canvas>
-      </div>
-      <div style="margin-top:10px;border-top:1px solid var(--rule);padding-top:10px;">
-        <div style="font-size:11px;font-weight:700;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Recent Purchase Requests</div>
-        ${prs.slice(0,4).map(p => `
-        <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--rule);font-size:12px;">
-          <span style="font-family:var(--mono);color:var(--teal)">${p.prNumber||'—'}</span>
-          <span style="color:var(--ink-soft);max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${p.requestedByName||'—'}</span>
-          <span class="badge badge-low">${p.status}</span>
-        </div>`).join('')}
+      <div class="dash-legend">
+        <div class="dash-legend-item"><span style="background:#dc2626"></span>Open (${dOpen})</div>
+        <div class="dash-legend-item"><span style="background:#E8520A"></span>In Progress (${dProg})</div>
+        <div class="dash-legend-item"><span style="background:#1D9E75"></span>Resolved (${dDone})</div>
       </div>
     </div>
 
   </div>
 
-  <!-- Bottom row: Recent DNs + Recent Movements -->
-  <div class="grid2" style="align-items:start;margin-top:0;">
-    <div class="card">
+  <!-- Bottom Tables Row -->
+  <div class="dash-tables-row">
+
+    <!-- Recent Job Orders -->
+    <div class="card" style="min-width:0;">
+      <div class="card-head">
+        <div class="card-title">Recent Job Orders</div>
+        <button class="btn btn-ghost btn-sm" data-tab="jobOrders">View All</button>
+      </div>
+      ${recentJOs.length === 0 ? `<div class="empty">No job orders yet.</div>` : `
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>JO No.</th><th>Client</th><th>Project</th><th>Status</th></tr></thead>
+        <tbody>${recentJOs.map(j => `<tr>
+          <td style="font-family:var(--mono);color:#E8520A;font-weight:700;">${j.jobOrderNumber}</td>
+          <td>${j.clientCompany||'—'}</td>
+          <td style="color:var(--ink-soft);font-size:12px;">${j.subject||'—'}</td>
+          <td><span class="badge ${j.status==='Open'?'badge-in':j.status==='Resolved'?'badge-out':'badge-low'}">${j.status}</span></td>
+        </tr>`).join('')}</tbody>
+      </table></div>`}
+    </div>
+
+    <!-- Recent Delivery Notes -->
+    <div class="card" style="min-width:0;">
       <div class="card-head">
         <div class="card-title">Recent Delivery Notes</div>
         ${can('createDN') ? `<button class="btn btn-primary btn-sm" id="newDnBtn2">+ New DN</button>` : ''}
       </div>
       ${recentDns.length === 0 ? `<div class="empty">No delivery notes yet.</div>` : `
-      <div class="tbl-wrap"><table><thead><tr><th>DN No.</th><th>Client</th><th>Branch</th><th>Status</th></tr></thead>
-      <tbody>${recentDns.map(d => `<tr>
-        <td style="font-family:var(--mono)">${d.dnNumber}</td>
-        <td>${d.clientCompany||'—'}</td>
-        <td>${d.location}</td>
-        <td><span class="badge ${d.status==='Issued'?'badge-issued':'badge-draft'}">${d.status}</span></td>
-      </tr>`).join('')}</tbody></table></div>`}
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>DN No.</th><th>Client</th><th>Branch</th><th>Status</th></tr></thead>
+        <tbody>${recentDns.map(d => `<tr>
+          <td style="font-family:var(--mono);font-weight:700;">${d.dnNumber}</td>
+          <td>${d.clientCompany||'—'}</td>
+          <td>${d.location}</td>
+          <td><span class="badge ${d.status==='Issued'?'badge-issued':'badge-draft'}">${d.status}</span></td>
+        </tr>`).join('')}</tbody>
+      </table></div>`}
     </div>
-    <div class="card">
+
+    <!-- Reorder Alerts -->
+    <div class="card" style="min-width:0;">
       <div class="card-head">
-        <div class="card-title">Recent Stock Movements</div>
-        <button class="btn btn-ghost btn-sm" data-tab="movements">View All</button>
+        <div class="card-title">Reorder Alerts <span style="color:#E8520A;font-size:12px;font-weight:600;">${alerts.length} items</span></div>
+        <button class="btn btn-ghost btn-sm" data-tab="inventory">View All</button>
       </div>
-      ${recentMv.length === 0 ? `<div class="empty">No movements logged yet.</div>` : `
-      <div class="tbl-wrap"><table><thead><tr><th>Date</th><th>Item</th><th>Action</th><th>Qty</th></tr></thead>
-      <tbody>${recentMv.map(m => {
-        const it  = findItem(m.itemId);
-        const cls = m.action==='IN' ? 'pill-in' : m.action==='OUT' ? 'pill-out' : 'pill-adj';
-        return `<tr>
-          <td>${fmtDate(m.date)}</td>
-          <td>${it ? it.description : '(deleted)'}</td>
-          <td class="${cls}">${m.action}</td>
-          <td>${m.qty}</td>
-        </tr>`;
-      }).join('')}</tbody></table></div>`}
+      ${alerts.length === 0 ? `<div class="empty">All items healthy.</div>` : `
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Item</th><th>Brand</th><th>Qty</th><th>Status</th></tr></thead>
+        <tbody>${alerts.map(i => `<tr>
+          <td style="font-size:12px;">${i.description}</td>
+          <td>${i.brand}</td>
+          <td style="font-weight:700;color:#dc2626;">${i.qty}</td>
+          <td>${statusBadge(i.status)}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>`}
     </div>
+
   </div>
+
+  ${showValue ? `<div class="shared-note">Stock value (at cost) ${state.branch==='All'?'all branches':'for '+state.branch}: ${state.company.currency} ${fmtMoney(stockValue)}</div>` : ''}
 
   <script>
   (function() {
-    function drawDonut(id, data, colors) {
-      const canvas = document.getElementById(id);
-      if (!canvas) return;
-      const ctx = canvas.getContext('2d');
-      const total = data.reduce((a,b) => a+b, 0);
-      if (total === 0) { ctx.fillStyle='#e5e7eb'; ctx.beginPath(); ctx.arc(40,40,36,0,Math.PI*2); ctx.fill(); return; }
-      let startAngle = -Math.PI/2;
-      data.forEach((val, i) => {
-        const slice = (val/total) * Math.PI * 2;
-        ctx.beginPath();
-        ctx.moveTo(40,40);
-        ctx.arc(40,40,36,startAngle,startAngle+slice);
-        ctx.closePath();
-        ctx.fillStyle = colors[i];
-        ctx.fill();
-        startAngle += slice;
-      });
-      ctx.beginPath(); ctx.arc(40,40,20,0,Math.PI*2); ctx.fillStyle='#fff'; ctx.fill();
-    }
-    function drawBar(id, labels, data, colors) {
-      const canvas = document.getElementById(id);
-      if (!canvas) return;
-      const ctx = canvas.getContext('2d');
-      const w=canvas.width, h=canvas.height, pad=10, barW=Math.min(40,(w-pad*2)/data.length-6);
-      const max = Math.max(...data, 1);
-      ctx.clearRect(0,0,w,h);
-      data.forEach((val,i) => {
-        const x = pad + i*(barW+6);
-        const bh = ((val/max) * (h-30));
-        const y = h-20-bh;
-        ctx.fillStyle = colors[i % colors.length];
-        ctx.beginPath();
-        ctx.roundRect(x,y,barW,bh,3);
-        ctx.fill();
-        ctx.fillStyle='#888'; ctx.font='10px Arial'; ctx.textAlign='center';
-        ctx.fillText(val, x+barW/2, y-3);
-        ctx.fillText(labels[i], x+barW/2, h-6);
-      });
-    }
+    if (typeof Chart === 'undefined') { setTimeout(arguments.callee, 300); return; }
 
-    // Inventory donut
-    drawDonut('invDonut', [${inStock},${lowCrit},${outStock}], ['#1D9E75','#E8520A','#dc2626']);
+    Chart.defaults.font.family = 'Arial, sans-serif';
+    Chart.defaults.font.size   = 11;
 
-    // Quotation status bar
-    const qCounts = {
-      Draft: ${quotes.filter(q=>q.status==='Draft').length},
-      Pending: ${quotes.filter(q=>q.status==='PendingApproval').length},
-      Sent: ${quotes.filter(q=>q.status==='Sent').length},
-      Accepted: ${quotes.filter(q=>q.status==='Accepted').length},
-      Declined: ${quotes.filter(q=>q.status==='Declined').length},
-    };
-    drawBar('quoteBar', Object.keys(qCounts), Object.values(qCounts), ['#888','#E8520A','#00627B','#1D9E75','#dc2626']);
+    const TEAL   = '#1D9E75';
+    const ORANGE = '#E8520A';
+    const NAVY   = '#00627B';
+    const RED    = '#dc2626';
+    const PURPLE = '#7F77DD';
+    const GRAY   = '#e5e7eb';
 
-    // Delay items bar
-    const allDelayItems = ${JSON.stringify(delayReports.reduce((acc,r)=>{(r.delayItems||[]).forEach(i=>acc.push(i.status));return acc;}, []))};
-    const dOpen = allDelayItems.filter(s=>s==='Open').length;
-    const dProg = allDelayItems.filter(s=>s==='In Progress').length;
-    const dDone = allDelayItems.filter(s=>s==='Resolved').length;
-    drawBar('delayBar', ['Open','In Prog','Resolved'], [dOpen,dProg,dDone], ['#dc2626','#E8520A','#1D9E75']);
+    // 1 — Inventory Donut
+    const invCtx = document.getElementById('invDonutChart');
+    if (invCtx) new Chart(invCtx, {
+      type: 'doughnut',
+      data: {
+        labels: ['In Stock', 'Low/Critical', 'Out of Stock'],
+        datasets: [{ data: [${inStock}, ${lowCrit}, ${outStock}], backgroundColor: [TEAL, ORANGE, RED], borderWidth: 2, borderColor: '#fff' }]
+      },
+      options: { responsive:true, maintainAspectRatio:false, cutout:'70%', plugins:{ legend:{ display:false }, tooltip:{ callbacks:{ label: ctx => ' ' + ctx.label + ': ' + ctx.parsed } } } }
+    });
 
-    // Procurement bar
-    const prRequested = ${prs.filter(p=>p.status==='Requested').length};
-    const prApproved  = ${prs.filter(p=>p.status==='Approved').length};
-    const prOrdered   = ${pos.filter(p=>p.status==='Ordered'||p.status==='Sent').length};
-    const prReceived  = ${pos.filter(p=>p.status==='Received').length};
-    drawBar('procBar', ['Requested','Approved','Ordered','Received'], [prRequested,prApproved,prOrdered,prReceived], ['#888','#E8520A','#00627B','#1D9E75']);
+    // 2 — Quotation Pipeline Bar
+    const qCtx = document.getElementById('quoteBarChart');
+    if (qCtx) new Chart(qCtx, {
+      type: 'bar',
+      data: {
+        labels: ['Draft', 'Pending', 'Approved', 'Sent', 'Accepted', 'Declined'],
+        datasets: [{ label: 'Quotations', data: [${qDraft}, ${qPending}, ${qApproved}, ${qSent}, ${qAccepted}, ${qDeclined}], backgroundColor: ['#aaa', ORANGE, NAVY, NAVY, TEAL, RED], borderRadius: 4, borderSkipped: false }]
+      },
+      options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:false} }, scales:{ y:{ beginAtZero:true, ticks:{ stepSize:1 }, grid:{ color:'#f0f0f0' } }, x:{ grid:{ display:false } } } }
+    });
+
+    // 3 — DN Monthly Line Chart
+    const dnCtx = document.getElementById('dnLineChart');
+    if (dnCtx) new Chart(dnCtx, {
+      type: 'line',
+      data: {
+        labels: ${JSON.stringify(monthLabels)},
+        datasets: [{ label: 'Delivery Notes Issued', data: ${JSON.stringify(monthDnData)}, borderColor: ORANGE, backgroundColor: 'rgba(232,82,10,0.08)', borderWidth: 2.5, pointBackgroundColor: ORANGE, pointRadius: 4, fill: true, tension: 0.3 }]
+      },
+      options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:false} }, scales:{ y:{ beginAtZero:true, ticks:{ stepSize:1 }, grid:{ color:'#f0f0f0' } }, x:{ grid:{ display:false } } } }
+    });
+
+    // 4 — Delay Items Donut
+    const delCtx = document.getElementById('delayDonutChart');
+    if (delCtx) new Chart(delCtx, {
+      type: 'doughnut',
+      data: {
+        labels: ['Open', 'In Progress', 'Resolved'],
+        datasets: [{ data: [${dOpen}, ${dProg}, ${dDone}], backgroundColor: [RED, ORANGE, TEAL], borderWidth: 2, borderColor: '#fff' }]
+      },
+      options: { responsive:true, maintainAspectRatio:false, cutout:'70%', plugins:{ legend:{ display:false }, tooltip:{ callbacks:{ label: ctx => ' ' + ctx.label + ': ' + ctx.parsed } } } }
+    });
+
   })();
-  </script>
+  <\/script>
   `;
 }
+
 
 function computeMrStatus(mr) {
   if (mr.status === 'Cancelled') return 'Cancelled';

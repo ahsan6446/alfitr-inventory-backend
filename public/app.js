@@ -1152,9 +1152,10 @@ function renderMaterialRequests() {
 function renderMaterialRequestForm(payload) {
   const isEdit = !!payload.id;
   const jobOrderOptions = state.jobOrders.map(jo => `<option value="${jo.id}" ${payload.jobOrderId === jo.id ? 'selected' : ''}>${jo.jobOrderNumber} — ${jo.clientCompany}</option>`).join('');
+  const acceptedQuotations = (state.quotations || []).filter(q => ['Accepted','Approved','Sent'].includes(q.status));
   const lines = payload.lineItems || [];
   return `
-  <div class="field"><label>Job Order</label>
+  <div class="field"><label>Job Order *</label>
     <select id="mrJobOrderPick" ${isEdit ? 'disabled' : ''}>
       <option value="">— Select Job Order —</option>
       ${jobOrderOptions}
@@ -1164,13 +1165,31 @@ function renderMaterialRequestForm(payload) {
     <div class="field"><label>Date</label><input type="date" id="mrDate" value="${payload.date || new Date().toISOString().slice(0, 10)}"></div>
     <div class="field"><label>Needed By <span class="muted" style="font-weight:500;text-transform:none;">(optional)</span></label><input type="date" id="mrNeededBy" value="${payload.neededBy || ''}"></div>
   </div>
-  <label>Line Items</label>
+
+  ${!isEdit ? `
+  <div style="background:var(--surface-2,#f8f9fa);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:14px;">
+    <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;">📋 Import from Quotation (optional)</div>
+    <div class="field" style="margin-bottom:0;">
+      <select id="mrQuotationPick" onchange="onMrQuotationSelect()">
+        <option value="">— None / Add items manually —</option>
+        ${acceptedQuotations.map(q => `<option value="${q.id}">${q.quotationNumber||'(no number)'} — ${q.clientCompany} — ${q.type}</option>`).join('')}
+      </select>
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-top:5px;">Select a quotation to auto-fill line items below. You can edit, delete or add more items after.</div>
+  </div>` : ''}
+
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+    <label style="margin-bottom:0;">Line Items</label>
+    <div style="display:flex;gap:6px;">
+      <button class="btn btn-ghost btn-sm" id="addMrLineBtn" type="button">+ From Stock</button>
+      <button class="btn btn-ghost btn-sm" id="addMrCustomLineBtn" type="button">+ Custom Item</button>
+    </div>
+  </div>
   <div id="mrLinesList">
-    ${lines.length === 0 ? `<p class="muted" style="font-size:12px;">No items yet — add one below.</p>` : ''}
+    ${lines.length === 0 ? `<p class="muted" style="font-size:12px;">No items yet — add from stock or custom item above.</p>` : ''}
     ${lines.map((l, idx) => renderMrLineRow(l, idx)).join('')}
   </div>
-  <button class="btn btn-ghost btn-sm" id="addMrLineBtn" type="button" style="margin-bottom:16px;">+ Add Line Item</button>
-  <div class="field"><label>Notes</label><textarea id="mrNotes" rows="2">${payload.notes || ''}</textarea></div>
+  <div class="field" style="margin-top:10px;"><label>Notes</label><textarea id="mrNotes" rows="2">${payload.notes || ''}</textarea></div>
   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">
     <button class="btn btn-ghost" id="modalCancel">Cancel</button>
     <button class="btn btn-primary" id="saveMrBtn">${isEdit ? 'Save Changes' : 'Submit Request'}</button>
@@ -1181,19 +1200,54 @@ function renderMaterialRequestForm(payload) {
 function renderMrLineRow(l, idx) {
   const it = l.itemId ? findItem(l.itemId) : null;
   const avail = it ? it.qty : null;
+  const isCustom = l.isCustom || !l.itemId;
   return `
-  <div class="grid3" style="margin-bottom:8px;align-items:end;" data-mr-line="${idx}">
-    <div class="field" style="margin-bottom:0;grid-column:span 2;"><label>Item</label>
-      <select class="mrLineItemPick" data-idx="${idx}">
-        <option value="">— Select item —</option>
-        ${state.items.map(i => `<option value="${i.id}" ${l.itemId === i.id ? 'selected' : ''}>${itemLabel(i)} (Avail: ${i.qty})</option>`).join('')}
-      </select>
-      ${it ? `<div class="muted" style="font-size:11px;margin-top:3px;">Currently in stock: ${avail} ${it.unit}</div>` : ''}
+  <div style="background:var(--surface-1,#fafafa);border:1px solid var(--border);border-radius:6px;padding:10px 12px;margin-bottom:8px;" data-mr-line="${idx}">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+      <span style="font-size:11px;font-weight:600;color:var(--muted);">${isCustom ? '✏️ Custom Item' : '📦 Stock Item'} #${idx+1}</span>
+      <button class="btn btn-ghost btn-sm removeMrLineBtn" data-idx="${idx}" style="padding:4px 8px;color:var(--red);">✕ Remove</button>
     </div>
-    <div style="display:flex;gap:6px;">
-      <div class="field" style="margin-bottom:0;flex:1;"><label>Qty</label><input class="mrLineQty" data-idx="${idx}" type="number" value="${l.qty ?? ''}"></div>
-      <button class="btn btn-ghost btn-sm removeMrLineBtn" data-idx="${idx}" style="padding:6px 9px;align-self:flex-end;">✕</button>
+    ${isCustom ? `
+    <div class="grid3" style="align-items:end;gap:8px;">
+      <div class="field" style="margin-bottom:0;grid-column:span 2;">
+        <label>Description *</label>
+        <input class="mrLineDesc" data-idx="${idx}" value="${l.description||''}" placeholder="e.g. Fire Alarm Cable 2x1.5mm">
+      </div>
+      <div class="field" style="margin-bottom:0;">
+        <label>Qty *</label>
+        <input class="mrLineQty" data-idx="${idx}" type="number" value="${l.qtyRequested??l.qty??''}">
+      </div>
+      <div class="field" style="margin-bottom:0;">
+        <label>Brand</label>
+        <input class="mrLineBrand" data-idx="${idx}" value="${l.brand||''}" placeholder="e.g. Honeywell">
+      </div>
+      <div class="field" style="margin-bottom:0;">
+        <label>Part No.</label>
+        <input class="mrLinePartNo" data-idx="${idx}" value="${l.partNo||''}" placeholder="Optional">
+      </div>
+      <div class="field" style="margin-bottom:0;">
+        <label>Unit</label>
+        <input class="mrLineUnit" data-idx="${idx}" value="${l.unit||'Pcs'}" placeholder="Pcs">
+      </div>
     </div>
+    <input type="hidden" class="mrLineIsCustom" data-idx="${idx}" value="true">
+    ` : `
+    <div class="grid3" style="align-items:end;gap:8px;">
+      <div class="field" style="margin-bottom:0;grid-column:span 2;">
+        <label>Item</label>
+        <select class="mrLineItemPick" data-idx="${idx}">
+          <option value="">— Select item —</option>
+          ${state.items.map(i => `<option value="${i.id}" ${l.itemId === i.id ? 'selected' : ''}>${itemLabel(i)} (Avail: ${i.qty})</option>`).join('')}
+        </select>
+        ${it ? `<div class="muted" style="font-size:11px;margin-top:3px;">Currently in stock: <strong style="color:${avail>0?'var(--green)':'var(--red)'}">${avail} ${it.unit}</strong></div>` : ''}
+      </div>
+      <div class="field" style="margin-bottom:0;">
+        <label>Qty *</label>
+        <input class="mrLineQty" data-idx="${idx}" type="number" value="${l.qtyRequested??l.qty??''}">
+      </div>
+    </div>
+    <input type="hidden" class="mrLineIsCustom" data-idx="${idx}" value="false">
+    `}
   </div>`;
 }
 
@@ -3386,10 +3440,24 @@ function readMrLinesFromDom() {
   const lines = [];
   document.querySelectorAll('[data-mr-line]').forEach(row => {
     const idx = row.getAttribute('data-mr-line');
-    const itemId = row.querySelector('.mrLineItemPick').value;
-    const qtyEl = row.querySelector('.mrLineQty');
-    const qty = qtyEl.value === '' ? '' : Number(qtyEl.value);
-    lines.push({ itemId, qty });
+    const isCustomEl = row.querySelector('.mrLineIsCustom');
+    const isCustom = isCustomEl ? isCustomEl.value === 'true' : false;
+    const qty = Number(row.querySelector('.mrLineQty')?.value || 0);
+    if (isCustom) {
+      lines.push({
+        itemId:      null,
+        isCustom:    true,
+        description: row.querySelector('.mrLineDesc')?.value    || '',
+        brand:       row.querySelector('.mrLineBrand')?.value   || '',
+        partNo:      row.querySelector('.mrLinePartNo')?.value  || '',
+        unit:        row.querySelector('.mrLineUnit')?.value    || 'Pcs',
+        qty,
+        qtyRequested: qty,
+      });
+    } else {
+      const itemId = row.querySelector('.mrLineItemPick')?.value || '';
+      lines.push({ itemId, qty, qtyRequested: qty, isCustom: false });
+    }
   });
   return lines;
 }
@@ -3402,6 +3470,31 @@ function syncMrFormIntoPayload() {
   p.lineItems = readMrLinesFromDom();
 }
 
+function onMrQuotationSelect() {
+  const sel = document.getElementById('mrQuotationPick');
+  if (!sel || !sel.value) return;
+  const q = (state.quotations || []).find(x => x.id === sel.value);
+  if (!q) return;
+  const lines = (q.lineItems || []).map(l => ({
+    itemId: l.itemId || null, description: l.description || '',
+    brand: l.brand || '', partNo: l.partNo || '', unit: l.unit || 'Pcs',
+    qty: l.qty || 1, qtyRequested: l.qty || 1, isCustom: !l.itemId,
+  }));
+  if (q.type === 'AMC' && q.amc && q.amc.services) {
+    q.amc.services.forEach(s => lines.push({
+      itemId: null, description: s.description || '', brand: '', partNo: '',
+      unit: 'Pcs', qty: s.qty || 1, qtyRequested: s.qty || 1, isCustom: true,
+    }));
+  }
+  if (state.modal && state.modal.payload) {
+    state.modal.payload.lineItems   = lines;
+    state.modal.payload.quotationId = q.id;
+  }
+  const listEl = document.getElementById('mrLinesList');
+  if (listEl) listEl.innerHTML = lines.map((l, idx) => renderMrLineRow(l, idx)).join('');
+  showToast(`${lines.length} line(s) imported from ${q.quotationNumber||'quotation'}.`, 'ok');
+}
+
 function attachMrFormHandlers() {
   if (!state.modal || state.modal.type !== 'newMr') return;
   const p = state.modal.payload;
@@ -3409,22 +3502,28 @@ function attachMrFormHandlers() {
   const addLineBtn = document.getElementById('addMrLineBtn');
   if (addLineBtn) addLineBtn.addEventListener('click', () => {
     syncMrFormIntoPayload();
-    p.lineItems = [...(p.lineItems || []), { itemId: '', qty: '' }];
+    p.lineItems = [...(p.lineItems || []), { itemId: '', qty: '', isCustom: false }];
     render();
   });
+
+  const addCustomBtn = document.getElementById('addMrCustomLineBtn');
+  if (addCustomBtn) addCustomBtn.addEventListener('click', () => {
+    syncMrFormIntoPayload();
+    p.lineItems = [...(p.lineItems || []), { itemId: null, description: '', brand: '', partNo: '', unit: 'Pcs', qty: '', isCustom: true }];
+    render();
+  });
+
   document.querySelectorAll('.removeMrLineBtn').forEach(b => b.addEventListener('click', e => {
     syncMrFormIntoPayload();
     const idx = Number(e.currentTarget.getAttribute('data-idx'));
     p.lineItems.splice(idx, 1);
     render();
   }));
+
   document.querySelectorAll('.mrLineItemPick').forEach(sel => sel.addEventListener('change', () => {
-    syncMrFormIntoPayload(); // discrete select action — a full re-render here is safe (not continuous typing)
+    syncMrFormIntoPayload();
     render();
   }));
-  // Qty is a live-typed field — no render() on every keystroke, matching the lesson learned
-  // from the quotation form (a re-render mid-type can steal focus and drop keystrokes).
-  // We simply let syncMrFormIntoPayload() read the live DOM value whenever an action needs it.
 
   const saveBtn = document.getElementById('saveMrBtn');
   if (saveBtn) saveBtn.addEventListener('click', async () => {
@@ -3433,13 +3532,24 @@ function attachMrFormHandlers() {
     if (!p2.jobOrderId) { showToast('Please select a Job Order.', 'err'); return; }
     if (!p2.lineItems || p2.lineItems.length === 0) { showToast('Add at least one line item.', 'err'); return; }
     for (const l of p2.lineItems) {
-      if (!l.itemId) { showToast('Every line needs an item selected.', 'err'); return; }
-      if (!l.qty || Number(l.qty) <= 0) { showToast('Every line needs a quantity greater than zero.', 'err'); return; }
+      if (l.isCustom) {
+        if (!l.description || !String(l.description).trim()) { showToast('Custom items need a description.', 'err'); return; }
+      } else {
+        if (!l.itemId) { showToast('Every stock line needs an item selected.', 'err'); return; }
+      }
     }
     try {
+      const payload = {
+        ...p2,
+        lineItems: p2.lineItems.map(l => ({
+          ...l,
+          qty: Number(l.qty || l.qtyRequested || 0),
+          qtyRequested: Number(l.qty || l.qtyRequested || 0),
+        })),
+      };
       let saved;
-      if (p2.id) saved = (await api('PUT', '/api/material-requests/' + p2.id, p2)).materialRequest;
-      else saved = (await api('POST', '/api/material-requests', p2)).materialRequest;
+      if (p2.id) saved = (await api('PUT', '/api/material-requests/' + p2.id, payload)).materialRequest;
+      else saved = (await api('POST', '/api/material-requests', payload)).materialRequest;
       await loadAll();
       showToast('Material Request saved.', 'ok');
       closeModal();
@@ -3447,8 +3557,6 @@ function attachMrFormHandlers() {
     } catch (e) { showToast(e.message, 'err'); }
   });
 }
-
-/* ---- Material Request view handlers ---- */
 function attachMrViewHandlers() {
   if (!state.modal || state.modal.type !== 'viewMr') return;
   const mr = state.modal.payload;

@@ -49,23 +49,46 @@ router.post('/', requirePermission('manageMaterialRequests'), async (req, res) =
   if (!jo) return res.status(400).json({ error: 'Select a valid Job Order.' });
   if (!Array.isArray(body.lineItems) || body.lineItems.length === 0) return res.status(400).json({ error: 'Add at least one line item.' });
 
+  // Optional quotation link
+  let linkedQuotation = null;
+  if (body.quotationId) {
+    linkedQuotation = (state.quotations || []).find(q => q.id === body.quotationId);
+  }
+
   const lineItems = [];
   for (const l of body.lineItems) {
-    const item = state.items.find(i => i.id === l.itemId);
-    if (!item) return res.status(400).json({ error: 'One of the selected items is invalid.' });
-    const qty = Number(l.qty);
-    if (!qty || qty <= 0) return res.status(400).json({ error: `Enter a valid quantity for ${item.description}.` });
-    lineItems.push({
-      id: db.uuid(), itemId: item.id, description: item.description, brand: item.brand, partNo: item.partNo || '',
-      unit: item.unit, qtyRequested: qty, qtyFulfilled: 0,
-    });
+    // Support both inventory items and custom text items (from quotation or manual)
+    if (l.isCustom || !l.itemId) {
+      // Custom line — description required
+      if (!l.description || !String(l.description).trim()) continue;
+      const qty = Number(l.qty);
+      if (!qty || qty <= 0) return res.status(400).json({ error: `Enter a valid quantity for ${l.description}.` });
+      lineItems.push({
+        id: db.uuid(), itemId: null, description: l.description,
+        brand: l.brand || '', partNo: l.partNo || '', unit: l.unit || 'Pcs',
+        qtyRequested: qty, qtyFulfilled: 0, isCustom: true,
+      });
+    } else {
+      const item = state.items.find(i => i.id === l.itemId);
+      if (!item) return res.status(400).json({ error: 'One of the selected items is invalid.' });
+      const qty = Number(l.qty);
+      if (!qty || qty <= 0) return res.status(400).json({ error: `Enter a valid quantity for ${item.description}.` });
+      lineItems.push({
+        id: db.uuid(), itemId: item.id, description: item.description, brand: item.brand,
+        partNo: item.partNo || '', unit: item.unit, qtyRequested: qty, qtyFulfilled: 0, isCustom: false,
+      });
+    }
   }
+
+  if (lineItems.length === 0) return res.status(400).json({ error: 'Add at least one valid line item.' });
 
   const mr = {
     id: db.uuid(),
     mrNumber: nextMrNumber(state),
     jobOrderId: jo.id, jobOrderNumber: jo.jobOrderNumber,
     clientCompany: jo.clientCompany,
+    quotationId:     linkedQuotation ? linkedQuotation.id : null,
+    quotationNumber: linkedQuotation ? linkedQuotation.quotationNumber : null,
     requestedById: req.user.id, requestedByName: req.user.name,
     status: 'Requested',
     date: body.date || new Date().toISOString().slice(0, 10),
@@ -90,14 +113,25 @@ router.put('/:id', requirePermission('manageMaterialRequests'), async (req, res)
   if (Array.isArray(body.lineItems)) {
     const lineItems = [];
     for (const l of body.lineItems) {
-      const item = state.items.find(i => i.id === l.itemId);
-      if (!item) return res.status(400).json({ error: 'One of the selected items is invalid.' });
-      const qty = Number(l.qty);
-      if (!qty || qty <= 0) return res.status(400).json({ error: `Enter a valid quantity for ${item.description}.` });
-      lineItems.push({
-        id: l.id || db.uuid(), itemId: item.id, description: item.description, brand: item.brand, partNo: item.partNo || '',
-        unit: item.unit, qtyRequested: qty, qtyFulfilled: 0,
-      });
+      if (l.isCustom || !l.itemId) {
+        if (!l.description || !String(l.description).trim()) continue;
+        const qty = Number(l.qty);
+        if (!qty || qty <= 0) return res.status(400).json({ error: `Enter a valid quantity for ${l.description}.` });
+        lineItems.push({
+          id: l.id || db.uuid(), itemId: null, description: l.description,
+          brand: l.brand || '', partNo: l.partNo || '', unit: l.unit || 'Pcs',
+          qtyRequested: qty, qtyFulfilled: 0, isCustom: true,
+        });
+      } else {
+        const item = state.items.find(i => i.id === l.itemId);
+        if (!item) return res.status(400).json({ error: 'One of the selected items is invalid.' });
+        const qty = Number(l.qty);
+        if (!qty || qty <= 0) return res.status(400).json({ error: `Enter a valid quantity for ${item.description}.` });
+        lineItems.push({
+          id: l.id || db.uuid(), itemId: item.id, description: item.description, brand: item.brand,
+          partNo: item.partNo || '', unit: item.unit, qtyRequested: qty, qtyFulfilled: 0, isCustom: false,
+        });
+      }
     }
     mr.lineItems = lineItems;
   }

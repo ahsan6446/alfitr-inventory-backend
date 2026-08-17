@@ -1,8 +1,6 @@
 const express = require('express');
 const db = require('../lib/db');
 const { requireAuth, requirePermission } = require('../lib/auth');
-const { can } = require('../lib/permissions');
-const { itemQty } = require('../lib/calc');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -62,45 +60,17 @@ router.post('/', requirePermission('createDN'), async (req, res) => {
     items: lines, remarks: body.remarks || '', status: issue ? 'Issued' : 'Draft', createdAt: Date.now(),
   };
   state.dns.push(dn);
-
-  if (issue) {
-    for (const ln of lines) {
-      state.movements.push({
-        id: db.uuid(), itemId: ln.itemId, action: 'OUT', qty: ln.qty, date: dn.date,
-        reference: 'DN ' + dn.dnNumber + (dn.clientCompany ? ' — ' + dn.clientCompany : ''),
-        by: dn.issuedBy, dnId: dn.id, createdAt: Date.now(),
-      });
-    }
-  }
+  // Note: stock deduction happens at MR fulfill stage, not here
   await db.persist();
   res.status(201).json({ dn });
 });
 
-// Issue an existing draft
+// Issue an existing draft — status update only, stock was already deducted at MR fulfill stage
 router.post('/:id/issue', requirePermission('createDN'), async (req, res) => {
   const state = db.get();
   const dn = state.dns.find(d => d.id === req.params.id);
   if (!dn) return res.status(404).json({ error: 'Delivery note not found.' });
   if (dn.status === 'Issued') return res.status(400).json({ error: 'This delivery note is already issued.' });
-
-  if (!can(state.roles, req.user.role, 'allowNegativeStock')) {
-    for (const ln of dn.items) {
-      const it = state.items.find(i => i.id === ln.itemId);
-      if (!it) continue;
-      const resulting = itemQty(it, state.movements) - ln.qty;
-      if (resulting < 0) {
-        return res.status(403).json({ error: `Issuing would take ${it.description} to ${resulting} — negative stock needs Admin approval.` });
-      }
-    }
-  }
-
-  for (const ln of dn.items) {
-    state.movements.push({
-      id: db.uuid(), itemId: ln.itemId, action: 'OUT', qty: ln.qty, date: dn.date,
-      reference: 'DN ' + dn.dnNumber + (dn.clientCompany ? ' — ' + dn.clientCompany : ''),
-      by: dn.issuedBy, dnId: dn.id, createdAt: Date.now(),
-    });
-  }
   dn.status = 'Issued';
   await db.persist();
   res.json({ dn });

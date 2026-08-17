@@ -484,53 +484,113 @@ function renderDashboard() {
   const thisMonth = (d) => { const dt = new Date(d); return dt.getMonth()===now.getMonth() && dt.getFullYear()===now.getFullYear(); };
   const lastMonth = (d) => { const dt = new Date(d); const lm = new Date(now.getFullYear(), now.getMonth()-1,1); return dt.getMonth()===lm.getMonth() && dt.getFullYear()===lm.getFullYear(); };
 
-  // ── Inventory
   const total    = items.length;
   const inStock  = items.filter(i => i.status === 'IN STOCK').length;
   const lowCrit  = items.filter(i => i.status === 'LOW STOCK' || i.status === 'CRITICAL').length;
   const outStock = items.filter(i => i.status === 'OUT OF STOCK').length;
   const alerts   = items.filter(i => i.status !== 'IN STOCK').sort((a,b) => a.qty - b.qty).slice(0, 6);
 
-  // ── Sales
-  const quotes       = state.quotations || [];
-  const qDraft       = quotes.filter(q => q.status === 'Draft').length;
-  const qPending     = quotes.filter(q => q.status === 'PendingApproval').length;
-  const qSent        = quotes.filter(q => q.status === 'Sent').length;
-  const qAccepted    = quotes.filter(q => q.status === 'Accepted').length;
-  const qDeclined    = quotes.filter(q => q.status === 'Declined').length;
-  const qApproved    = quotes.filter(q => q.status === 'Approved').length;
-  const activeQuotes = qDraft + qPending + qSent + qApproved;
-  const jobOrders    = state.jobOrders || [];
-  const activeJOs    = jobOrders.filter(j => j.status === 'Open' || j.status === 'In Process').length;
-  const recentJOs    = [...jobOrders].sort((a,b) => b.createdAt - a.createdAt).slice(0, 5);
+  const quotes    = state.quotations || [];
+  const qDraft    = quotes.filter(q => q.status === 'Draft').length;
+  const qPending  = quotes.filter(q => q.status === 'PendingApproval').length;
+  const qSent     = quotes.filter(q => q.status === 'Sent').length;
+  const qAccepted = quotes.filter(q => q.status === 'Accepted').length;
+  const qDeclined = quotes.filter(q => q.status === 'Declined').length;
+  const qApproved = quotes.filter(q => q.status === 'Approved').length;
+  const activeQ   = qDraft + qPending + qSent + qApproved;
+  const jobOrders = state.jobOrders || [];
+  const activeJOs = jobOrders.filter(j => j.status === 'Open' || j.status === 'In Process').length;
+  const recentJOs = [...jobOrders].sort((a,b) => b.createdAt - a.createdAt).slice(0, 5);
 
-  // ── Projects
-  const mrs          = state.materialRequests || [];
-  const openMRs      = mrs.filter(m => { const s = computeMrStatus(m); return s !== 'Fulfilled' && s !== 'Cancelled'; }).length;
-  const drs          = state.delayReports || [];
-  const allDelayItems= drs.reduce((acc,r) => { (r.delayItems||[]).forEach(i => acc.push(i.status)); return acc; }, []);
-  const dOpen        = allDelayItems.filter(s => s === 'Open').length;
-  const dProg        = allDelayItems.filter(s => s === 'In Progress').length;
-  const dDone        = allDelayItems.filter(s => s === 'Resolved').length;
+  const mrs       = state.materialRequests || [];
+  const openMRs   = mrs.filter(m => { const s = computeMrStatus(m); return s !== 'Fulfilled' && s !== 'Cancelled'; }).length;
+  const drs       = state.delayReports || [];
+  const allDI     = drs.reduce((acc,r) => { (r.delayItems||[]).forEach(i => acc.push(i.status)); return acc; }, []);
+  const dOpen     = allDI.filter(s => s === 'Open').length;
+  const dProg     = allDI.filter(s => s === 'In Progress').length;
+  const dDone     = allDI.filter(s => s === 'Resolved').length;
 
-  // ── Procurement
-  const prs          = state.purchaseRequests || [];
-  const pos          = state.purchaseOrders   || [];
-  const pendingPRs   = prs.filter(p => p.status === 'Requested' || p.status === 'Approved').length;
-  const openPOs      = pos.filter(p => p.status !== 'Received' && p.status !== 'Cancelled').length;
-  const prReq        = prs.filter(p => p.status === 'Requested').length;
-  const prAppr       = prs.filter(p => p.status === 'Approved').length;
-  const prOrd        = pos.filter(p => p.status === 'Ordered' || p.status === 'Sent').length;
-  const prRcv        = pos.filter(p => p.status === 'Received').length;
+  const prs       = state.purchaseRequests || [];
+  const pos       = state.purchaseOrders   || [];
+  const pendingPR = prs.filter(p => p.status === 'Requested' || p.status === 'Approved').length;
+  const openPOs   = pos.filter(p => p.status !== 'Received' && p.status !== 'Cancelled').length;
 
-  // ── Delivery Notes
-  const dnThisMonth  = dns.filter(d => d.status === 'Issued' && thisMonth(d.date)).length;
-  const dnLastMonth  = dns.filter(d => d.status === 'Issued' && lastMonth(d.date)).length;
-  const recentDns    = [...dns].sort((a,b) => b.createdAt - a.createdAt).slice(0, 5);
+  const dnThisM   = dns.filter(d => d.status === 'Issued' && thisMonth(d.date)).length;
+  const dnLastM   = dns.filter(d => d.status === 'Issued' && lastMonth(d.date)).length;
+  const recentDns = [...dns].sort((a,b) => b.createdAt - a.createdAt).slice(0, 5);
 
-  // ── Monthly DN trend (last 6 months)
-  const monthLabels = [];
-  const monthDnData = [];
+  const showValue  = can('viewStockValue');
+  const stockValue = items.reduce((s, i) => s + (Number(i.stockValue) || 0), 0);
+
+  // ── SVG bar chart helper (pure CSS, no library)
+  function svgBar(data, colors, labels, maxH) {
+    const max = Math.max(...data, 1);
+    const barW = 30, gap = 10, pad = 20;
+    const totalW = data.length * (barW + gap) + pad * 2;
+    const h = maxH || 90;
+    const bars = data.map((v, i) => {
+      const bh = Math.max(2, Math.round((v / max) * (h - 30)));
+      const x  = pad + i * (barW + gap);
+      const y  = h - 20 - bh;
+      return `
+        <rect x="${x}" y="${y}" width="${barW}" height="${bh}" fill="${colors[i % colors.length]}" rx="3"/>
+        <text x="${x + barW/2}" y="${y - 3}" text-anchor="middle" font-size="10" fill="#555">${v}</text>
+        <text x="${x + barW/2}" y="${h - 5}" text-anchor="middle" font-size="9" fill="#999">${labels[i]||''}</text>`;
+    }).join('');
+    return `<svg width="100%" viewBox="0 0 ${totalW} ${h}" xmlns="http://www.w3.org/2000/svg">${bars}</svg>`;
+  }
+
+  // ── SVG donut helper
+  function svgDonut(data, colors) {
+    const total = data.reduce((a,b) => a+b, 0);
+    if (total === 0) return `<svg width="80" height="80" viewBox="0 0 80 80"><circle cx="40" cy="40" r="30" fill="none" stroke="#e5e7eb" stroke-width="14"/></svg>`;
+    let angle = -90;
+    const paths = data.map((v, i) => {
+      if (v === 0) return '';
+      const pct   = (v / total) * 360;
+      const start = angle;
+      angle += pct;
+      const r    = 30, cx = 40, cy = 40;
+      const s    = polarToXY(cx, cy, r, start);
+      const e    = polarToXY(cx, cy, r, angle);
+      const large = pct > 180 ? 1 : 0;
+      return `<path d="M${cx},${cy} L${s.x},${s.y} A${r},${r},0,${large},1,${e.x},${e.y} Z" fill="${colors[i]}"/>`;
+    }).join('');
+    return `<svg width="80" height="80" viewBox="0 0 80 80" xmlns="http://www.w3.org/2000/svg">
+      ${paths}
+      <circle cx="40" cy="40" r="18" fill="#fff"/>
+      <text x="40" y="44" text-anchor="middle" font-size="12" font-weight="700" fill="#0B2B36">${total}</text>
+    </svg>`;
+  }
+  function polarToXY(cx, cy, r, deg) {
+    const rad = (deg * Math.PI) / 180;
+    return { x: +(cx + r * Math.cos(rad)).toFixed(2), y: +(cy + r * Math.sin(rad)).toFixed(2) };
+  }
+
+  // ── SVG line chart helper (6-month DN trend)
+  function svgLine(data, labels) {
+    const max  = Math.max(...data, 1);
+    const w    = 260, h = 80, pad = 20;
+    const pts  = data.map((v, i) => {
+      const x = pad + (i / (data.length - 1)) * (w - pad * 2);
+      const y = h - pad - Math.round((v / max) * (h - pad * 2));
+      return { x: +x.toFixed(1), y: +y.toFixed(1), v, l: labels[i] };
+    });
+    const polyline = pts.map(p => `${p.x},${p.y}`).join(' ');
+    const area     = `M${pts[0].x},${h-pad} ` + pts.map(p => `L${p.x},${p.y}`).join(' ') + ` L${pts[pts.length-1].x},${h-pad} Z`;
+    return `<svg width="100%" viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg">
+      <path d="${area}" fill="rgba(232,82,10,0.08)"/>
+      <polyline points="${polyline}" fill="none" stroke="#E8520A" stroke-width="2"/>
+      ${pts.map(p => `
+        <circle cx="${p.x}" cy="${p.y}" r="3" fill="#E8520A"/>
+        <text x="${p.x}" y="${p.y - 5}" text-anchor="middle" font-size="9" fill="#E8520A">${p.v}</text>
+        <text x="${p.x}" y="${h - 4}" text-anchor="middle" font-size="8" fill="#999">${p.l}</text>
+      `).join('')}
+    </svg>`;
+  }
+
+  // ── 6-month data
+  const monthLabels = [], monthDnData = [];
   for (let i = 5; i >= 0; i--) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
     monthLabels.push(d.toLocaleDateString('en-GB', { month: 'short' }));
@@ -540,108 +600,90 @@ function renderDashboard() {
     }).length);
   }
 
-  // ── Stock value
-  const showValue  = can('viewStockValue');
-  const stockValue = items.reduce((s, i) => s + (Number(i.stockValue) || 0), 0);
-
-  // ── Trend arrows
-  const dnTrend = dnThisMonth >= dnLastMonth ? '↑' : '↓';
-  const dnTrendCls = dnThisMonth >= dnLastMonth ? 'trend-up' : 'trend-down';
+  const TEAL = '#1D9E75', ORANGE = '#E8520A', RED = '#dc2626', NAVY = '#00627B', PURPLE = '#7F77DD', GRAY = '#aaa';
 
   return `
-  <!-- Alert banner -->
   ${alerts.length > 0 ? `
   <div class="dash-alert">
-    <span class="dash-alert-icon">⚠️</span>
-    <span><strong>${outStock} items out of stock</strong> · ${lowCrit} items low/critical — inventory needs attention.</span>
+    <span>⚠️</span>
+    <span><strong>${outStock} items out of stock</strong> · ${lowCrit} items low/critical</span>
     <button class="btn btn-ghost btn-sm" data-tab="inventory" style="margin-left:auto;">View Inventory →</button>
   </div>` : ''}
 
-  <!-- KPI Strip -->
   <div class="dash-kpi-strip">
-    <div class="dash-kpi-card" style="border-top:3px solid #1D9E75;">
+    <div class="dash-kpi-card" style="border-top:3px solid ${TEAL};">
       <div class="dash-kpi-label">Total Inventory</div>
-      <div class="dash-kpi-value" style="color:#1D9E75;">${total}</div>
+      <div class="dash-kpi-value" style="color:${TEAL};">${total}</div>
       <div class="dash-kpi-sub">${inStock} in stock · ${outStock} out</div>
     </div>
-    <div class="dash-kpi-card" style="border-top:3px solid #E8520A;">
+    <div class="dash-kpi-card" style="border-top:3px solid ${ORANGE};">
       <div class="dash-kpi-label">Quotations</div>
-      <div class="dash-kpi-value" style="color:#E8520A;">${quotes.length}</div>
-      <div class="dash-kpi-sub">${activeQuotes} active · ${qAccepted} accepted</div>
+      <div class="dash-kpi-value" style="color:${ORANGE};">${quotes.length}</div>
+      <div class="dash-kpi-sub">${activeQ} active · ${qAccepted} accepted</div>
     </div>
-    <div class="dash-kpi-card" style="border-top:3px solid #00627B;">
+    <div class="dash-kpi-card" style="border-top:3px solid ${NAVY};">
       <div class="dash-kpi-label">Job Orders</div>
-      <div class="dash-kpi-value" style="color:#00627B;">${jobOrders.length}</div>
+      <div class="dash-kpi-value" style="color:${NAVY};">${jobOrders.length}</div>
       <div class="dash-kpi-sub">${activeJOs} open / in-process</div>
     </div>
-    <div class="dash-kpi-card" style="border-top:3px solid #E8520A;">
+    <div class="dash-kpi-card" style="border-top:3px solid ${ORANGE};">
       <div class="dash-kpi-label">DNs This Month</div>
-      <div class="dash-kpi-value" style="color:#E8520A;">${dnThisMonth} <span class="dash-trend ${dnTrendCls}">${dnTrend}</span></div>
-      <div class="dash-kpi-sub">vs ${dnLastMonth} last month</div>
+      <div class="dash-kpi-value" style="color:${ORANGE};">${dnThisM} <span style="font-size:16px;color:${dnThisM>=dnLastM?TEAL:RED}">${dnThisM>=dnLastM?'↑':'↓'}</span></div>
+      <div class="dash-kpi-sub">vs ${dnLastM} last month</div>
     </div>
-    <div class="dash-kpi-card" style="border-top:3px solid #dc2626;">
+    <div class="dash-kpi-card" style="border-top:3px solid ${RED};">
       <div class="dash-kpi-label">Open Delays</div>
-      <div class="dash-kpi-value" style="color:#dc2626;">${dOpen}</div>
+      <div class="dash-kpi-value" style="color:${RED};">${dOpen}</div>
       <div class="dash-kpi-sub">${dProg} in progress · ${dDone} resolved</div>
     </div>
-    <div class="dash-kpi-card" style="border-top:3px solid #7F77DD;">
+    <div class="dash-kpi-card" style="border-top:3px solid ${PURPLE};">
       <div class="dash-kpi-label">Pending PRs</div>
-      <div class="dash-kpi-value" style="color:#7F77DD;">${pendingPRs}</div>
+      <div class="dash-kpi-value" style="color:${PURPLE};">${pendingPR}</div>
       <div class="dash-kpi-sub">${openPOs} open POs</div>
     </div>
   </div>
 
-  <!-- Charts Row -->
   <div class="dash-charts-row">
-
-    <!-- Inventory Donut -->
     <div class="dash-chart-card">
       <div class="dash-chart-title">Inventory Status</div>
-      <div style="position:relative;height:180px;display:flex;align-items:center;justify-content:center;">
-        <canvas id="invDonutChart"></canvas>
-      </div>
-      <div class="dash-legend">
-        <div class="dash-legend-item"><span style="background:#1D9E75"></span>In Stock (${inStock})</div>
-        <div class="dash-legend-item"><span style="background:#E8520A"></span>Low/Critical (${lowCrit})</div>
-        <div class="dash-legend-item"><span style="background:#dc2626"></span>Out of Stock (${outStock})</div>
+      <div style="display:flex;align-items:center;gap:16px;margin-top:8px;">
+        ${svgDonut([inStock, lowCrit, outStock], [TEAL, ORANGE, RED])}
+        <div style="font-size:12px;line-height:2;">
+          <div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${TEAL};margin-right:6px;"></span>In Stock (${inStock})</div>
+          <div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${ORANGE};margin-right:6px;"></span>Low/Critical (${lowCrit})</div>
+          <div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${RED};margin-right:6px;"></span>Out of Stock (${outStock})</div>
+        </div>
       </div>
     </div>
 
-    <!-- Quotation Status Bar -->
     <div class="dash-chart-card">
       <div class="dash-chart-title">Quotation Pipeline</div>
-      <div style="position:relative;height:180px;">
-        <canvas id="quoteBarChart"></canvas>
+      <div style="margin-top:8px;">
+        ${svgBar([qDraft,qPending,qApproved,qSent,qAccepted,qDeclined], [GRAY,ORANGE,NAVY,NAVY,TEAL,RED], ['Draft','Pend','Appr','Sent','Accpt','Decl'])}
       </div>
     </div>
 
-    <!-- DN Monthly Trend Line -->
     <div class="dash-chart-card">
       <div class="dash-chart-title">Delivery Notes — 6 Month Trend</div>
-      <div style="position:relative;height:180px;">
-        <canvas id="dnLineChart"></canvas>
+      <div style="margin-top:8px;">
+        ${svgLine(monthDnData, monthLabels)}
       </div>
     </div>
 
-    <!-- Delay Items Donut -->
     <div class="dash-chart-card">
       <div class="dash-chart-title">Delay Items Status</div>
-      <div style="position:relative;height:180px;display:flex;align-items:center;justify-content:center;">
-        <canvas id="delayDonutChart"></canvas>
-      </div>
-      <div class="dash-legend">
-        <div class="dash-legend-item"><span style="background:#dc2626"></span>Open (${dOpen})</div>
-        <div class="dash-legend-item"><span style="background:#E8520A"></span>In Progress (${dProg})</div>
-        <div class="dash-legend-item"><span style="background:#1D9E75"></span>Resolved (${dDone})</div>
+      <div style="display:flex;align-items:center;gap:16px;margin-top:8px;">
+        ${svgDonut([dOpen, dProg, dDone], [RED, ORANGE, TEAL])}
+        <div style="font-size:12px;line-height:2;">
+          <div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${RED};margin-right:6px;"></span>Open (${dOpen})</div>
+          <div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${ORANGE};margin-right:6px;"></span>In Progress (${dProg})</div>
+          <div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${TEAL};margin-right:6px;"></span>Resolved (${dDone})</div>
+        </div>
       </div>
     </div>
-
   </div>
 
-  <!-- Bottom Tables Row -->
   <div class="dash-tables-row">
-
-    <!-- Recent Job Orders -->
     <div class="card" style="min-width:0;">
       <div class="card-head">
         <div class="card-title">Recent Job Orders</div>
@@ -649,17 +691,15 @@ function renderDashboard() {
       </div>
       ${recentJOs.length === 0 ? `<div class="empty">No job orders yet.</div>` : `
       <div class="tbl-wrap"><table>
-        <thead><tr><th>JO No.</th><th>Client</th><th>Project</th><th>Status</th></tr></thead>
+        <thead><tr><th>JO No.</th><th>Client</th><th>Status</th></tr></thead>
         <tbody>${recentJOs.map(j => `<tr>
           <td style="font-family:var(--mono);color:#E8520A;font-weight:700;">${j.jobOrderNumber}</td>
           <td>${j.clientCompany||'—'}</td>
-          <td style="color:var(--ink-soft);font-size:12px;">${j.subject||'—'}</td>
           <td><span class="badge ${j.status==='Open'?'badge-in':j.status==='Resolved'?'badge-out':'badge-low'}">${j.status}</span></td>
         </tr>`).join('')}</tbody>
       </table></div>`}
     </div>
 
-    <!-- Recent Delivery Notes -->
     <div class="card" style="min-width:0;">
       <div class="card-head">
         <div class="card-title">Recent Delivery Notes</div>
@@ -667,17 +707,15 @@ function renderDashboard() {
       </div>
       ${recentDns.length === 0 ? `<div class="empty">No delivery notes yet.</div>` : `
       <div class="tbl-wrap"><table>
-        <thead><tr><th>DN No.</th><th>Client</th><th>Branch</th><th>Status</th></tr></thead>
+        <thead><tr><th>DN No.</th><th>Client</th><th>Status</th></tr></thead>
         <tbody>${recentDns.map(d => `<tr>
           <td style="font-family:var(--mono);font-weight:700;">${d.dnNumber}</td>
           <td>${d.clientCompany||'—'}</td>
-          <td>${d.location}</td>
           <td><span class="badge ${d.status==='Issued'?'badge-issued':'badge-draft'}">${d.status}</span></td>
         </tr>`).join('')}</tbody>
       </table></div>`}
     </div>
 
-    <!-- Reorder Alerts -->
     <div class="card" style="min-width:0;">
       <div class="card-head">
         <div class="card-title">Reorder Alerts <span style="color:#E8520A;font-size:12px;font-weight:600;">${alerts.length} items</span></div>
@@ -685,81 +723,17 @@ function renderDashboard() {
       </div>
       ${alerts.length === 0 ? `<div class="empty">All items healthy.</div>` : `
       <div class="tbl-wrap"><table>
-        <thead><tr><th>Item</th><th>Brand</th><th>Qty</th><th>Status</th></tr></thead>
+        <thead><tr><th>Item</th><th>Qty</th><th>Status</th></tr></thead>
         <tbody>${alerts.map(i => `<tr>
           <td style="font-size:12px;">${i.description}</td>
-          <td>${i.brand}</td>
           <td style="font-weight:700;color:#dc2626;">${i.qty}</td>
           <td>${statusBadge(i.status)}</td>
         </tr>`).join('')}</tbody>
       </table></div>`}
     </div>
-
   </div>
 
   ${showValue ? `<div class="shared-note">Stock value (at cost) ${state.branch==='All'?'all branches':'for '+state.branch}: ${state.company.currency} ${fmtMoney(stockValue)}</div>` : ''}
-
-  <script>
-  (function() {
-    function tryInit() {
-      if (typeof Chart === 'undefined') { setTimeout(tryInit, 100); return; }
-      Chart.defaults.font.family = 'Arial, sans-serif';
-      Chart.defaults.font.size   = 11;
-
-    const TEAL   = '#1D9E75';
-    const ORANGE = '#E8520A';
-    const NAVY   = '#00627B';
-    const RED    = '#dc2626';
-    const PURPLE = '#7F77DD';
-    const GRAY   = '#e5e7eb';
-
-    // 1 — Inventory Donut
-    const invCtx = document.getElementById('invDonutChart');
-    if (invCtx) new Chart(invCtx, {
-      type: 'doughnut',
-      data: {
-        labels: ['In Stock', 'Low/Critical', 'Out of Stock'],
-        datasets: [{ data: [${inStock}, ${lowCrit}, ${outStock}], backgroundColor: [TEAL, ORANGE, RED], borderWidth: 2, borderColor: '#fff' }]
-      },
-      options: { responsive:true, maintainAspectRatio:false, cutout:'70%', plugins:{ legend:{ display:false }, tooltip:{ callbacks:{ label: ctx => ' ' + ctx.label + ': ' + ctx.parsed } } } }
-    });
-
-    // 2 — Quotation Pipeline Bar
-    const qCtx = document.getElementById('quoteBarChart');
-    if (qCtx) new Chart(qCtx, {
-      type: 'bar',
-      data: {
-        labels: ['Draft', 'Pending', 'Approved', 'Sent', 'Accepted', 'Declined'],
-        datasets: [{ label: 'Quotations', data: [${qDraft}, ${qPending}, ${qApproved}, ${qSent}, ${qAccepted}, ${qDeclined}], backgroundColor: ['#aaa', ORANGE, NAVY, NAVY, TEAL, RED], borderRadius: 4, borderSkipped: false }]
-      },
-      options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:false} }, scales:{ y:{ beginAtZero:true, ticks:{ stepSize:1 }, grid:{ color:'#f0f0f0' } }, x:{ grid:{ display:false } } } }
-    });
-
-    // 3 — DN Monthly Line Chart
-    const dnCtx = document.getElementById('dnLineChart');
-    if (dnCtx) new Chart(dnCtx, {
-      type: 'line',
-      data: {
-        labels: ${JSON.stringify(monthLabels)},
-        datasets: [{ label: 'Delivery Notes Issued', data: ${JSON.stringify(monthDnData)}, borderColor: ORANGE, backgroundColor: 'rgba(232,82,10,0.08)', borderWidth: 2.5, pointBackgroundColor: ORANGE, pointRadius: 4, fill: true, tension: 0.3 }]
-      },
-      options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:false} }, scales:{ y:{ beginAtZero:true, ticks:{ stepSize:1 }, grid:{ color:'#f0f0f0' } }, x:{ grid:{ display:false } } } }
-    });
-
-    // 4 — Delay Items Donut
-    const delCtx = document.getElementById('delayDonutChart');
-    if (delCtx) new Chart(delCtx, {
-      type: 'doughnut',
-      data: {
-        labels: ['Open', 'In Progress', 'Resolved'],
-        datasets: [{ data: [${dOpen}, ${dProg}, ${dDone}], backgroundColor: [RED, ORANGE, TEAL], borderWidth: 2, borderColor: '#fff' }]
-      },
-      options: { responsive:true, maintainAspectRatio:false, cutout:'70%', plugins:{ legend:{ display:false }, tooltip:{ callbacks:{ label: ctx => ' ' + ctx.label + ': ' + ctx.parsed } } } }
-    });
-
-  tryInit();
-  })();
-  <\/script>
   `;
 }
 

@@ -353,3 +353,103 @@ tr:hover td{background:#FAFCFC;}
     letter-spacing: .3px;
   }
 }
+
+/* ═══ Phase-1 Grouped Sidebar Nav ═══════════════════════════════ */
+.nav-solo{
+  all:unset;cursor:pointer;padding:10px 12px;border-radius:8px;
+  font-size:13.5px;font-weight:500;color:#C9D8DC;
+  display:flex;align-items:center;gap:10px;transition:background .12s;width:100%;
+}
+.nav-solo:hover{background:rgba(255,255,255,.06);color:#fff;}
+.nav-solo.active{background:var(--teal);color:#fff;font-weight:600;}
+
+.nav-group{margin-bottom:1px;}
+
+.nav-group-header{
+  all:unset;cursor:pointer;padding:9px 12px;border-radius:8px;
+  font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;
+  color:#7F98A0;display:flex;align-items:center;gap:8px;
+  width:100%;transition:background .12s,color .12s;
+}
+.nav-group-header:hover{background:rgba(255,255,255,.05);color:#C9D8DC;}
+.nav-group-header.has-active{color:#fff;}
+
+.nav-group-icon{font-size:15px;flex-shrink:0;}
+.nav-group-label{flex:1;}
+.nav-group-arrow{
+  font-size:17px;color:#5B7B84;
+  transition:transform .2s;display:inline-block;line-height:1;
+}
+.nav-group-arrow.open{transform:rotate(90deg);}
+
+.nav-group-items{
+  display:none;flex-direction:column;gap:1px;
+  padding:2px 0 4px 10px;
+  border-left:2px solid rgba(255,255,255,.08);
+  margin:0 10px 2px 22px;
+}
+.nav-group-items.open{display:flex;}
+
+.nav-sub-item{
+  all:unset;cursor:pointer;padding:8px 10px;border-radius:7px;
+  font-size:13px;font-weight:500;color:#9FB6BD;
+  display:flex;align-items:center;gap:8px;
+  transition:background .12s,color .12s;width:100%;
+}
+.nav-sub-item:hover{background:rgba(255,255,255,.06);color:#fff;}
+.nav-sub-item.active{background:var(--teal);color:#fff;font-weight:600;}
+.nav-sub-item::before{
+  content:'';width:5px;height:5px;border-radius:50%;
+  background:currentColor;opacity:.45;flex-shrink:0;
+}
+.nav-sub-item.active::before{opacity:1;}
+
+/* ═══ Phase-2 Dashboard ══════════════════════════════════════════ */
+.dash-kpi-bar{
+  display:grid;grid-template-columns:repeat(8,1fr);gap:10px;margin-bottom:20px;
+}
+@media(max-width:1100px){.dash-kpi-bar{grid-template-columns:repeat(4,1fr);}}
+@media(max-width:700px) {.dash-kpi-bar{grid-template-columns:repeat(2,1fr);}}
+
+.dash-kpi{
+  background:#fff;border:1px solid var(--rule);border-radius:10px;
+  padding:14px 16px;text-align:center;
+}
+.dash-kpi-num{font-size:26px;font-weight:700;color:var(--ink);line-height:1;}
+.dash-kpi-lbl{font-size:11px;color:var(--ink-soft);margin-top:4px;font-weight:500;text-transform:uppercase;letter-spacing:.4px;}
+.dash-kpi.good  .dash-kpi-num{color:#1D9E75;}
+.dash-kpi.warn  .dash-kpi-num{color:#E8520A;}
+.dash-kpi.bad   .dash-kpi-num{color:#dc2626;}
+.dash-kpi.brand .dash-kpi-num{color:#E8520A;}
+.dash-kpi.accent .dash-kpi-num{color:#00627B;}
+.dash-kpi.purple .dash-kpi-num{color:#7F77DD;}
+.dash-kpi.teal  .dash-kpi-num{color:#1D9E75;}
+
+.dash-modules{
+  display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-bottom:20px;
+}
+@media(max-width:900px){.dash-modules{grid-template-columns:1fr;}}
+
+.dash-module-card{
+  background:#fff;border:1px solid var(--rule);border-radius:12px;padding:16px;
+}
+.dash-module-header{
+  display:flex;align-items:center;gap:10px;margin-bottom:12px;
+  padding-bottom:10px;border-bottom:1px solid var(--rule);
+}
+.dash-module-icon{font-size:20px;}
+.dash-module-title{font-size:15px;font-weight:700;color:var(--ink);flex:1;}
+
+.dash-module-kpis{
+  display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px;
+}
+.dash-mini-kpi{
+  background:var(--surface);border:1px solid var(--rule);border-radius:8px;
+  padding:8px 6px;text-align:center;
+}
+.dash-mini-num{display:block;font-size:20px;font-weight:700;color:var(--ink);line-height:1;}
+.dash-mini-lbl{display:block;font-size:10px;color:var(--ink-soft);margin-top:3px;font-weight:500;}
+.dash-mini-kpi.good  .dash-mini-num{color:#1D9E75;}
+.dash-mini-kpi.warn  .dash-mini-num{color:#E8520A;}
+.dash-mini-kpi.bad   .dash-mini-num{color:#dc2626;}
+.dash-mini-kpi.accent .dash-mini-num{color:#00627B;}

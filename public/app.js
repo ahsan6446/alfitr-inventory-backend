@@ -523,43 +523,48 @@ function renderDashboard() {
   const stockValue = items.reduce((s, i) => s + (Number(i.stockValue) || 0), 0);
 
   // ── SVG bar chart helper (pure CSS, no library)
-  function svgBar(data, colors, labels, maxH) {
-    const max = Math.max(...data, 1);
-    const barW = 30, gap = 10, pad = 20;
-    const totalW = data.length * (barW + gap) + pad * 2;
-    const h = maxH || 90;
-    const bars = data.map((v, i) => {
-      const bh = Math.max(2, Math.round((v / max) * (h - 30)));
-      const x  = pad + i * (barW + gap);
-      const y  = h - 20 - bh;
+  function svgBar(data, colors, labels, maxH, onclicks) {
+    const max  = Math.max(...data, 1);
+    const barW = 36, gap = 12, padX = 10, padTop = 28, padBot = 24;
+    const totalW = data.length * (barW + gap) + padX * 2;
+    const h      = (maxH || 120) + padTop + padBot;
+    const chartH = h - padTop - padBot;
+    const bars   = data.map((v, i) => {
+      const bh  = Math.max(3, Math.round((v / max) * chartH));
+      const x   = padX + i * (barW + gap);
+      const y   = padTop + (chartH - bh);
+      const oc  = onclicks && onclicks[i] ? `onclick="${onclicks[i]}" style="cursor:pointer;"` : 'style="cursor:default;"';
       return `
-        <rect x="${x}" y="${y}" width="${barW}" height="${bh}" fill="${colors[i % colors.length]}" rx="3"/>
-        <text x="${x + barW/2}" y="${y - 3}" text-anchor="middle" font-size="10" fill="#555">${v}</text>
-        <text x="${x + barW/2}" y="${h - 5}" text-anchor="middle" font-size="9" fill="#999">${labels[i]||''}</text>`;
+        <g ${oc} onmouseover="this.querySelector('rect').style.opacity='0.75'" onmouseout="this.querySelector('rect').style.opacity='1'">
+          <rect x="${x}" y="${y}" width="${barW}" height="${bh}" fill="${colors[i % colors.length]}" rx="4"/>
+          <text x="${x + barW/2}" y="${y - 6}" text-anchor="middle" font-size="12" font-weight="600" fill="#444">${v}</text>
+          <text x="${x + barW/2}" y="${h - 6}" text-anchor="middle" font-size="11" fill="#888">${labels[i]||''}</text>
+        </g>`;
     }).join('');
-    return `<svg width="100%" viewBox="0 0 ${totalW} ${h}" xmlns="http://www.w3.org/2000/svg">${bars}</svg>`;
+    return `<svg width="100%" viewBox="0 0 ${totalW} ${h}" xmlns="http://www.w3.org/2000/svg" style="overflow:visible;">${bars}</svg>`;
   }
 
   // ── SVG donut helper
-  function svgDonut(data, colors) {
+  function svgDonut(data, colors, onclicks) {
     const total = data.reduce((a,b) => a+b, 0);
-    if (total === 0) return `<svg width="80" height="80" viewBox="0 0 80 80"><circle cx="40" cy="40" r="30" fill="none" stroke="#e5e7eb" stroke-width="14"/></svg>`;
+    if (total === 0) return `<svg width="110" height="110" viewBox="0 0 110 110"><circle cx="55" cy="55" r="42" fill="none" stroke="#e5e7eb" stroke-width="18"/><text x="55" y="60" text-anchor="middle" font-size="14" fill="#ccc">0</text></svg>`;
     let angle = -90;
+    const r = 42, cx = 55, cy = 55;
     const paths = data.map((v, i) => {
       if (v === 0) return '';
       const pct   = (v / total) * 360;
       const start = angle;
       angle += pct;
-      const r    = 30, cx = 40, cy = 40;
       const s    = polarToXY(cx, cy, r, start);
       const e    = polarToXY(cx, cy, r, angle);
       const large = pct > 180 ? 1 : 0;
-      return `<path d="M${cx},${cy} L${s.x},${s.y} A${r},${r},0,${large},1,${e.x},${e.y} Z" fill="${colors[i]}"/>`;
+      const oc   = onclicks && onclicks[i] ? `onclick="${onclicks[i]}" style="cursor:pointer;"` : 'style="cursor:default;"';
+      return `<path d="M${cx},${cy} L${s.x},${s.y} A${r},${r},0,${large},1,${e.x},${e.y} Z" fill="${colors[i]}" ${oc} onmouseover="this.style.opacity='0.78'" onmouseout="this.style.opacity='1'"/>`;
     }).join('');
-    return `<svg width="80" height="80" viewBox="0 0 80 80" xmlns="http://www.w3.org/2000/svg">
+    return `<svg width="110" height="110" viewBox="0 0 110 110" xmlns="http://www.w3.org/2000/svg">
       ${paths}
-      <circle cx="40" cy="40" r="18" fill="#fff"/>
-      <text x="40" y="44" text-anchor="middle" font-size="12" font-weight="700" fill="#0B2B36">${total}</text>
+      <circle cx="${cx}" cy="${cy}" r="26" fill="#fff"/>
+      <text x="${cx}" y="${cy+5}" text-anchor="middle" font-size="16" font-weight="700" fill="#0B2B36">${total}</text>
     </svg>`;
   }
   function polarToXY(cx, cy, r, deg) {
@@ -570,24 +575,33 @@ function renderDashboard() {
   // ── SVG line chart helper (6-month DN trend)
   function svgLine(data, labels) {
     const max  = Math.max(...data, 1);
-    const w    = 260, h = 80, pad = 20;
+    const w    = 300, padX = 20, padTop = 28, padBot = 28;
+    const h    = 120 + padTop + padBot;
+    const chartH = h - padTop - padBot;
     const pts  = data.map((v, i) => {
-      const x = pad + (i / (data.length - 1)) * (w - pad * 2);
-      const y = h - pad - Math.round((v / max) * (h - pad * 2));
+      const x = padX + (i / (data.length - 1)) * (w - padX * 2);
+      const y = padTop + chartH - Math.round((v / max) * chartH);
       return { x: +x.toFixed(1), y: +y.toFixed(1), v, l: labels[i] };
     });
     const polyline = pts.map(p => `${p.x},${p.y}`).join(' ');
-    const area     = `M${pts[0].x},${h-pad} ` + pts.map(p => `L${p.x},${p.y}`).join(' ') + ` L${pts[pts.length-1].x},${h-pad} Z`;
-    return `<svg width="100%" viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg">
+    const area     = `M${pts[0].x},${padTop + chartH} ` + pts.map(p => `L${p.x},${p.y}`).join(' ') + ` L${pts[pts.length-1].x},${padTop + chartH} Z`;
+    return `<svg width="100%" viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg" style="overflow:visible;">
       <path d="${area}" fill="rgba(232,82,10,0.08)"/>
-      <polyline points="${polyline}" fill="none" stroke="#E8520A" stroke-width="2"/>
+      <polyline points="${polyline}" fill="none" stroke="#E8520A" stroke-width="2.5"/>
       ${pts.map(p => `
-        <circle cx="${p.x}" cy="${p.y}" r="3" fill="#E8520A"/>
-        <text x="${p.x}" y="${p.y - 5}" text-anchor="middle" font-size="9" fill="#E8520A">${p.v}</text>
-        <text x="${p.x}" y="${h - 4}" text-anchor="middle" font-size="8" fill="#999">${p.l}</text>
+        <g onclick="setTab('dns')" style="cursor:pointer;">
+          <circle cx="${p.x}" cy="${p.y}" r="10" fill="transparent"/>
+          <circle cx="${p.x}" cy="${p.y}" r="4" fill="#E8520A"
+            onmouseover="this.setAttribute('r','7');this.style.opacity='0.8'"
+            onmouseout="this.setAttribute('r','4');this.style.opacity='1'"/>
+          <text x="${p.x}" y="${p.y - 10}" text-anchor="middle" font-size="12" font-weight="600" fill="#E8520A">${p.v}</text>
+          <text x="${p.x}" y="${h - 6}" text-anchor="middle" font-size="11" fill="#999">${p.l}</text>
+        </g>
       `).join('')}
     </svg>`;
   }
+
+}
 
   // ── 6-month data
   const monthLabels = [], monthDnData = [];
@@ -647,7 +661,7 @@ function renderDashboard() {
     <div class="dash-chart-card">
       <div class="dash-chart-title">Inventory Status</div>
       <div style="display:flex;align-items:center;gap:16px;margin-top:8px;">
-        ${svgDonut([inStock, lowCrit, outStock], [TEAL, ORANGE, RED])}
+        ${svgDonut([inStock, lowCrit, outStock], [TEAL, ORANGE, RED], ["setTab('inventory')","setTab('inventory')","setTab('inventory')"])}
         <div style="font-size:12px;line-height:2;">
           <div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${TEAL};margin-right:6px;"></span>In Stock (${inStock})</div>
           <div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${ORANGE};margin-right:6px;"></span>Low/Critical (${lowCrit})</div>
@@ -659,7 +673,7 @@ function renderDashboard() {
     <div class="dash-chart-card">
       <div class="dash-chart-title">Quotation Pipeline</div>
       <div style="margin-top:8px;">
-        ${svgBar([qDraft,qPending,qApproved,qSent,qAccepted,qDeclined], [GRAY,ORANGE,NAVY,NAVY,TEAL,RED], ['Draft','Pend','Appr','Sent','Accpt','Decl'])}
+        ${svgBar([qDraft,qPending,qApproved,qSent,qAccepted,qDeclined], [GRAY,ORANGE,NAVY,NAVY,TEAL,RED], ['Draft','Pend','Appr','Sent','Accpt','Decl'], 120, ["setTab('quotations')","setTab('quotations')","setTab('quotations')","setTab('quotations')","setTab('quotations')","setTab('quotations')"])}
       </div>
     </div>
 
@@ -673,7 +687,7 @@ function renderDashboard() {
     <div class="dash-chart-card">
       <div class="dash-chart-title">Delay Items Status</div>
       <div style="display:flex;align-items:center;gap:16px;margin-top:8px;">
-        ${svgDonut([dOpen, dProg, dDone], [RED, ORANGE, TEAL])}
+        ${svgDonut([dOpen, dProg, dDone], [RED, ORANGE, TEAL], ["setTab('delayReports')","setTab('delayReports')","setTab('delayReports')"])}
         <div style="font-size:12px;line-height:2;">
           <div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${RED};margin-right:6px;"></span>Open (${dOpen})</div>
           <div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${ORANGE};margin-right:6px;"></span>In Progress (${dProg})</div>

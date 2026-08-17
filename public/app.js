@@ -339,8 +339,52 @@ function renderAppHeader() {
 }
 
 function renderSidebar() {
-  const navItem = (id, label) => `<button data-tab="${id}" class="${state.tab === id ? 'active' : ''}"><span class="dot"></span>${label}</button>`;
   const co = state.company || {};
+
+  // Which group is active based on current tab
+  const groupOf = {
+    dashboard:        'dashboard',
+    inventory:        'inventory',
+    movements:        'inventory',
+    dns:              'inventory',
+    quotations:       'sales',
+    jobOrders:        'sales',
+    clients:          'sales',
+    materialRequests: 'projects',
+    delayReports:     'projects',
+    procurement:      'procurement',
+    vendors:          'procurement',
+    settings:         'settings',
+  };
+  const activeGroup = groupOf[state.tab] || state.tab;
+
+  // If no group is open in state, open the active one
+  if (!state.sidebarOpen) state.sidebarOpen = activeGroup;
+
+  const isOpen = (g) => state.sidebarOpen === g;
+  const isActiveTab = (id) => state.tab === id;
+
+  const navItem = (id, label) => `
+    <button data-tab="${id}" class="nav-sub-item ${isActiveTab(id) ? 'active' : ''}">
+      ${label}
+    </button>`;
+
+  const navGroup = (id, icon, label, items) => {
+    const open     = isOpen(id);
+    const hasActive = items.some(([tabId]) => isActiveTab(tabId));
+    return `
+    <div class="nav-group">
+      <button class="nav-group-header ${hasActive ? 'has-active' : ''}" data-group="${id}">
+        <span class="nav-group-icon">${icon}</span>
+        <span class="nav-group-label">${label}</span>
+        <span class="nav-group-arrow ${open ? 'open' : ''}">›</span>
+      </button>
+      <div class="nav-group-items ${open ? 'open' : ''}">
+        ${items.map(([tabId, lbl]) => navItem(tabId, lbl)).join('')}
+      </div>
+    </div>`;
+  };
+
   return `
   <div class="sidebar">
     <div class="brand">
@@ -348,21 +392,39 @@ function renderSidebar() {
       <div class="brand-name">${co.name || ''}</div>
     </div>
     <div class="nav">
-      ${navItem('dashboard', 'Dashboard')}
-      ${navItem('inventory', 'Inventory')}
-      ${navItem('movements', 'Stock Movements')}
-      ${navItem('dns', 'Delivery Notes')}
-      ${navItem('quotations', 'Quotations')}
-      ${navItem('jobOrders', 'Job Orders')}
-      ${navItem('materialRequests', 'Material Requests')}
-      ${navItem('procurement', 'Procurement')}
-      ${navItem('vendors', 'Vendors')}
-      ${navItem('delayReports', 'Delay Reports')}
-      ${navItem('clients', 'Clients')}
-      ${navItem('settings', 'Settings')}
+
+      <button data-tab="dashboard" class="nav-solo ${isActiveTab('dashboard') ? 'active' : ''}">
+        <span class="nav-group-icon">🏠</span> Dashboard
+      </button>
+
+      ${navGroup('inventory', '📦', 'Inventory', [
+        ['inventory',  'Items'],
+        ['movements',  'Stock Movements'],
+        ['dns',        'Delivery Notes'],
+      ])}
+
+      ${navGroup('sales', '💼', 'Sales', [
+        ['quotations', 'Quotations'],
+        ['jobOrders',  'Job Orders'],
+        ['clients',    'Clients'],
+      ])}
+
+      ${navGroup('projects', '🔧', 'Projects', [
+        ['materialRequests', 'Material Requests'],
+        ['delayReports',     'Delay Reports'],
+      ])}
+
+      ${navGroup('procurement', '🛒', 'Procurement', [
+        ['procurement', 'Purchase Requests & POs'],
+        ['vendors',     'Vendors'],
+      ])}
+
+      <button data-tab="settings" class="nav-solo ${isActiveTab('settings') ? 'active' : ''}">
+        <span class="nav-group-icon">⚙️</span> Settings
+      </button>
+
     </div>
     <div class="sidebar-foot">
-      Server-backed: pricing and permissions are enforced by the server, not just hidden in this screen.
       <div class="sync-badge"><span class="sync-dot"></span> Connected</div>
       <div class="owner-credit">Powered by Nexora Technologies</div>
     </div>
@@ -2547,6 +2609,13 @@ function attachHandlers() {
   document.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', e => {
     setTab(e.currentTarget.getAttribute('data-tab'));
   }));
+
+  // Sidebar group toggle
+  document.querySelectorAll('[data-group]').forEach(b => b.addEventListener('click', e => {
+    const g = e.currentTarget.getAttribute('data-group');
+    state.sidebarOpen = state.sidebarOpen === g ? null : g;
+    render();
+  }));
   const bp = document.getElementById('branchPicker');
   if (bp) bp.addEventListener('change', e => { state.branch = e.target.value; render(); });
 
@@ -3113,6 +3182,8 @@ function syncQuoteFormIntoPayload() {
   p.paymentTerms = val('quotePaymentTerms');
   p.notes = val('quoteNotes');
   p.discount = Number(val('quoteDiscount') || 0);
+  // exclusions are managed directly on p.exclusions via add/remove buttons — preserve them
+  if (!Array.isArray(p.exclusions)) p.exclusions = [];
   if (p.type === 'AMC') {
     p.amc = p.amc || {};
     p.amc.scopeOfAgreement = val('amcScope');

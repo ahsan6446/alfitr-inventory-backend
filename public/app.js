@@ -700,11 +700,11 @@ function renderDashboard() {
   ${showValue ? `<div class="shared-note">Stock value (at cost) ${state.branch==='All'?'all branches':'for '+state.branch}: ${state.company.currency} ${fmtMoney(stockValue)}</div>` : ''}
 
   <script>
-  (function initCharts() {
-    if (typeof Chart === 'undefined') { setTimeout(initCharts, 200); return; }
-
-    Chart.defaults.font.family = 'Arial, sans-serif';
-    Chart.defaults.font.size   = 11;
+  (function() {
+    function tryInit() {
+      if (typeof Chart === 'undefined') { setTimeout(tryInit, 100); return; }
+      Chart.defaults.font.family = 'Arial, sans-serif';
+      Chart.defaults.font.size   = 11;
 
     const TEAL   = '#1D9E75';
     const ORANGE = '#E8520A';
@@ -757,6 +757,7 @@ function renderDashboard() {
       options: { responsive:true, maintainAspectRatio:false, cutout:'70%', plugins:{ legend:{ display:false }, tooltip:{ callbacks:{ label: ctx => ' ' + ctx.label + ': ' + ctx.parsed } } } }
     });
 
+  tryInit();
   })();
   <\/script>
   `;

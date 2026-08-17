@@ -3604,7 +3604,7 @@ function attachJoFormHandlers() {
 
     try {
       let saved;
-      const headers = { 'Authorization': `Bearer ${state.token}` };
+      const headers = { 'Authorization': `Bearer ${authToken}` };
       if (p.id) {
         const r = await fetch('/api/job-orders/' + p.id, { method: 'PUT', headers, body: fd });
         const d = await r.json(); if (!r.ok) throw new Error(d.error); saved = d.jobOrder;

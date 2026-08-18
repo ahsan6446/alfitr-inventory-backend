@@ -2201,6 +2201,7 @@ function renderJoForm(payload) {
     </div>
   </div>
   <div class="field"><label>Value (AED)</label><input id="jo_value" type="number" value="${payload.value ?? ''}" placeholder="0"></div>
+  ${userPickerHtml('jo_createdBy', payload.createdByName || state.user?.name, payload.createdByDesignation || state.user?.designation, 'Created By', 'createdBy')}
 
   <div style="border-top:1px solid var(--rule);margin:14px 0 12px;padding-top:14px;">
     <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:10px;">Linked Quotation Reference</div>
@@ -2255,6 +2256,9 @@ function renderJobOrderView(jo) {
     <div><div class="k muted">Client</div><div style="font-weight:600;">${jo.clientCompany}</div></div>
     <div><div class="k muted">From Quote</div><div style="font-weight:600;font-family:var(--mono);font-size:12px;">${jo.quotationNumber || 'Manual entry'}</div></div>
     <div><div class="k muted">Value</div><div style="font-weight:600;">${state.company.currency} ${fmtMoney(jo.value)}</div></div>
+  </div>
+  <div class="grid3" style="margin-top:10px;">
+    <div><div class="k muted">Created By</div><div>${jo.createdByName || '—'}${jo.createdByDesignation ? ' <span class="muted">— ' + jo.createdByDesignation + '</span>' : ''}</div></div>
   </div>
   <div style="margin:10px 0 16px;">${jo.subject || jo.siteDetail || ''}</div>
 
@@ -2604,6 +2608,7 @@ function renderMaterialRequestForm(payload) {
     <div class="field"><label>Date</label><input type="date" id="mrDate" value="${payload.date || new Date().toISOString().slice(0, 10)}"></div>
     <div class="field"><label>Needed By <span class="muted" style="font-weight:500;text-transform:none;">(optional)</span></label><input type="date" id="mrNeededBy" value="${payload.neededBy || ''}"></div>
   </div>
+  ${userPickerHtml('mr_requestedBy', payload.requestedByName || state.user?.name, payload.requestedByDesignation || state.user?.designation, 'Requested By', 'requestedBy')}
 
   ${!isEdit ? `
   <div style="background:var(--surface-2,#f8f9fa);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:14px;">
@@ -2705,7 +2710,7 @@ function renderMaterialRequestView(mr) {
   <div class="grid3">
     <div><div class="k muted">Job Order</div><div style="font-weight:600;font-family:var(--mono);font-size:12px;">${mr.jobOrderNumber}</div></div>
     <div><div class="k muted">Client</div><div style="font-weight:600;">${mr.clientCompany}</div></div>
-    <div><div class="k muted">Requested By</div><div style="font-weight:600;">${mr.requestedByName}</div></div>
+    <div><div class="k muted">Requested By</div><div style="font-weight:600;">${mr.requestedByName}${mr.requestedByDesignation ? ' <span class="muted" style="font-weight:400;">— ' + mr.requestedByDesignation + '</span>' : ''}</div></div>
   </div>
   <div class="grid3" style="margin-top:10px;">
     <div><div class="k muted">Date</div><div>${fmtDate(mr.date)}</div></div>
@@ -2814,7 +2819,7 @@ function renderPrView(pr) {
   <div class="grid3">
     <div><div class="k muted">Material Request</div><div style="font-weight:600;font-family:var(--mono);font-size:12px;">${pr.materialRequestNumber}</div></div>
     <div><div class="k muted">Job Order</div><div style="font-weight:600;font-family:var(--mono);font-size:12px;">${pr.jobOrderNumber}</div></div>
-    <div><div class="k muted">Requested By</div><div style="font-weight:600;">${pr.requestedByName}</div></div>
+    <div><div class="k muted">Requested By</div><div style="font-weight:600;">${pr.requestedByName}${pr.requestedByDesignation ? ' <span class="muted" style="font-weight:400;">— ' + pr.requestedByDesignation + '</span>' : ''}</div></div>
   </div>
   <div class="grid2" style="margin-top:10px;">
     <div><div class="k muted">Date</div><div>${fmtDate(pr.date)}</div></div>
@@ -2855,6 +2860,7 @@ function renderPrForm(payload) {
       </tr>`).join('')}
     </tbody>
   </table></div>
+  ${userPickerHtml('pr_requestedBy', payload.requestedByName || state.user?.name, payload.requestedByDesignation || state.user?.designation, 'Requested By', 'requestedBy')}
   <div class="field"><label>Notes</label><textarea id="prNotes" rows="2">${payload.notes || ''}</textarea></div>
   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">
     <button class="btn btn-ghost" id="modalCancel">Cancel</button>
@@ -2887,6 +2893,7 @@ function renderPoForm(payload) {
       </tr>`).join('')}
     </tbody>
   </table></div>
+  ${userPickerHtml('po_createdBy', payload.createdByName || state.user?.name, payload.createdByDesignation || state.user?.designation, 'Created By', 'createdBy')}
   <div class="field"><label>Notes</label><textarea id="poNotes" rows="2">${payload.notes || ''}</textarea></div>
   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">
     <button class="btn btn-ghost" id="modalCancel">Cancel</button>
@@ -2908,6 +2915,9 @@ function renderPoView(po) {
     <div><div class="k muted">Date</div><div>${fmtDate(po.date)}</div></div>
     <div><div class="k muted">Expected</div><div>${po.expectedDate ? fmtDate(po.expectedDate) : '—'}</div></div>
     <div><div class="k muted">Status</div><div>${poStatusBadge(po.status)}</div></div>
+  </div>
+  <div class="grid3" style="margin-top:10px;">
+    <div><div class="k muted">Created By</div><div>${po.createdByName || '—'}${po.createdByDesignation ? ' <span class="muted">— ' + po.createdByDesignation + '</span>' : ''}</div></div>
   </div>
   ${po.notes ? `<div style="margin-top:12px;"><strong>Notes:</strong> ${po.notes}</div>` : ''}
   <div class="tbl-wrap" style="margin-top:16px;"><table>
@@ -3130,7 +3140,7 @@ function renderExclusionsLibrary() {
 
 /* ---------------- Quotation form ---------------- */
 // Helper — dropdown of all active users (for Super Admin name override)
-function applyUserPick(fieldId, val) {
+function applyUserPick(fieldId, val, payloadPrefix) {
   var parts = (val||'').split('|');
   var n = document.getElementById(fieldId+'_name');
   var d = document.getElementById(fieldId+'_desig');
@@ -3149,10 +3159,16 @@ function applyUserPick(fieldId, val) {
     if (fieldId === 'dnIssuedBy') {
       state.modal.payload.issuedBy = parts[0]||'';
     }
+    // Generic path for any newer field — pass payloadPrefix and it just works,
+    // no need to hardcode a new branch here every time.
+    if (payloadPrefix) {
+      state.modal.payload[payloadPrefix + 'Name']        = parts[0]||'';
+      state.modal.payload[payloadPrefix + 'Designation'] = parts[1]||'';
+    }
   }
 }
 
-function userPickerHtml(fieldId, currentName, currentDesig, label) {
+function userPickerHtml(fieldId, currentName, currentDesig, label, payloadPrefix) {
   const isSA  = state.user?.role === 'Super Admin';
   const name  = currentName  || state.user?.name        || '';
   const desig = currentDesig || state.user?.designation  || '';
@@ -3165,7 +3181,7 @@ function userPickerHtml(fieldId, currentName, currentDesig, label) {
   const opts = (state.users||[]).filter(u=>u.active!==false)
     .map(u=>`<option value="${u.name}|${u.designation||''}" ${name===u.name?'selected':''}>${u.name}${u.designation?' — '+u.designation:''}</option>`).join('');
   return `<div class="field"><label>${label}</label>
-    <select onchange="applyUserPick('${fieldId}',this.value)" style="margin-bottom:6px;">
+    <select onchange="applyUserPick('${fieldId}',this.value,'${payloadPrefix||''}')" style="margin-bottom:6px;">
       <option value="|">— Select from team —</option>
       ${opts}
     </select>
@@ -5297,6 +5313,8 @@ function attachMrFormHandlers() {
   if (saveBtn) saveBtn.addEventListener('click', async () => {
     syncMrFormIntoPayload();
     const p2 = state.modal.payload;
+    const requestedByVal = getUserPickerValue('mr_requestedBy');
+    if (requestedByVal.name) { p2.requestedByName = requestedByVal.name; p2.requestedByDesignation = requestedByVal.designation; }
     if (!p2.jobOrderId) { showToast('Please select a Job Order.', 'err'); return; }
     if (!p2.lineItems || p2.lineItems.length === 0) { showToast('Add at least one line item.', 'err'); return; }
     for (const l of p2.lineItems) {
@@ -5364,8 +5382,12 @@ function attachPrFormHandlers() {
     const qtyInputs = document.querySelectorAll('.prLineQty');
     const lineItems = p.lineItems.map((l, idx) => ({ mrLineId: l.mrLineId, qty: Number(qtyInputs[idx].value) }));
     if (lineItems.some(l => !l.qty || l.qty <= 0)) { showToast('Every line needs a quantity greater than zero.', 'err'); return; }
+    const requestedByVal = getUserPickerValue('pr_requestedBy');
     try {
-      const res = await api('POST', '/api/purchase-requests', { materialRequestId: p.materialRequestId, lineItems, notes: val('prNotes') });
+      const res = await api('POST', '/api/purchase-requests', {
+        materialRequestId: p.materialRequestId, lineItems, notes: val('prNotes'),
+        requestedByName: requestedByVal.name, requestedByDesignation: requestedByVal.designation,
+      });
       await loadAll();
       showToast('Purchase Request raised.', 'ok');
       closeModal();
@@ -5415,10 +5437,12 @@ function attachPoFormHandlers() {
     if (!vendorId) { showToast('Please select a vendor.', 'err'); return; }
     const unitCosts = {};
     document.querySelectorAll('.poUnitCost').forEach(el => { unitCosts[el.getAttribute('data-prlineid')] = Number(el.value || 0); });
+    const createdByVal = getUserPickerValue('po_createdBy');
     try {
       const res = await api('POST', '/api/purchase-orders', {
         purchaseRequestId: p.purchaseRequestId, vendorId, unitCosts,
         expectedDate: val('poExpectedDate'), notes: val('poNotes'),
+        createdByName: createdByVal.name, createdByDesignation: createdByVal.designation,
       });
       await loadAll();
       showToast('Purchase Order created.', 'ok');
@@ -5531,6 +5555,9 @@ function attachJoFormHandlers() {
     fd.append('value',          val('jo_value') || 0);
     fd.append('status',         val('jo_status'));
     fd.append('quotationId',    val('jo_quotationId') || '');
+    const createdByVal = getUserPickerValue('jo_createdBy');
+    if (createdByVal.name)        fd.append('createdByName', createdByVal.name);
+    if (createdByVal.designation) fd.append('createdByDesignation', createdByVal.designation);
 
     const lpoInput   = document.getElementById('jo_lpoFile');
     const quoteInput = document.getElementById('jo_quoteFile');

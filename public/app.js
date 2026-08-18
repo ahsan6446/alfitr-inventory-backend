@@ -3291,7 +3291,7 @@ function renderStandardQuoteForm(payload) {
   <div style="border-top:1px solid var(--rule);margin:14px 0 12px;padding-top:14px;">
     <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">Signatures</div>
     <div class="grid2">
-      ${userPickerHtml('quotePreparedBy', payload.preparedByName, payload.preparedByDesignation, 'Prepared By')}
+      ${userPickerHtml('quotePreparedBy', payload.preparedByName || state.user?.name, payload.preparedByDesignation || state.user?.designation, 'Prepared By')}
       ${userPickerHtml('quoteApprovedBy', payload.approvedByName, payload.approvedByDesignation, 'Approved By')}
     </div>
   </div>
@@ -4828,11 +4828,15 @@ function syncQuoteFormIntoPayload() {
   p.paymentTerms = val('quotePaymentTerms');
   p.notes = val('quoteNotes');
   p.discount = Number(val('quoteDiscount') || 0);
-  // Prepared By / Approved By — Super Admin can override
-  const prepVal  = getUserPickerValue('quotePreparedBy');
-  const apprVal  = getUserPickerValue('quoteApprovedBy');
-  if (prepVal.name)  { p.preparedByName        = prepVal.name;  p.preparedByDesignation  = prepVal.designation; }
-  if (apprVal.name)  { p.approvedByName         = apprVal.name; p.approvedByDesignation  = apprVal.designation; }
+  // Prepared By / Approved By — Super Admin can override, others default to their own name
+  const prepVal = getUserPickerValue('quotePreparedBy');
+  const apprVal = getUserPickerValue('quoteApprovedBy');
+  p.preparedByName        = prepVal.name        || p.preparedByName        || state.user?.name        || '';
+  p.preparedByDesignation = prepVal.designation  || p.preparedByDesignation || state.user?.designation || '';
+  if (apprVal.name) {
+    p.approvedByName        = apprVal.name;
+    p.approvedByDesignation = apprVal.designation;
+  }
   // exclusions are managed directly on p.exclusions via add/remove buttons — preserve them
   if (!Array.isArray(p.exclusions)) p.exclusions = [];
   if (p.type === 'AMC') {
@@ -5008,6 +5012,12 @@ function attachQuoteFormHandlers() {
   const saveDraftBtn = document.getElementById('saveQuoteDraftBtn');
   if (saveDraftBtn) saveDraftBtn.addEventListener('click', async () => {
     syncQuoteFormIntoPayload();
+    // Read picker values directly at save time
+    const prepVal = getUserPickerValue('quotePreparedBy');
+    const apprVal = getUserPickerValue('quoteApprovedBy');
+    if (prepVal.name) { p.preparedByName = prepVal.name; p.preparedByDesignation = prepVal.designation; }
+    else if (!p.preparedByName) { p.preparedByName = state.user?.name || ''; p.preparedByDesignation = state.user?.designation || ''; }
+    if (apprVal.name) { p.approvedByName = apprVal.name; p.approvedByDesignation = apprVal.designation; }
     if (!p.clientCompany || !p.clientCompany.trim()) { showToast('Client company name is required.', 'err'); return; }
     const body = { ...p };
     try {

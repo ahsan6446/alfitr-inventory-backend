@@ -49,7 +49,7 @@ async function apiDownload(path) {
 
 /* ---------------- state ---------------- */
 const state = {
-  tab: 'dashboard', branch: 'All', search: '', invFilter: 'All', exportIncludePricing: true,
+  tab: 'dashboard', branch: 'All', search: '', invFilter: 'All', exportIncludePricing: true, drFilter: 'All',
   user: null, permissions: {}, company: {}, branches: [], brands: [], units: [],
   items: [], movements: [], clients: [], dns: [], users: [], roles: {}, permLabels: [],
   loaded: false, modal: null, toast: null,
@@ -236,6 +236,14 @@ function shouldExportPricing() { return can('viewPricing') && can('exportPricing
 
 /* ---------------- render shell ---------------- */
 function setTab(t) { state.tab = t; state.modal = null; render(); }
+
+// Navigate to a tab with a pre-applied filter
+function goFiltered(tab, filterKey, filterVal) {
+  state.tab  = tab;
+  state.modal = null;
+  if (filterKey && filterVal !== undefined) state[filterKey] = filterVal;
+  render();
+}
 
 function render() {
   if (!authToken) { root.innerHTML = renderLoginScreen(); attachLoginHandlers(); return; }
@@ -623,32 +631,32 @@ function renderDashboard() {
   </div>` : ''}
 
   <div class="dash-kpi-strip">
-    <div class="dash-kpi-card" style="border-top:3px solid ${TEAL};">
+    <div class="dash-kpi-card" style="border-top:3px solid ${TEAL};cursor:pointer;" onclick="goFiltered('inventory','invFilter','All')">
       <div class="dash-kpi-label">Total Inventory</div>
       <div class="dash-kpi-value" style="color:${TEAL};">${total}</div>
       <div class="dash-kpi-sub">${inStock} in stock · ${outStock} out</div>
     </div>
-    <div class="dash-kpi-card" style="border-top:3px solid ${ORANGE};">
+    <div class="dash-kpi-card" style="border-top:3px solid ${ORANGE};cursor:pointer;" onclick="goFiltered('quotations','quoteFilter','All')">
       <div class="dash-kpi-label">Quotations</div>
       <div class="dash-kpi-value" style="color:${ORANGE};">${quotes.length}</div>
       <div class="dash-kpi-sub">${activeQ} active · ${qAccepted} accepted</div>
     </div>
-    <div class="dash-kpi-card" style="border-top:3px solid ${NAVY};">
+    <div class="dash-kpi-card" style="border-top:3px solid ${NAVY};cursor:pointer;" onclick="setTab('jobOrders')">
       <div class="dash-kpi-label">Job Orders</div>
       <div class="dash-kpi-value" style="color:${NAVY};">${jobOrders.length}</div>
       <div class="dash-kpi-sub">${activeJOs} open / in-process</div>
     </div>
-    <div class="dash-kpi-card" style="border-top:3px solid ${ORANGE};">
+    <div class="dash-kpi-card" style="border-top:3px solid ${ORANGE};cursor:pointer;" onclick="setTab('dns')">
       <div class="dash-kpi-label">DNs This Month</div>
       <div class="dash-kpi-value" style="color:${ORANGE};">${dnThisM} <span style="font-size:16px;color:${dnThisM>=dnLastM?TEAL:RED}">${dnThisM>=dnLastM?'↑':'↓'}</span></div>
       <div class="dash-kpi-sub">vs ${dnLastM} last month</div>
     </div>
-    <div class="dash-kpi-card" style="border-top:3px solid ${RED};">
+    <div class="dash-kpi-card" style="border-top:3px solid ${RED};cursor:pointer;" onclick="setTab('delayReports')">
       <div class="dash-kpi-label">Open Delays</div>
       <div class="dash-kpi-value" style="color:${RED};">${dOpen}</div>
       <div class="dash-kpi-sub">${dProg} in progress · ${dDone} resolved</div>
     </div>
-    <div class="dash-kpi-card" style="border-top:3px solid ${PURPLE};">
+    <div class="dash-kpi-card" style="border-top:3px solid ${PURPLE};cursor:pointer;" onclick="setTab('procurement')">
       <div class="dash-kpi-label">Pending PRs</div>
       <div class="dash-kpi-value" style="color:${PURPLE};">${pendingPR}</div>
       <div class="dash-kpi-sub">${openPOs} open POs</div>
@@ -659,7 +667,11 @@ function renderDashboard() {
     <div class="dash-chart-card">
       <div class="dash-chart-title">Inventory Status</div>
       <div style="display:flex;align-items:center;gap:16px;margin-top:8px;">
-        ${svgDonut([inStock, lowCrit, outStock], [TEAL, ORANGE, RED], ["setTab('inventory')","setTab('inventory')","setTab('inventory')"])}
+        ${svgDonut([inStock, lowCrit, outStock], [TEAL, ORANGE, RED], [
+          "goFiltered('inventory','invFilter','IN STOCK')",
+          "goFiltered('inventory','invFilter','LOW STOCK')",
+          "goFiltered('inventory','invFilter','OUT OF STOCK')"
+        ])}
         <div style="font-size:12px;line-height:2;">
           <div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${TEAL};margin-right:6px;"></span>In Stock (${inStock})</div>
           <div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${ORANGE};margin-right:6px;"></span>Low/Critical (${lowCrit})</div>
@@ -671,7 +683,14 @@ function renderDashboard() {
     <div class="dash-chart-card">
       <div class="dash-chart-title">Quotation Pipeline</div>
       <div style="margin-top:8px;">
-        ${svgBar([qDraft,qPending,qApproved,qSent,qAccepted,qDeclined], [GRAY,ORANGE,NAVY,NAVY,TEAL,RED], ['Draft','Pend','Appr','Sent','Accpt','Decl'], 120, ["setTab('quotations')","setTab('quotations')","setTab('quotations')","setTab('quotations')","setTab('quotations')","setTab('quotations')"])}
+        ${svgBar([qDraft,qPending,qApproved,qSent,qAccepted,qDeclined], [GRAY,ORANGE,NAVY,NAVY,TEAL,RED], ['Draft','Pend','Appr','Sent','Accpt','Decl'], 120, [
+          "goFiltered('quotations','quoteFilter','Draft')",
+          "goFiltered('quotations','quoteFilter','PendingApproval')",
+          "goFiltered('quotations','quoteFilter','Approved')",
+          "goFiltered('quotations','quoteFilter','Sent')",
+          "goFiltered('quotations','quoteFilter','Accepted')",
+          "goFiltered('quotations','quoteFilter','Declined')"
+        ])}
       </div>
     </div>
 
@@ -685,11 +704,13 @@ function renderDashboard() {
     <div class="dash-chart-card">
       <div class="dash-chart-title">Delay Items Status</div>
       <div style="display:flex;align-items:center;gap:16px;margin-top:8px;">
-        ${svgDonut([dOpen, dProg, dDone], [RED, ORANGE, TEAL], ["setTab('delayReports')","setTab('delayReports')","setTab('delayReports')"])}
-        <div style="font-size:12px;line-height:2;">
-          <div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${RED};margin-right:6px;"></span>Open (${dOpen})</div>
-          <div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${ORANGE};margin-right:6px;"></span>In Progress (${dProg})</div>
-          <div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${TEAL};margin-right:6px;"></span>Resolved (${dDone})</div>
+        ${(dOpen+dProg+dDone) === 0
+          ? `<div style="width:110px;height:110px;display:flex;align-items:center;justify-content:center;background:#f5f5f5;border-radius:50%;font-size:12px;color:#aaa;flex-shrink:0;">No data</div>`
+          : svgDonut([dOpen,dProg,dDone],[RED,ORANGE,TEAL],["goFiltered('delayReports','drFilter','Open')","goFiltered('delayReports','drFilter','In Progress')","goFiltered('delayReports','drFilter','Resolved')"])}
+        <div style="font-size:12px;line-height:2.2;">
+          <div style="cursor:pointer;" onclick="goFiltered('delayReports','drFilter','Open')"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${RED};margin-right:6px;"></span>Open (${dOpen})</div>
+          <div style="cursor:pointer;" onclick="goFiltered('delayReports','drFilter','In Progress')"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${ORANGE};margin-right:6px;"></span>In Progress (${dProg})</div>
+          <div style="cursor:pointer;" onclick="goFiltered('delayReports','drFilter','Resolved')"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${TEAL};margin-right:6px;"></span>Resolved (${dDone})</div>
         </div>
       </div>
     </div>
@@ -1229,9 +1250,28 @@ function renderSiteTeamForm(jo) {
 
 /* ---------------- Delay Reports ---------------- */
 function renderDelayReports() {
-  const list = [...state.delayReports].sort((a, b) => b.createdAt - a.createdAt);
+  let list = [...state.delayReports].sort((a, b) => b.createdAt - a.createdAt);
+
+  // Apply filter from dashboard click or dropdown
+  const activeFilter = state.drFilter || 'All';
+  if (activeFilter !== 'All') {
+    list = list.filter(r => (r.delayItems||[]).some(i => i.status === activeFilter));
+  }
+
   return `
   <div class="card">
+    <div class="card-head">
+      <div class="card-title">Delay Reports</div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <select id="drStatusFilter" style="font-size:12px;padding:5px 8px;border:1px solid var(--rule);border-radius:6px;">
+          <option ${activeFilter==='All'?'selected':''} value="All">All Reports</option>
+          <option ${activeFilter==='Open'?'selected':''} value="Open">Has Open Items</option>
+          <option ${activeFilter==='In Progress'?'selected':''} value="In Progress">Has In Progress</option>
+          <option ${activeFilter==='Resolved'?'selected':''} value="Resolved">All Resolved</option>
+        </select>
+        ${can('manageReports') ? `<button class="btn btn-primary btn-sm" id="newDrBtn">+ New Report</button>` : ''}
+      </div>
+    </div>
     <div class="tbl-wrap"><table>
       <thead><tr><th>Ref #</th><th>Job Order</th><th>Project</th><th>Date</th><th>Reported By</th><th>Items</th><th>Status</th><th style="text-align:right;">Actions</th></tr></thead>
       <tbody>
@@ -2964,6 +3004,9 @@ function attachHandlers() {
     const jo = state.modal.payload; // currently-open Job Order
     openModal('newDr', { jobOrderId: jo.id, delayItems: [] });
   });
+  const drStatusFilter = document.getElementById('drStatusFilter');
+  if (drStatusFilter) drStatusFilter.addEventListener('change', e => { state.drFilter = e.target.value; render(); });
+
   document.querySelectorAll('[data-view-dr]').forEach(b => b.addEventListener('click', e => {
     openModal('viewDr', findDelayReport(e.currentTarget.getAttribute('data-view-dr')));
   }));

@@ -508,3 +508,10 @@ tr:hover td{background:#FAFCFC;}
 }
 @media(max-width:1000px){.dash-tables-row{grid-template-columns:1fr 1fr;}}
 @media(max-width:700px) {.dash-tables-row{grid-template-columns:1fr;}}
+
+/* KPI card hover */
+.dash-kpi-card:hover {
+  box-shadow: 0 4px 16px rgba(0,0,0,.10);
+  transform: translateY(-1px);
+  transition: all .15s;
+}

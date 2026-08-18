@@ -625,3 +625,49 @@ tr:hover td{background:#FAFCFC;}
   margin-bottom: 16px;
 }
 @media(max-width:900px){.client-360-charts{grid-template-columns:1fr 1fr;}}
+
+/* ═══ FM Checklist Styles ════════════════════════════════════════ */
+.fm-cl-title-bar {
+  background: #fff;
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.fm-filter-bar {
+  background: #fff;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  padding: 12px 16px;
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.fm-filter-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 140px;
+  flex: 1;
+}
+.fm-filter-item label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  color: var(--ink-soft);
+}
+.fm-filter-item select {
+  padding: 7px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 7px;
+  font-size: 12px;
+  color: var(--ink);
+  background: #fff;
+}

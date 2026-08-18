@@ -51,6 +51,7 @@ async function apiDownload(path) {
 const state = {
   tab: 'dashboard', branch: 'All', search: '', invFilter: 'All', exportIncludePricing: true, drFilter: 'All',
   fmChecklists: [], fmTemplates: [], fmChecklistView: null,
+  fmFilterClient: 'All', fmFilterJO: 'All', fmFilterTemplate: 'All', fmFilterStatus: 'All', fmFilterMonth: '',
   user: null, permissions: {}, company: {}, branches: [], brands: [], units: [],
   items: [], movements: [], clients: [], dns: [], users: [], roles: {}, permLabels: [],
   loaded: false, modal: null, toast: null,
@@ -921,11 +922,70 @@ function renderDns() {
    FM MODULE — Daily Checklists
 ════════════════════════════════════════════════════════════════ */
 function renderFmChecklists() {
-  const list = [...state.fmChecklists].sort((a,b) => b.createdAt - a.createdAt);
+  // ── Filters ──────────────────────────────────────────────────
+  const fClient   = state.fmFilterClient   || 'All';
+  const fJO       = state.fmFilterJO       || 'All';
+  const fTemplate = state.fmFilterTemplate || 'All';
+  const fStatus   = state.fmFilterStatus   || 'All';
+  const fMonth    = state.fmFilterMonth    || '';
+
+  let list = [...state.fmChecklists].sort((a,b) => b.createdAt - a.createdAt);
+  if (fClient   !== 'All') list = list.filter(cl => cl.clientCompany === fClient);
+  if (fJO       !== 'All') list = list.filter(cl => cl.jobOrderNumber === fJO);
+  if (fTemplate !== 'All') list = list.filter(cl => cl.templateId === fTemplate);
+  if (fStatus   !== 'All') list = list.filter(cl => cl.status === fStatus);
+  if (fMonth)              list = list.filter(cl => cl.month === fMonth);
+
+  // Unique values for filter dropdowns
+  const allClients   = [...new Set(state.fmChecklists.map(cl=>cl.clientCompany).filter(Boolean))].sort();
+  const allJOs       = [...new Set(state.fmChecklists.filter(cl=>fClient==='All'||cl.clientCompany===fClient).map(cl=>cl.jobOrderNumber).filter(Boolean))].sort();
+  const allTemplates = state.fmTemplates;
+
+  const activeFilters = [fClient,fJO,fTemplate,fStatus,fMonth].filter(f=>f&&f!=='All'&&f!=='').length;
+
   return `
   <div class="toolbar">
-    <div style="font-size:13px;color:var(--ink-soft);">${list.length} checklist${list.length!==1?'s':''} total</div>
+    <div style="font-size:13px;color:var(--ink-soft);">${list.length} checklist${list.length!==1?'s':''} ${activeFilters>0?`<span style="color:#E8520A;font-weight:600;">(${activeFilters} filter${activeFilters>1?'s':''} active)</span>`:''}
+    </div>
     ${can('manageReports') ? `<button class="btn btn-primary" id="newFmChecklistBtn">+ New Checklist</button>` : ''}
+  </div>
+
+  <!-- Filter Bar -->
+  <div class="fm-filter-bar">
+    <div class="fm-filter-item">
+      <label>Client</label>
+      <select id="fm_fClient" onchange="state.fmFilterClient=this.value;state.fmFilterJO='All';render()">
+        <option value="All">All Clients</option>
+        ${allClients.map(c=>`<option value="${c}" ${fClient===c?'selected':''}>${c}</option>`).join('')}
+      </select>
+    </div>
+    <div class="fm-filter-item">
+      <label>Job Order</label>
+      <select id="fm_fJO" onchange="state.fmFilterJO=this.value;render()">
+        <option value="All">All JOs</option>
+        ${allJOs.map(j=>`<option value="${j}" ${fJO===j?'selected':''}>${j}</option>`).join('')}
+      </select>
+    </div>
+    <div class="fm-filter-item">
+      <label>System / Template</label>
+      <select id="fm_fTpl" onchange="state.fmFilterTemplate=this.value;render()">
+        <option value="All">All Templates</option>
+        ${allTemplates.map(t=>`<option value="${t.id}" ${fTemplate===t.id?'selected':''}>${t.name}</option>`).join('')}
+      </select>
+    </div>
+    <div class="fm-filter-item">
+      <label>Month</label>
+      <input type="month" id="fm_fMonth" value="${fMonth}" onchange="state.fmFilterMonth=this.value;render()" style="padding:7px 10px;border:1px solid var(--rule);border-radius:7px;font-size:12px;">
+    </div>
+    <div class="fm-filter-item">
+      <label>Status</label>
+      <select id="fm_fStatus" onchange="state.fmFilterStatus=this.value;render()">
+        <option value="All">All Statuses</option>
+        <option value="Draft" ${fStatus==='Draft'?'selected':''}>Draft</option>
+        <option value="Submitted" ${fStatus==='Submitted'?'selected':''}>Submitted</option>
+      </select>
+    </div>
+    ${activeFilters>0?`<button class="btn btn-ghost btn-sm" onclick="state.fmFilterClient='All';state.fmFilterJO='All';state.fmFilterTemplate='All';state.fmFilterStatus='All';state.fmFilterMonth='';render()" style="align-self:flex-end;">✕ Clear</button>`:''}
   </div>
   ${list.length === 0 ? `<div class="card"><div class="empty"><div class="big">✅</div>No checklists yet.</div></div>` : `
   <div class="card">
@@ -970,13 +1030,30 @@ function renderFmChecklistDetail(id) {
   const failCnt= cl.items.filter(i => i.status === 'fail').length;
   const naCnt  = cl.items.filter(i => i.status === 'na').length;
   const pct    = total ? Math.round(((okCnt+naCnt)/total)*100) : 0;
+
+  // Category color
+  const catColors = {
+    'Fire & Safety': '#dc2626', 'Electrical': '#E8520A', 'HVAC': '#00627B',
+    'Mechanical': '#7F77DD', 'IT/ELV': '#1D9E75', 'Civil/Other': '#888',
+  };
+  const catColor = catColors[cl.category] || '#E8520A';
+
   return `
-  <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px;flex-wrap:wrap;">
-    <button class="btn btn-ghost btn-sm" onclick="state.fmChecklistView=null;render()">← Back</button>
-    <div style="flex:1;font-size:15px;font-weight:700;color:var(--ink);">${cl.templateName}</div>
-    <span class="badge ${cl.status==='Submitted'?'badge-issued':'badge-draft'}">${cl.status}</span>
-    ${cl.status==='Draft'&&can('manageReports') ? `<button class="btn btn-primary btn-sm" id="submitFmClBtn" data-id="${cl.id}">Submit Report</button>` : ''}
-    <button class="btn btn-teal btn-sm" id="printFmClBtn" data-id="${cl.id}">🖨 Print PDF</button>
+  <!-- Checklist Title Header -->
+  <div class="fm-cl-title-bar" style="border-left:5px solid ${catColor};">
+    <div style="flex:1;">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:${catColor};margin-bottom:4px;">${cl.category}</div>
+      <div style="font-size:20px;font-weight:700;color:var(--ink);">${cl.templateName}</div>
+      <div style="font-size:12px;color:var(--ink-soft);margin-top:3px;">
+        ${cl.clientCompany} · ${cl.projectName||cl.jobOrderNumber} · ${cl.month}
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <span class="badge ${cl.status==='Submitted'?'badge-issued':'badge-draft'}">${cl.status}</span>
+      <button class="btn btn-ghost btn-sm" onclick="state.fmChecklistView=null;render()">← Back</button>
+      ${cl.status==='Draft'&&can('manageReports') ? `<button class="btn btn-primary btn-sm" id="submitFmClBtn" data-id="${cl.id}">✓ Submit</button>` : ''}
+      <button class="btn btn-teal btn-sm" id="printFmClBtn" data-id="${cl.id}">🖨 Print PDF</button>
+    </div>
   </div>
   <div class="card" style="margin-bottom:14px;">
     <div class="card-head"><div class="card-title">Checklist Details</div></div>
@@ -1263,11 +1340,6 @@ function buildFmChecklistPdf(cl) {
     <div><div style="border-bottom:1px solid #555;height:30px;margin-bottom:5px;"></div>
       <div style="font-size:11px;font-weight:700;">${cl.supervisorName||'Supervisor/Engineer'}</div>
       <div style="font-size:10px;color:#1D9E75;">Signature of Supervisor/Engineer with date</div></div>
-  </div>
-  <div style="margin-top:16px;border-top:1px solid #e5e7eb;padding-top:6px;display:flex;justify-content:space-between;font-size:9px;color:#aaa;">
-    <span>${co.name||''} · FM Department</span>
-    <span>${cl.refNumber} · ${cl.templateName}</span>
-    <span>Restricted: ${co.name||'Al Fitr Electromechanical Works LLC'} - FM Department</span>
   </div>
   </body></html>`;
 }

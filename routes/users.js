@@ -129,3 +129,5 @@ router.post('/roles', requirePermission('manageUsers'), async (req, res) => {
 });
 
 module.exports = router;
+
+// v2 - roles seed endpoint added Tue Aug 18 12:13:26 UTC 2026

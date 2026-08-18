@@ -59,7 +59,7 @@ const state = {
   publicBranding: null,
   quotations: [], jobOrders: [], materialRequests: [], vendors: [], purchaseRequests: [], purchaseOrders: [], delayReports: [],
   exclusionsLibrary: [], quotationCategories: [], quotationApprovers: [], procView: 'requests',
-  nextQuotationCounter: null, quoteFilter: 'All',
+  nextQuotationCounter: null, quoteFilter: 'All', mobileNavOpen: false, joFilter: 'All', dnFilter: 'All',
 };
 
 function can(permKey) { return !!state.permissions[permKey]; }
@@ -244,7 +244,7 @@ function currentFilterSummary() {
 function shouldExportPricing() { return can('viewPricing') && can('exportPricing') && !!state.exportIncludePricing; }
 
 /* ---------------- render shell ---------------- */
-function setTab(t) { state.tab = t; state.modal = null; state.clientView = null; state.fmChecklistView = null; state.workReportView = null; render(); }
+function setTab(t) { state.tab = t; state.modal = null; state.clientView = null; state.fmChecklistView = null; state.workReportView = null; state.mobileNavOpen = false; render(); }
 
 // Navigate to a tab with a pre-applied filter
 function goFiltered(tab, filterKey, filterVal) {
@@ -340,6 +340,7 @@ function renderAppHeader() {
   return `
   <div class="app-header no-print">
     <div class="app-header-left">
+      <button class="icon-btn mobile-nav-toggle" id="mobileNavToggle" title="Menu" aria-label="Open menu">☰</button>
       ${co.logoPath ? `<img src="${co.logoPath}" class="app-header-logo" style="height:${headerLogoSizePx(co.logoSize)}px;max-width:160px;object-fit:contain;" alt="logo">` : `<div class="brand-mark" style="width:30px;height:30px;font-size:12px;">${userInitials(co.name)}</div>`}
       <div class="app-header-name">${co.name || ''}</div>
     </div>
@@ -406,10 +407,12 @@ function renderSidebar() {
   };
 
   return `
-  <div class="sidebar">
+  ${state.mobileNavOpen ? `<div class="mobile-nav-backdrop" id="mobileNavBackdrop"></div>` : ''}
+  <div class="sidebar ${state.mobileNavOpen ? 'mobile-open' : ''}">
     <div class="brand">
       <div class="brand-mark">${userInitials(co.name)}</div>
       <div class="brand-name">${co.name || ''}</div>
+      <button class="icon-btn mobile-nav-close" id="mobileNavClose" aria-label="Close menu">✕</button>
     </div>
     <div class="nav">
 
@@ -568,7 +571,7 @@ function renderDashboard() {
       const oc  = onclicks && onclicks[i] ? `onclick="${onclicks[i]}" style="cursor:pointer;"` : 'style="cursor:default;"';
       return `
         <g ${oc} onmouseover="this.querySelector('rect').style.opacity='0.75'" onmouseout="this.querySelector('rect').style.opacity='1'">
-          <rect x="${x}" y="${y}" width="${barW}" height="${bh}" fill="${colors[i % colors.length]}" rx="4"/>
+          <rect x="${x}" y="${y}" width="${barW}" height="${bh}" fill="${colors[i % colors.length]}" rx="4"><title>${labels[i]||''}: ${v}</title></rect>
           <text x="${x + barW/2}" y="${y - 6}" text-anchor="middle" font-size="12" font-weight="600" fill="#444">${v}</text>
           <text x="${x + barW/2}" y="${h - 6}" text-anchor="middle" font-size="11" fill="#888">${labels[i]||''}</text>
         </g>`;
@@ -577,7 +580,7 @@ function renderDashboard() {
   }
 
   // ── SVG donut helper
-  function svgDonut(data, colors, onclicks) {
+  function svgDonut(data, colors, onclicks, labels) {
     const total = data.reduce((a,b) => a+b, 0);
     if (total === 0) return `<svg width="110" height="110" viewBox="0 0 110 110"><circle cx="55" cy="55" r="42" fill="none" stroke="#e5e7eb" stroke-width="18"/><text x="55" y="60" text-anchor="middle" font-size="14" fill="#ccc">0</text></svg>`;
     let angle = -90;
@@ -591,12 +594,13 @@ function renderDashboard() {
       const e    = polarToXY(cx, cy, r, angle);
       const large = pct > 180 ? 1 : 0;
       const oc   = onclicks && onclicks[i] ? `onclick="${onclicks[i]}" style="cursor:pointer;"` : 'style="cursor:default;"';
-      return `<path d="M${cx},${cy} L${s.x},${s.y} A${r},${r},0,${large},1,${e.x},${e.y} Z" fill="${colors[i]}" ${oc} onmouseover="this.style.opacity='0.78'" onmouseout="this.style.opacity='1'"/>`;
+      const titleText = labels && labels[i] ? `${labels[i]}: ${v} (${Math.round(v/total*100)}%)` : `${v}`;
+      return `<path d="M${cx},${cy} L${s.x},${s.y} A${r},${r},0,${large},1,${e.x},${e.y} Z" fill="${colors[i]}" ${oc} onmouseover="this.style.opacity='0.78'" onmouseout="this.style.opacity='1'"><title>${titleText}</title></path>`;
     }).join('');
     return `<svg width="110" height="110" viewBox="0 0 110 110" xmlns="http://www.w3.org/2000/svg">
       ${paths}
-      <circle cx="${cx}" cy="${cy}" r="26" fill="#fff"/>
-      <text x="${cx}" y="${cy+5}" text-anchor="middle" font-size="16" font-weight="700" fill="#0B2B36">${total}</text>
+      <circle cx="${cx}" cy="${cy}" r="26" fill="#fff" style="pointer-events:none;"/>
+      <text x="${cx}" y="${cy+5}" text-anchor="middle" font-size="16" font-weight="700" fill="#0B2B36" style="pointer-events:none;">${total}</text>
     </svg>`;
   }
   function polarToXY(cx, cy, r, deg) {
@@ -622,7 +626,7 @@ function renderDashboard() {
       <polyline points="${polyline}" fill="none" stroke="#E8520A" stroke-width="2.5"/>
       ${pts.map(p => `
         <g onclick="setTab('dns')" style="cursor:pointer;">
-          <circle cx="${p.x}" cy="${p.y}" r="10" fill="transparent"/>
+          <circle cx="${p.x}" cy="${p.y}" r="10" fill="transparent"><title>${p.l}: ${p.v} delivery note${p.v===1?'':'s'}</title></circle>
           <circle cx="${p.x}" cy="${p.y}" r="4" fill="#E8520A"
             onmouseover="this.setAttribute('r','7');this.style.opacity='0.8'"
             onmouseout="this.setAttribute('r','4');this.style.opacity='1'"/>
@@ -695,7 +699,7 @@ function renderDashboard() {
           "goFiltered('inventory','invFilter','IN STOCK')",
           "goFiltered('inventory','invFilter','LOW STOCK')",
           "goFiltered('inventory','invFilter','OUT OF STOCK')"
-        ])}
+        ], ['In Stock', 'Low/Critical', 'Out of Stock'])}
         <div style="font-size:12px;line-height:2;">
           <div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${TEAL};margin-right:6px;"></span>In Stock (${inStock})</div>
           <div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${ORANGE};margin-right:6px;"></span>Low/Critical (${lowCrit})</div>
@@ -730,7 +734,7 @@ function renderDashboard() {
       <div style="display:flex;align-items:center;gap:16px;margin-top:8px;">
         ${(dOpen+dProg+dDone) === 0
           ? `<div style="width:110px;height:110px;display:flex;align-items:center;justify-content:center;background:#f5f5f5;border-radius:50%;font-size:12px;color:#aaa;flex-shrink:0;">No data</div>`
-          : svgDonut([dOpen,dProg,dDone],[RED,ORANGE,TEAL],["goFiltered('delayReports','drFilter','Open')","goFiltered('delayReports','drFilter','In Progress')","goFiltered('delayReports','drFilter','Resolved')"])}
+          : svgDonut([dOpen,dProg,dDone],[RED,ORANGE,TEAL],["goFiltered('delayReports','drFilter','Open')","goFiltered('delayReports','drFilter','In Progress')","goFiltered('delayReports','drFilter','Resolved')"], ['Open','In Progress','Resolved'])}
         <div style="font-size:12px;line-height:2.2;">
           <div style="cursor:pointer;" onclick="goFiltered('delayReports','drFilter','Open')"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${RED};margin-right:6px;"></span>Open (${dOpen})</div>
           <div style="cursor:pointer;" onclick="goFiltered('delayReports','drFilter','In Progress')"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${ORANGE};margin-right:6px;"></span>In Progress (${dProg})</div>
@@ -896,9 +900,15 @@ function renderMovements() {
 function renderDns() {
   let list = [...state.dns];
   if (state.branch !== 'All') list = list.filter(d => d.location === state.branch);
+  if (state.dnFilter && state.dnFilter !== 'All') list = list.filter(d => d.status === state.dnFilter);
   list.sort((a, b) => b.createdAt - a.createdAt);
   return `
   <div class="toolbar">
+    <select id="dnStatusFilter" style="max-width:190px;">
+      <option ${(!state.dnFilter || state.dnFilter === 'All') ? 'selected' : ''} value="All">All Statuses</option>
+      <option ${state.dnFilter === 'Issued' ? 'selected' : ''} value="Issued">Issued</option>
+      <option ${state.dnFilter === 'Draft' ? 'selected' : ''} value="Draft">Draft</option>
+    </select>
     <div style="flex:1"></div>
     ${can('createDN') ? `<button class="btn btn-primary" id="newDnBtn2">+ New Delivery Note</button>` : ''}
   </div>
@@ -906,7 +916,7 @@ function renderDns() {
     <div class="tbl-wrap"><table>
       <thead><tr><th>DN No.</th><th>Date</th><th>Client / Project</th><th>LPO #</th><th>Invoice #</th><th>Branch</th><th>Items</th><th>Status</th><th></th></tr></thead>
       <tbody>
-      ${list.length === 0 ? `<tr><td colspan="9"><div class="empty"><div class="big">📄</div>No delivery notes yet.</div></td></tr>` :
+      ${list.length === 0 ? `<tr><td colspan="9"><div class="empty"><div class="big">📄</div>No delivery notes match.</div></td></tr>` :
         list.map(d => `
         <tr>
           <td style="font-family:var(--mono);font-weight:700;">${d.dnNumber}</td>
@@ -1859,8 +1869,9 @@ function renderClient360(clientId) {
 
   const TEAL='#1D9E75',ORANGE='#E8520A',RED='#dc2626',NAVY='#00627B';
 
-  // Mini donut for quotes
-  function miniDonut(data,colors,size) {
+  // Mini donut for quotes — now with real hover tooltips (native SVG <title>) and
+  // click-to-filter, matching the pattern already working on the main Dashboard.
+  function miniDonut(data,colors,size,labels,onclicks) {
     const total=data.reduce((a,b)=>a+b,0);
     if(!total) return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><circle cx="${size/2}" cy="${size/2}" r="${size/2-4}" fill="none" stroke="#e5e7eb" stroke-width="8"/></svg>`;
     const r=size/2-6,cx=size/2,cy=size/2;
@@ -1871,10 +1882,12 @@ function renderClient360(clientId) {
       angle+=pct;
       const s={x:+(cx+r*Math.cos(start*Math.PI/180)).toFixed(1),y:+(cy+r*Math.sin(start*Math.PI/180)).toFixed(1)};
       const e={x:+(cx+r*Math.cos(angle*Math.PI/180)).toFixed(1),y:+(cy+r*Math.sin(angle*Math.PI/180)).toFixed(1)};
-      return `<path d="M${cx},${cy} L${s.x},${s.y} A${r},${r},0,${pct>180?1:0},1,${e.x},${e.y} Z" fill="${colors[i]}"/>`;
+      const oc = onclicks && onclicks[i] ? ` onclick="${onclicks[i]}" style="cursor:pointer;"` : '';
+      const titleText = labels && labels[i] ? `${labels[i]}: ${v} (${Math.round(v/total*100)}%)` : `${v}`;
+      return `<path d="M${cx},${cy} L${s.x},${s.y} A${r},${r},0,${pct>180?1:0},1,${e.x},${e.y} Z" fill="${colors[i]}"${oc}><title>${titleText}</title></path>`;
     }).join('');
     const ir=r-8;
-    return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><style>path:hover{opacity:.75;cursor:pointer}</style>${paths}<circle cx="${cx}" cy="${cy}" r="${ir}" fill="#fff"/><text x="${cx}" y="${cy+4}" text-anchor="middle" font-size="11" font-weight="700" fill="#0B2B36">${total}</text></svg>`;
+    return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><style>path:hover{opacity:.75;cursor:pointer}</style>${paths}<circle cx="${cx}" cy="${cy}" r="${ir}" fill="#fff" style="pointer-events:none;"/><text x="${cx}" y="${cy+4}" text-anchor="middle" font-size="11" font-weight="700" fill="#0B2B36" style="pointer-events:none;">${total}</text></svg>`;
   }
 
   return `
@@ -1940,7 +1953,9 @@ function renderClient360(clientId) {
       <div style="display:flex;align-items:center;gap:14px;margin-top:10px;">
         ${miniDonut(
           [quotes.filter(q=>q.status==='Draft').length, quotes.filter(q=>q.status==='Sent'||q.status==='PendingApproval').length, quotes.filter(q=>q.status==='Accepted').length, quotes.filter(q=>q.status==='Declined').length],
-          ['#aaa', ORANGE, TEAL, RED], 90
+          ['#aaa', ORANGE, TEAL, RED], 90,
+          ['Draft', 'Pending/Sent', 'Accepted', 'Declined'],
+          ["goFiltered('quotations','quoteFilter','Draft')", "goFiltered('quotations','quoteFilter','Sent')", "goFiltered('quotations','quoteFilter','Accepted')", "goFiltered('quotations','quoteFilter','Declined')"]
         )}
         <div style="font-size:11px;line-height:2;">
           <div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#aaa;margin-right:5px;"></span>Draft (${quotes.filter(q=>q.status==='Draft').length})</div>
@@ -1955,7 +1970,9 @@ function renderClient360(clientId) {
       <div style="display:flex;align-items:center;gap:14px;margin-top:10px;">
         ${miniDonut(
           [jos.filter(j=>j.status==='Open').length, jos.filter(j=>j.status==='In Process').length, jos.filter(j=>j.status==='Resolved').length],
-          [ORANGE, NAVY, TEAL], 90
+          [ORANGE, NAVY, TEAL], 90,
+          ['Open', 'In Process', 'Resolved'],
+          ["goFiltered('jobOrders','joFilter','Open')", "goFiltered('jobOrders','joFilter','In Process')", "goFiltered('jobOrders','joFilter','Resolved')"]
         )}
         <div style="font-size:11px;line-height:2;">
           <div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${ORANGE};margin-right:5px;"></span>Open (${jos.filter(j=>j.status==='Open').length})</div>
@@ -1967,7 +1984,7 @@ function renderClient360(clientId) {
     <div class="dash-chart-card">
       <div class="dash-chart-title">Delivery Notes</div>
       <div style="display:flex;align-items:center;gap:14px;margin-top:10px;">
-        ${miniDonut([issuedDns, dns.length-issuedDns], [TEAL, '#e5e7eb'], 90)}
+        ${miniDonut([issuedDns, dns.length-issuedDns], [TEAL, '#e5e7eb'], 90, ['Issued', 'Draft'], ["goFiltered('dns','dnFilter','Issued')", "goFiltered('dns','dnFilter','Draft')"])}
         <div style="font-size:11px;line-height:2;">
           <div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${TEAL};margin-right:5px;"></span>Issued (${issuedDns})</div>
           <div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#e5e7eb;margin-right:5px;"></span>Draft (${dns.length-issuedDns})</div>
@@ -2136,9 +2153,14 @@ const DELAY_REASONS = [
 ];
 
 function renderJobOrders() {
-  const list = [...state.jobOrders].sort((a, b) => b.createdAt - a.createdAt);
+  let list = [...state.jobOrders].sort((a, b) => b.createdAt - a.createdAt);
+  if (state.joFilter && state.joFilter !== 'All') list = list.filter(j => j.status === state.joFilter);
+  const statusOptions = ['All', ...Object.keys(JO_STATUS_BADGE)];
   return `
   <div class="toolbar">
+    <select id="joStatusFilter" style="max-width:190px;">
+      ${statusOptions.map(s => `<option value="${s}" ${((state.joFilter||'All')===s) ? 'selected' : ''}>${s === 'All' ? 'All Statuses' : s}</option>`).join('')}
+    </select>
     <div style="flex:1"></div>
     ${can('manageReports') ? `<button class="btn btn-primary" id="newJoBtn">+ New Job Order</button>` : ''}
   </div>
@@ -2146,7 +2168,7 @@ function renderJobOrders() {
     <div class="tbl-wrap"><table>
       <thead><tr><th>Job Order #</th><th>From Quote</th><th>Type</th><th>Client</th><th>Subject / Site</th><th>Value</th><th>Status</th><th></th></tr></thead>
       <tbody>
-      ${list.length === 0 ? `<tr><td colspan="8"><div class="empty"><div class="big">🛠️</div>No job orders yet.</div></td></tr>` :
+      ${list.length === 0 ? `<tr><td colspan="8"><div class="empty"><div class="big">🛠️</div>No job orders match.</div></td></tr>` :
         list.map(jo => `
         <tr>
           <td style="font-family:var(--mono);font-weight:700;">${jo.jobOrderNumber}</td>
@@ -3634,6 +3656,7 @@ function renderModal() {
   if (type === 'newWcr')           return modalWrap(renderWcrForm(), 'New Work Completion Report', true);
   if (type === 'newSnr')           return modalWrap(renderSnrForm(), 'New Service Notification Report', false);
   if (type === 'vendor') return modalWrap(renderVendorForm(payload), 'Vendor Details');
+  if (type === 'client') return modalWrap(renderClientForm(payload), payload.id ? 'Edit Client' : 'New Client');
   if (type === 'userEdit') return modalWrap(renderUserForm(payload), 'User Details');
   if (type === 'forcePwd') return modalWrap(renderForcePwdForm(payload), 'Change Your Password');
   if (type === 'changePwd') return modalWrap(renderChangePwdForm(payload), 'Change Password');
@@ -4080,6 +4103,14 @@ function attachHandlers() {
     state.sidebarOpen = state.sidebarOpen === g ? null : g;
     render();
   }));
+
+  const mobileNavToggle = document.getElementById('mobileNavToggle');
+  if (mobileNavToggle) mobileNavToggle.addEventListener('click', () => { state.mobileNavOpen = true; render(); });
+  const mobileNavClose = document.getElementById('mobileNavClose');
+  if (mobileNavClose) mobileNavClose.addEventListener('click', () => { state.mobileNavOpen = false; render(); });
+  const mobileNavBackdrop = document.getElementById('mobileNavBackdrop');
+  if (mobileNavBackdrop) mobileNavBackdrop.addEventListener('click', () => { state.mobileNavOpen = false; render(); });
+
   const bp = document.getElementById('branchPicker');
   if (bp) bp.addEventListener('change', e => { state.branch = e.target.value; render(); });
 
@@ -4350,6 +4381,7 @@ function attachHandlers() {
   });
 
   const addClientBtn = document.getElementById('addClientBtn');
+  if (addClientBtn) addClientBtn.addEventListener('click', () => openModal('client', {}));
   document.querySelectorAll('[data-view-client]').forEach(b => b.addEventListener('click', e => {
     state.clientView = e.currentTarget.getAttribute('data-view-client');
     render();
@@ -4368,6 +4400,10 @@ function attachHandlers() {
   if (newQuoteBtn) newQuoteBtn.addEventListener('click', () => openModal('newQuote', {}));
   const quoteStatusFilter = document.getElementById('quoteStatusFilter');
   if (quoteStatusFilter) quoteStatusFilter.addEventListener('change', e => { state.quoteFilter = e.target.value; render(); });
+  const joStatusFilter = document.getElementById('joStatusFilter');
+  if (joStatusFilter) joStatusFilter.addEventListener('change', e => { state.joFilter = e.target.value; render(); });
+  const dnStatusFilter = document.getElementById('dnStatusFilter');
+  if (dnStatusFilter) dnStatusFilter.addEventListener('change', e => { state.dnFilter = e.target.value; render(); });
   document.querySelectorAll('[data-view-quote]').forEach(b => b.addEventListener('click', e => {
     openModal('viewQuote', findQuote(e.currentTarget.getAttribute('data-view-quote')));
   }));

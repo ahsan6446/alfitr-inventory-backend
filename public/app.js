@@ -601,8 +601,6 @@ function renderDashboard() {
     </svg>`;
   }
 
-}
-
   // ── 6-month data
   const monthLabels = [], monthDnData = [];
   for (let i = 5; i >= 0; i--) {

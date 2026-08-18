@@ -235,7 +235,7 @@ function currentFilterSummary() {
 function shouldExportPricing() { return can('viewPricing') && can('exportPricing') && !!state.exportIncludePricing; }
 
 /* ---------------- render shell ---------------- */
-function setTab(t) { state.tab = t; state.modal = null; render(); }
+function setTab(t) { state.tab = t; state.modal = null; state.clientView = null; render(); }
 
 // Navigate to a tab with a pre-applied filter
 function goFiltered(tab, filterKey, filterVal) {
@@ -479,7 +479,7 @@ function renderPage() {
   if (state.tab === 'procurement') return renderProcurement();
   if (state.tab === 'vendors') return renderVendors();
   if (state.tab === 'delayReports') return renderDelayReports();
-  if (state.tab === 'clients') return renderClients();
+  if (state.tab === 'clients') return state.clientView ? renderClient360(state.clientView) : renderClients();
   if (state.tab === 'settings') return renderSettings();
   return '';
 }
@@ -903,27 +903,249 @@ function renderDns() {
 /* ---------------- Clients ---------------- */
 function renderClients() {
   const list = [...state.clients].sort((a, b) => a.companyName.localeCompare(b.companyName));
+
+  // Pre-compute client stats from local state
+  function clientStats(c) {
+    const quotes  = (state.quotations    ||[]).filter(q => q.clientId === c.id || q.clientCompany === c.companyName);
+    const jos     = (state.jobOrders     ||[]).filter(j => j.clientId === c.id || j.clientCompany === c.companyName);
+    const dns     = (state.dns           ||[]).filter(d => d.clientId === c.id || d.clientCompany === c.companyName);
+    const drs     = (state.delayReports  ||[]).filter(r => jos.some(j => j.id === r.jobOrderId));
+    const openDel = drs.reduce((acc,r) => acc + (r.delayItems||[]).filter(i=>i.status==='Open').length, 0);
+    const totalVal= quotes.reduce((s,q) => s+(q.totals?.total||0), 0);
+    return { quotes: quotes.length, jos: jos.length, dns: dns.length, openDel, totalVal,
+             accepted: quotes.filter(q=>q.status==='Accepted').length };
+  }
+
   return `
   <div class="toolbar">
-    <div style="flex:1"></div>
+    <div style="font-size:13px;color:var(--ink-soft);">${list.length} client${list.length!==1?'s':''} registered</div>
     <button class="btn btn-primary" id="addClientBtn">+ Add Client</button>
   </div>
-  <div class="card">
-    <div class="tbl-wrap"><table>
-      <thead><tr><th>Company Name</th><th>Contact Person</th><th>Phone</th><th>Email</th><th>Address</th><th></th></tr></thead>
-      <tbody>
-      ${list.length === 0 ? `<tr><td colspan="6"><div class="empty"><div class="big">🏢</div>No clients yet.</div></td></tr>` :
-        list.map(c => `
-        <tr>
-          <td><strong>${c.companyName}</strong></td>
-          <td>${c.contactPerson || '—'}</td>
-          <td>${c.phone || '—'}</td>
-          <td>${c.email || '—'}</td>
-          <td>${c.address || '—'}</td>
-          <td><button class="btn btn-outline btn-sm" data-edit-client="${c.id}">Edit</button></td>
-        </tr>`).join('')}
-      </tbody>
-    </table></div>
+
+  <div class="client-grid">
+    ${list.length === 0 ? `<div class="empty" style="grid-column:1/-1;"><div class="big">🏢</div>No clients yet.</div>` :
+      list.map(c => {
+        const s = clientStats(c);
+        return `
+        <div class="client-card" data-view-client="${c.id}">
+          <div class="client-card-header">
+            <div class="client-avatar">${c.companyName.charAt(0).toUpperCase()}</div>
+            <div style="flex:1;min-width:0;">
+              <div class="client-name">${c.companyName}</div>
+              <div class="client-num">${c.customerNumber || '—'}</div>
+            </div>
+            <button class="btn btn-ghost btn-sm" data-edit-client="${c.id}" onclick="event.stopPropagation()">Edit</button>
+          </div>
+          ${c.contactPerson || c.phone ? `
+          <div class="client-contact">
+            ${c.contactPerson ? `<span>👤 ${c.contactPerson}</span>` : ''}
+            ${c.phone ? `<span>📞 ${c.phone}</span>` : ''}
+            ${c.email ? `<span>✉️ ${c.email}</span>` : ''}
+          </div>` : ''}
+          <div class="client-stats">
+            <div class="client-stat"><div class="cs-num">${s.quotes}</div><div class="cs-lbl">Quotes</div></div>
+            <div class="client-stat"><div class="cs-num" style="color:#1D9E75">${s.accepted}</div><div class="cs-lbl">Accepted</div></div>
+            <div class="client-stat"><div class="cs-num" style="color:#00627B">${s.jos}</div><div class="cs-lbl">Job Orders</div></div>
+            <div class="client-stat"><div class="cs-num">${s.dns}</div><div class="cs-lbl">DNs</div></div>
+            ${s.openDel > 0 ? `<div class="client-stat"><div class="cs-num" style="color:#dc2626">${s.openDel}</div><div class="cs-lbl">Open Delays</div></div>` : ''}
+          </div>
+          ${s.totalVal > 0 ? `<div class="client-value">Total Business: <strong>AED ${fmtMoney(s.totalVal)}</strong></div>` : ''}
+        </div>`;
+      }).join('')}
+  </div>`;
+}
+
+function renderClient360(clientId) {
+  const c = state.clients.find(x => x.id === clientId);
+  if (!c) return '<div class="empty">Client not found.</div>';
+
+  const quotes  = (state.quotations    ||[]).filter(q => q.clientId===c.id||q.clientCompany===c.companyName).sort((a,b)=>b.createdAt-a.createdAt);
+  const jos     = (state.jobOrders     ||[]).filter(j => j.clientId===c.id||j.clientCompany===c.companyName).sort((a,b)=>b.createdAt-a.createdAt);
+  const dns     = (state.dns           ||[]).filter(d => d.clientId===c.id||d.clientCompany===c.companyName).sort((a,b)=>b.createdAt-a.createdAt);
+  const drs     = (state.delayReports  ||[]).filter(r => jos.some(j=>j.id===r.jobOrderId)).sort((a,b)=>b.createdAt-a.createdAt);
+  const mrs     = (state.materialRequests||[]).filter(m => jos.some(j=>j.id===m.jobOrderId)).sort((a,b)=>b.createdAt-a.createdAt);
+
+  const totalVal    = quotes.reduce((s,q)=>s+(q.totals?.total||0),0);
+  const acceptedVal = quotes.filter(q=>q.status==='Accepted').reduce((s,q)=>s+(q.totals?.total||0),0);
+  const openDel     = drs.reduce((acc,r)=>acc+(r.delayItems||[]).filter(i=>i.status==='Open').length,0);
+  const issuedDns   = dns.filter(d=>d.status==='Issued').length;
+
+  const TEAL='#1D9E75',ORANGE='#E8520A',RED='#dc2626',NAVY='#00627B';
+
+  // Mini donut for quotes
+  function miniDonut(data,colors,size) {
+    const total=data.reduce((a,b)=>a+b,0);
+    if(!total) return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><circle cx="${size/2}" cy="${size/2}" r="${size/2-4}" fill="none" stroke="#e5e7eb" stroke-width="8"/></svg>`;
+    const r=size/2-6,cx=size/2,cy=size/2;
+    let angle=-90;
+    const paths=data.map((v,i)=>{
+      if(!v) return '';
+      const pct=(v/total)*360,start=angle;
+      angle+=pct;
+      const s={x:+(cx+r*Math.cos(start*Math.PI/180)).toFixed(1),y:+(cy+r*Math.sin(start*Math.PI/180)).toFixed(1)};
+      const e={x:+(cx+r*Math.cos(angle*Math.PI/180)).toFixed(1),y:+(cy+r*Math.sin(angle*Math.PI/180)).toFixed(1)};
+      return `<path d="M${cx},${cy} L${s.x},${s.y} A${r},${r},0,${pct>180?1:0},1,${e.x},${e.y} Z" fill="${colors[i]}"/>`;
+    }).join('');
+    const ir=r-8;
+    return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><style>path:hover{opacity:.75;cursor:pointer}</style>${paths}<circle cx="${cx}" cy="${cy}" r="${ir}" fill="#fff"/><text x="${cx}" y="${cy+4}" text-anchor="middle" font-size="11" font-weight="700" fill="#0B2B36">${total}</text></svg>`;
+  }
+
+  return `
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
+    <button class="btn btn-ghost btn-sm" onclick="state.clientView=null;render()">← Back to Clients</button>
+    <button class="btn btn-outline btn-sm" data-edit-client="${c.id}">Edit Client</button>
+  </div>
+
+  <!-- Client Header -->
+  <div class="client-360-header">
+    <div class="client-360-avatar">${c.companyName.charAt(0)}</div>
+    <div style="flex:1">
+      <div class="client-360-name">${c.companyName}</div>
+      <div class="client-360-num">${c.customerNumber||'—'}</div>
+      <div style="font-size:13px;color:var(--ink-soft);margin-top:4px;display:flex;gap:16px;flex-wrap:wrap;">
+        ${c.contactPerson?`<span>👤 ${c.contactPerson}</span>`:''}
+        ${c.phone?`<span>📞 ${c.phone}</span>`:''}
+        ${c.email?`<span>✉️ ${c.email}</span>`:''}
+        ${c.address?`<span>📍 ${c.address}</span>`:''}
+        ${c.trn?`<span>TRN: ${c.trn}</span>`:''}
+      </div>
+    </div>
+    <div style="text-align:right;">
+      <div style="font-size:11px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.5px;">Total Business</div>
+      <div style="font-size:24px;font-weight:700;color:#E8520A;">AED ${fmtMoney(totalVal)}</div>
+      <div style="font-size:12px;color:#1D9E75;">AED ${fmtMoney(acceptedVal)} accepted</div>
+    </div>
+  </div>
+
+  <!-- KPI strip -->
+  <div class="client-360-kpis">
+    <div class="c360-kpi" style="border-top:3px solid ${ORANGE};">
+      <div class="c360-kpi-num" style="color:${ORANGE}">${quotes.length}</div>
+      <div class="c360-kpi-lbl">Quotations</div>
+      <div class="c360-kpi-sub">${quotes.filter(q=>q.status==='Accepted').length} accepted · ${quotes.filter(q=>q.status==='Declined').length} declined</div>
+    </div>
+    <div class="c360-kpi" style="border-top:3px solid ${NAVY};">
+      <div class="c360-kpi-num" style="color:${NAVY}">${jos.length}</div>
+      <div class="c360-kpi-lbl">Job Orders</div>
+      <div class="c360-kpi-sub">${jos.filter(j=>j.status==='Open'||j.status==='In Process').length} active</div>
+    </div>
+    <div class="c360-kpi" style="border-top:3px solid ${TEAL};">
+      <div class="c360-kpi-num" style="color:${TEAL}">${dns.length}</div>
+      <div class="c360-kpi-lbl">Delivery Notes</div>
+      <div class="c360-kpi-sub">${issuedDns} issued · ${dns.length-issuedDns} draft</div>
+    </div>
+    <div class="c360-kpi" style="border-top:3px solid #7F77DD;">
+      <div class="c360-kpi-num" style="color:#7F77DD">${mrs.length}</div>
+      <div class="c360-kpi-lbl">Material Requests</div>
+      <div class="c360-kpi-sub">${mrs.filter(m=>computeMrStatus(m)==='Fulfilled').length} fulfilled</div>
+    </div>
+    <div class="c360-kpi" style="border-top:3px solid ${openDel>0?RED:'#e5e7eb'};">
+      <div class="c360-kpi-num" style="color:${openDel>0?RED:'#aaa'}">${openDel}</div>
+      <div class="c360-kpi-lbl">Open Delays</div>
+      <div class="c360-kpi-sub">${drs.length} reports total</div>
+    </div>
+  </div>
+
+  <!-- Charts row -->
+  <div class="client-360-charts">
+    <div class="dash-chart-card">
+      <div class="dash-chart-title">Quotation Status</div>
+      <div style="display:flex;align-items:center;gap:14px;margin-top:10px;">
+        ${miniDonut(
+          [quotes.filter(q=>q.status==='Draft').length, quotes.filter(q=>q.status==='Sent'||q.status==='PendingApproval').length, quotes.filter(q=>q.status==='Accepted').length, quotes.filter(q=>q.status==='Declined').length],
+          ['#aaa', ORANGE, TEAL, RED], 90
+        )}
+        <div style="font-size:11px;line-height:2;">
+          <div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#aaa;margin-right:5px;"></span>Draft (${quotes.filter(q=>q.status==='Draft').length})</div>
+          <div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${ORANGE};margin-right:5px;"></span>Pending/Sent (${quotes.filter(q=>q.status==='Sent'||q.status==='PendingApproval').length})</div>
+          <div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${TEAL};margin-right:5px;"></span>Accepted (${quotes.filter(q=>q.status==='Accepted').length})</div>
+          <div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${RED};margin-right:5px;"></span>Declined (${quotes.filter(q=>q.status==='Declined').length})</div>
+        </div>
+      </div>
+    </div>
+    <div class="dash-chart-card">
+      <div class="dash-chart-title">Job Order Status</div>
+      <div style="display:flex;align-items:center;gap:14px;margin-top:10px;">
+        ${miniDonut(
+          [jos.filter(j=>j.status==='Open').length, jos.filter(j=>j.status==='In Process').length, jos.filter(j=>j.status==='Resolved').length],
+          [ORANGE, NAVY, TEAL], 90
+        )}
+        <div style="font-size:11px;line-height:2;">
+          <div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${ORANGE};margin-right:5px;"></span>Open (${jos.filter(j=>j.status==='Open').length})</div>
+          <div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${NAVY};margin-right:5px;"></span>In Process (${jos.filter(j=>j.status==='In Process').length})</div>
+          <div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${TEAL};margin-right:5px;"></span>Resolved (${jos.filter(j=>j.status==='Resolved').length})</div>
+        </div>
+      </div>
+    </div>
+    <div class="dash-chart-card">
+      <div class="dash-chart-title">Delivery Notes</div>
+      <div style="display:flex;align-items:center;gap:14px;margin-top:10px;">
+        ${miniDonut([issuedDns, dns.length-issuedDns], [TEAL, '#e5e7eb'], 90)}
+        <div style="font-size:11px;line-height:2;">
+          <div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${TEAL};margin-right:5px;"></span>Issued (${issuedDns})</div>
+          <div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#e5e7eb;margin-right:5px;"></span>Draft (${dns.length-issuedDns})</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Data Tables -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">
+    <!-- Job Orders -->
+    <div class="card">
+      <div class="card-head"><div class="card-title">Job Orders</div></div>
+      ${jos.length===0?`<div class="empty">No job orders yet.</div>`:`
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>JO No.</th><th>Project</th><th>Status</th></tr></thead>
+        <tbody>${jos.map(j=>`<tr>
+          <td style="font-family:var(--mono);color:#E8520A;font-weight:700;">${j.jobOrderNumber}</td>
+          <td style="font-size:12px;">${j.subject||j.siteDetail||'—'}</td>
+          <td><span class="badge ${j.status==='Open'?'badge-in':j.status==='Resolved'?'badge-out':'badge-low'}">${j.status}</span></td>
+        </tr>`).join('')}</tbody>
+      </table></div>`}
+    </div>
+    <!-- Quotations -->
+    <div class="card">
+      <div class="card-head"><div class="card-title">Quotations</div></div>
+      ${quotes.length===0?`<div class="empty">No quotations yet.</div>`:`
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Ref No.</th><th>Amount</th><th>Status</th></tr></thead>
+        <tbody>${quotes.map(q=>`<tr>
+          <td style="font-family:var(--mono);font-weight:700;">${q.quotationNumber||'—'}</td>
+          <td style="font-size:12px;">AED ${fmtMoney(q.totals?.total||0)}</td>
+          <td>${quoteStatusBadge(q.status)}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>`}
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+    <!-- Delivery Notes -->
+    <div class="card">
+      <div class="card-head"><div class="card-title">Delivery Notes</div></div>
+      ${dns.length===0?`<div class="empty">No delivery notes yet.</div>`:`
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>DN No.</th><th>Date</th><th>Status</th></tr></thead>
+        <tbody>${dns.map(d=>`<tr>
+          <td style="font-family:var(--mono);font-weight:700;">${d.dnNumber}</td>
+          <td style="font-size:12px;">${fmtDate(d.date)}</td>
+          <td><span class="badge ${d.status==='Issued'?'badge-issued':'badge-draft'}">${d.status}</span></td>
+        </tr>`).join('')}</tbody>
+      </table></div>`}
+    </div>
+    <!-- Delay Reports -->
+    <div class="card">
+      <div class="card-head"><div class="card-title">Delay Reports</div></div>
+      ${drs.length===0?`<div class="empty">No delay reports yet.</div>`:`
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Ref No.</th><th>Project</th><th>Open</th></tr></thead>
+        <tbody>${drs.map(r=>`<tr>
+          <td style="font-family:var(--mono);color:#E8520A;font-weight:700;">${r.refNumber}</td>
+          <td style="font-size:12px;">${r.projectName||'—'}</td>
+          <td><span class="badge ${(r.delayItems||[]).filter(i=>i.status==='Open').length>0?'badge-low':'badge-issued'}">${(r.delayItems||[]).filter(i=>i.status==='Open').length} open</span></td>
+        </tr>`).join('')}</tbody>
+      </table></div>`}
+    </div>
   </div>`;
 }
 
@@ -2506,15 +2728,18 @@ function renderItemForm(item) {
 function renderClientForm(client) {
   const isEdit = !!client.id;
   return `
-  <div class="field"><label>Company Name</label><input id="c_companyName" value="${client.companyName || ''}" placeholder="e.g. Edge Technical Solutions LLC"></div>
+  ${isEdit && client.customerNumber ? `<div style="background:#f0faf5;border-radius:6px;padding:8px 12px;margin-bottom:12px;font-size:12px;color:#085041;font-weight:600;">Customer No: ${client.customerNumber}</div>` : ''}
+  <div class="field"><label>Company Name *</label><input id="c_companyName" value="${client.companyName || ''}" placeholder="e.g. Edge Technical Solutions LLC"></div>
   <div class="grid2">
     <div class="field"><label>Contact Person</label><input id="c_contactPerson" value="${client.contactPerson || ''}"></div>
     <div class="field"><label>Phone</label><input id="c_phone" value="${client.phone || ''}" placeholder="+971 5xx xxx xxx"></div>
   </div>
   <div class="grid2">
     <div class="field"><label>Email</label><input id="c_email" type="email" value="${client.email || ''}"></div>
-    <div class="field"><label>Address</label><input id="c_address" value="${client.address || ''}"></div>
+    <div class="field"><label>TRN / VAT Number</label><input id="c_trn" value="${client.trn || ''}" placeholder="Optional"></div>
   </div>
+  <div class="field"><label>Address</label><input id="c_address" value="${client.address || ''}"></div>
+  <div class="field"><label>Notes</label><textarea id="c_notes" rows="2" placeholder="Internal notes about this client...">${client.notes || ''}</textarea></div>
   <div style="display:flex;justify-content:space-between;margin-top:8px;">
     <div>${isEdit ? `<button class="btn btn-danger" id="deleteClientBtn">Delete Client</button>` : ''}</div>
     <div style="display:flex;gap:8px;"><button class="btn btn-ghost" id="modalCancel">Cancel</button><button class="btn btn-primary" id="saveClientBtn">${isEdit ? 'Save Changes' : 'Add Client'}</button></div>
@@ -2938,7 +3163,10 @@ function attachHandlers() {
 
   const addClientBtn = document.getElementById('addClientBtn');
   if (addClientBtn) addClientBtn.addEventListener('click', () => openModal('client', {}));
-  document.querySelectorAll('[data-edit-client]').forEach(b => b.addEventListener('click', e => {
+  document.querySelectorAll('[data-view-client]').forEach(b => b.addEventListener('click', e => {
+    state.clientView = e.currentTarget.getAttribute('data-view-client');
+    render();
+  }));
     openModal('client', { ...state.clients.find(c => c.id === e.currentTarget.getAttribute('data-edit-client')) });
   }));
 
@@ -3262,7 +3490,7 @@ function attachClientFormHandlers() {
     const companyName = val('c_companyName').trim();
     if (!companyName) { showToast('Company name is required.', 'err'); return; }
     const existing = state.modal.payload.id;
-    const body = { companyName, contactPerson: val('c_contactPerson').trim(), phone: val('c_phone').trim(), email: val('c_email').trim(), address: val('c_address').trim() };
+    const body = { companyName, contactPerson: val('c_contactPerson').trim(), phone: val('c_phone').trim(), email: val('c_email').trim(), address: val('c_address').trim(), trn: val('c_trn').trim(), notes: val('c_notes').trim() };
     try {
       let client;
       if (existing) client = (await api('PUT', '/api/clients/' + existing, body)).client;

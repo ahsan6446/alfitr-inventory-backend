@@ -462,11 +462,13 @@ function renderTopbar() {
     materialRequests: ['Material Requests', 'Request materials against a job, checked and fulfilled from stock'],
     procurement: ['Procurement', 'Purchase Requests and Purchase Orders for whatever stock can\'t cover'],
     vendors: ['Vendors', 'Companies you buy materials from'],
-    delayReports: ['Delay Reports', 'Site delay reports raised against a Job Order'],
-    clients: ['Clients', 'Company directory used on delivery notes'],
-    settings: ['Settings', 'Branches, brands, units, security and company details'],
+    delayReports:     ['Delay Reports',    'Site delay reports raised against a Job Order'],
+    clients:          ['Clients',          'Client directory with 360 project history'],
+    fmChecklists:     ['FM Daily Checklists', 'Routine maintenance checklists for FM sites'],
+    fmIncidents:      ['FM Incident Reports', 'Incident and investigation reports'],
+    settings:         ['Settings',         'Branches, brands, units, security and company details'],
   };
-  const [title, sub] = titles[state.tab];
+  const [title, sub] = titles[state.tab] || [state.tab, ''];
   return `
   <div class="topbar">
     <div><div class="page-title">${title}</div><div class="page-sub">${sub}</div></div>
@@ -491,6 +493,7 @@ function renderPage() {
   if (state.tab === 'procurement') return renderProcurement();
   if (state.tab === 'vendors') return renderVendors();
   if (state.tab === 'delayReports') return renderDelayReports();
+  if (state.tab === 'clients')      return state.clientView ? renderClient360(state.clientView) : renderClients();
   if (state.tab === 'fmChecklists') return state.fmChecklistView ? renderFmChecklistDetail(state.fmChecklistView) : renderFmChecklists();
   if (state.tab === 'fmIncidents')  return renderFmIncidents();
   if (state.tab === 'settings') return renderSettings();

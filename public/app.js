@@ -3136,6 +3136,20 @@ function applyUserPick(fieldId, val) {
   var d = document.getElementById(fieldId+'_desig');
   if (n) n.value = parts[0]||'';
   if (d) d.value = parts[1]||'';
+  // Also store in payload so re-renders don't lose it
+  if (state.modal && state.modal.payload) {
+    if (fieldId === 'quotePreparedBy') {
+      state.modal.payload.preparedByName        = parts[0]||'';
+      state.modal.payload.preparedByDesignation = parts[1]||'';
+    }
+    if (fieldId === 'quoteApprovedBy') {
+      state.modal.payload.approvedByName        = parts[0]||'';
+      state.modal.payload.approvedByDesignation = parts[1]||'';
+    }
+    if (fieldId === 'dnIssuedBy') {
+      state.modal.payload.issuedBy = parts[0]||'';
+    }
+  }
 }
 
 function userPickerHtml(fieldId, currentName, currentDesig, label) {
@@ -4835,8 +4849,14 @@ function syncQuoteFormIntoPayload() {
   // Prepared By / Approved By — Super Admin can override, others default to their own name
   const prepVal = getUserPickerValue('quotePreparedBy');
   const apprVal = getUserPickerValue('quoteApprovedBy');
-  p.preparedByName        = prepVal.name        || p.preparedByName        || state.user?.name        || '';
-  p.preparedByDesignation = prepVal.designation  || p.preparedByDesignation || state.user?.designation || '';
+  // Only update if picker has a value — don't fall back to state.user which would override selection
+  if (prepVal.name) {
+    p.preparedByName        = prepVal.name;
+    p.preparedByDesignation = prepVal.designation;
+  } else if (!p.preparedByName) {
+    p.preparedByName        = state.user?.name        || '';
+    p.preparedByDesignation = state.user?.designation || '';
+  }
   if (apprVal.name) {
     p.approvedByName        = apprVal.name;
     p.approvedByDesignation = apprVal.designation;

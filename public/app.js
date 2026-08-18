@@ -3167,6 +3167,7 @@ function attachHandlers() {
     state.clientView = e.currentTarget.getAttribute('data-view-client');
     render();
   }));
+  document.querySelectorAll('[data-edit-client]').forEach(b => b.addEventListener('click', e => {
     openModal('client', { ...state.clients.find(c => c.id === e.currentTarget.getAttribute('data-edit-client')) });
   }));
 

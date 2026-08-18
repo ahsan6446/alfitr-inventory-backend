@@ -1,4 +1,3 @@
-// ERP v3.1 - picker fix
 /* ============================================================
    AL FITR — INVENTORY & DELIVERY (API-backed client)
    All data lives on the server. This file only renders what the
@@ -3131,6 +3130,14 @@ function renderExclusionsLibrary() {
 
 /* ---------------- Quotation form ---------------- */
 // Helper — dropdown of all active users (for Super Admin name override)
+function applyUserPick(fieldId, val) {
+  var parts = (val||'').split('|');
+  var n = document.getElementById(fieldId+'_name');
+  var d = document.getElementById(fieldId+'_desig');
+  if (n) n.value = parts[0]||'';
+  if (d) d.value = parts[1]||'';
+}
+
 function userPickerHtml(fieldId, currentName, currentDesig, label) {
   const isSA  = state.user?.role === 'Super Admin';
   const name  = currentName  || state.user?.name        || '';
@@ -3144,12 +3151,12 @@ function userPickerHtml(fieldId, currentName, currentDesig, label) {
   const opts = (state.users||[]).filter(u=>u.active!==false)
     .map(u=>`<option value="${u.name}|${u.designation||''}" ${name===u.name?'selected':''}>${u.name}${u.designation?' — '+u.designation:''}</option>`).join('');
   return `<div class="field"><label>${label}</label>
-    <select onchange="var v=this.value.split('|');document.getElementById('${fieldId}_name').value=v[0]||'';document.getElementById('${fieldId}_desig').value=v[1]||'';" style="margin-bottom:6px;">
+    <select onchange="applyUserPick('${fieldId}',this.value)" style="margin-bottom:6px;">
       <option value="|">— Select from team —</option>
       ${opts}
     </select>
     <input id="${fieldId}_name" value="${name}" placeholder="Name" style="margin-bottom:4px;">
-    <input id="${fieldId}_desig" value="${desig}" placeholder="Designation e.g. Sales Manager" style="font-size:12px;">
+    <input id="${fieldId}_desig" value="${desig}" placeholder="Designation" style="font-size:12px;">
   </div>`;
 }
 

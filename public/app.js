@@ -3129,6 +3129,58 @@ function renderExclusionsLibrary() {
 }
 
 /* ---------------- Quotation form ---------------- */
+// Helper — dropdown of all active users (for Super Admin name override)
+function userPickerHtml(fieldId, currentName, currentDesig, label) {
+  const isSA = state.user?.role === 'Super Admin';
+  if (!isSA) {
+    return `<div class="field"><label>${label}</label>
+      <input value="${currentName||state.user?.name||''}" disabled style="background:#f5f5f5;color:#888;">
+    </div>`;
+  }
+  const users = (state.users||[]).filter(u => u.active !== false);
+  return `<div class="field"><label>${label}</label>
+    <select id="${fieldId}" onchange="onUserPickerChange('${fieldId}')">
+      <option value="">— Select User —</option>
+      ${users.map(u=>`<option value="${u.id}" data-name="${u.name}" data-desig="${u.designation||''}" ${(currentName===u.name)?'selected':''}>${u.name}${u.designation?' — '+u.designation:''}</option>`).join('')}
+      <option value="__custom__">✏️ Type manually...</option>
+    </select>
+    <div id="${fieldId}_custom" style="display:none;margin-top:4px;">
+      <input id="${fieldId}_name" placeholder="Name" style="margin-bottom:4px;" value="${currentName||''}">
+      <input id="${fieldId}_desig" placeholder="Designation" value="${currentDesig||''}">
+    </div>
+  </div>`;
+}
+
+function onUserPickerChange(fieldId) {
+  const sel  = document.getElementById(fieldId);
+  const box  = document.getElementById(fieldId + '_custom');
+  if (!sel || !box) return;
+  if (sel.value === '__custom__') {
+    box.style.display = '';
+  } else {
+    box.style.display = 'none';
+    const opt  = sel.options[sel.selectedIndex];
+    const name = opt?.dataset?.name || '';
+    const desig= opt?.dataset?.desig || '';
+    const nameEl = document.getElementById(fieldId + '_name');
+    const desigEl= document.getElementById(fieldId + '_desig');
+    if (nameEl) nameEl.value  = name;
+    if (desigEl) desigEl.value = desig;
+  }
+}
+
+function getUserPickerValue(fieldId) {
+  const nameEl  = document.getElementById(fieldId + '_name');
+  const desigEl = document.getElementById(fieldId + '_desig');
+  const sel     = document.getElementById(fieldId);
+  if (!sel) return { name: '', designation: '' };
+  if (sel.value === '__custom__' || sel.value === '') {
+    return { name: nameEl?.value?.trim()||'', designation: desigEl?.value?.trim()||'' };
+  }
+  const opt = sel.options[sel.selectedIndex];
+  return { name: opt?.dataset?.name||'', designation: opt?.dataset?.desig||'' };
+}
+
 function renderQuoteForm(payload) {
   if (!payload.type) return renderQuoteTypeChooser();
   if (payload.type === 'AMC') return renderAmcQuoteForm(payload);
@@ -3253,6 +3305,14 @@ function renderStandardQuoteForm(payload) {
   <div class="field"><label>Notes</label><textarea id="quoteNotes" rows="2">${payload.notes || ''}</textarea></div>
 
   ${renderQuoteTotalsBox(payload)}
+
+  <div style="border-top:1px solid var(--rule);margin:14px 0 12px;padding-top:14px;">
+    <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">Signatures</div>
+    <div class="grid2">
+      ${userPickerHtml('quotePreparedBy', payload.preparedByName, payload.preparedByDesignation, 'Prepared By')}
+      ${userPickerHtml('quoteApprovedBy', payload.approvedByName, payload.approvedByDesignation, 'Approved By')}
+    </div>
+  </div>
 
   <div style="display:flex;justify-content:space-between;margin-top:14px;">
     <div>${isEdit ? `<button class="btn btn-danger" id="deleteQuoteBtn" type="button">Delete Draft</button>` : ''}</div>
@@ -3733,7 +3793,7 @@ function renderDnForm(payload) {
       <select id="dn_location">${state.branches.map(b => `<option ${location === b ? 'selected' : ''}>${b}</option>`).join('')}</select>
     </div>
     <div class="field"><label>Date</label><input type="date" id="dn_date" value="${payload.date || new Date().toISOString().slice(0, 10)}"></div>
-    <div class="field"><label>Issued By</label><input id="dn_issuedBy" value="${payload.issuedBy || state.user.name}"></div>
+    ${userPickerHtml('dnIssuedBy', payload.issuedBy||state.user?.name, '', 'Issued By')}
   </div>
   <div class="field"><label>Received By (optional, printed name)</label><input id="dn_receivedBy" value="${payload.receivedBy || ''}" placeholder="Name of person receiving goods"></div>
 
@@ -4496,7 +4556,7 @@ function syncDnPayload(p) {
   p.clientCompany = val('dn_clientCompany'); p.clientContact = val('dn_clientContact');
   p.clientPhone = val('dn_clientPhone'); p.clientEmail = val('dn_clientEmail'); p.clientAddress = val('dn_clientAddress');
   p.project = val('dn_project'); p.lpoNumber = val('dn_lpoNumber'); p.invoiceNumber = val('dn_invoiceNumber');
-  p.issuedBy = val('dn_issuedBy'); p.receivedBy = val('dn_receivedBy'); p.remarks = val('dn_remarks');
+  p.issuedBy = getUserPickerValue('dnIssuedBy').name || val('dnIssuedBy_name') || state.user?.name; p.receivedBy = val('dn_receivedBy'); p.remarks = val('dn_remarks');
 }
 function attachDnFormHandlers() {
   const addLineBtn = document.getElementById('addDnLineBtn');
@@ -4551,7 +4611,7 @@ async function submitDn(issue) {
     clientCompany: val('dn_clientCompany').trim(), clientContact: val('dn_clientContact').trim(),
     clientPhone: val('dn_clientPhone').trim(), clientEmail: val('dn_clientEmail').trim(), clientAddress: val('dn_clientAddress').trim(),
     project: val('dn_project').trim(), lpoNumber: val('dn_lpoNumber').trim(), invoiceNumber: val('dn_invoiceNumber').trim(),
-    location: val('dn_location'), issuedBy: val('dn_issuedBy').trim(), receivedBy: val('dn_receivedBy').trim(),
+    location: val('dn_location'), issuedBy: (getUserPickerValue('dnIssuedBy').name || state.user?.name || '').trim(), receivedBy: val('dn_receivedBy').trim(),
     remarks: val('dn_remarks').trim(), items: lines, issue,
   };
   try {
@@ -4781,6 +4841,11 @@ function syncQuoteFormIntoPayload() {
   p.paymentTerms = val('quotePaymentTerms');
   p.notes = val('quoteNotes');
   p.discount = Number(val('quoteDiscount') || 0);
+  // Prepared By / Approved By — Super Admin can override
+  const prepVal  = getUserPickerValue('quotePreparedBy');
+  const apprVal  = getUserPickerValue('quoteApprovedBy');
+  if (prepVal.name)  { p.preparedByName        = prepVal.name;  p.preparedByDesignation  = prepVal.designation; }
+  if (apprVal.name)  { p.approvedByName         = apprVal.name; p.approvedByDesignation  = apprVal.designation; }
   // exclusions are managed directly on p.exclusions via add/remove buttons — preserve them
   if (!Array.isArray(p.exclusions)) p.exclusions = [];
   if (p.type === 'AMC') {

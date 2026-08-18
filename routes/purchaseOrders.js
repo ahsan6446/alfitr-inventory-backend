@@ -1,6 +1,6 @@
 const express = require('express');
 const db = require('../lib/db');
-const { requireAuth, requirePermission } = require('../lib/auth');
+const { requireAuth, requirePermission, resolveAttribution } = require('../lib/auth');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -53,6 +53,7 @@ router.post('/', requirePermission('manageProcurement'), async (req, res) => {
     unitCost: Number((body.unitCosts && body.unitCosts[l.id]) || 0),
   }));
 
+  const creator = resolveAttribution(req, state, body, 'createdBy');
   const po = {
     id: db.uuid(),
     poNumber: nextPoNumber(state),
@@ -65,7 +66,7 @@ router.post('/', requirePermission('manageProcurement'), async (req, res) => {
     expectedDate: body.expectedDate || '',
     lineItems,
     notes: body.notes || '',
-    createdById: req.user.id, createdByName: req.user.name,
+    createdById: creator.id, createdByName: creator.name, createdByDesignation: creator.designation,
     createdAt: Date.now(), updatedAt: Date.now(),
   };
   state.purchaseOrders.push(po);
@@ -86,6 +87,11 @@ router.put('/:id', requirePermission('manageProcurement'), async (req, res) => {
   if ('notes' in body) po.notes = body.notes;
   if (body.unitCosts) {
     for (const l of po.lineItems) if (body.unitCosts[l.id] !== undefined) l.unitCost = Number(body.unitCosts[l.id]);
+  }
+  if (req.user.role === 'Super Admin' && body.createdByName && body.createdByName.trim()) {
+    po.createdById = null;
+    po.createdByName = body.createdByName.trim();
+    po.createdByDesignation = (body.createdByDesignation || '').trim();
   }
   po.updatedAt = Date.now();
   await db.persist();

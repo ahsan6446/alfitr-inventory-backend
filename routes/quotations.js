@@ -1,6 +1,6 @@
 const express = require('express');
 const db = require('../lib/db');
-const { requireAuth, requirePermission } = require('../lib/auth');
+const { requireAuth, requirePermission, resolveAttribution } = require('../lib/auth');
 const { can } = require('../lib/permissions');
 const { quotationTotals } = require('../lib/calc');
 const { generateQuotationPdf } = require('../lib/quotePdf');
@@ -287,6 +287,7 @@ router.post('/:id/convert-to-job-order', requirePermission('manageQuotations'), 
   if (q.status !== 'Accepted') return res.status(400).json({ error: 'Only an accepted quotation can be converted to a Job Order.' });
   if (q.jobOrderId) return res.status(400).json({ error: 'This quotation already has a linked Job Order.' });
 
+  const creator = resolveAttribution(req, state, req.body || {}, 'createdBy');
   const jo = {
     id: db.uuid(),
     jobOrderNumber: nextJobOrderNumber(state),
@@ -299,7 +300,7 @@ router.post('/:id/convert-to-job-order', requirePermission('manageQuotations'), 
     siteEngineer: '', projectManager: '', siteSupervisor: '', projectsIncharge: '',
     value: quotationTotals(q).total,
     status: 'Open',
-    createdById: req.user.id, createdByName: req.user.name,
+    createdById: creator.id, createdByName: creator.name, createdByDesignation: creator.designation,
     createdAt: Date.now(), updatedAt: Date.now(),
   };
   state.jobOrders.push(jo);

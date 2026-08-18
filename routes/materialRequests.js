@@ -1,6 +1,6 @@
 const express = require('express');
 const db = require('../lib/db');
-const { requireAuth, requirePermission } = require('../lib/auth');
+const { requireAuth, requirePermission, resolveAttribution } = require('../lib/auth');
 const { can } = require('../lib/permissions');
 const { itemQty } = require('../lib/calc');
 
@@ -82,6 +82,7 @@ router.post('/', requirePermission('manageMaterialRequests'), async (req, res) =
 
   if (lineItems.length === 0) return res.status(400).json({ error: 'Add at least one valid line item.' });
 
+  const requester = resolveAttribution(req, state, body, 'requestedBy');
   const mr = {
     id: db.uuid(),
     mrNumber: nextMrNumber(state),
@@ -89,7 +90,7 @@ router.post('/', requirePermission('manageMaterialRequests'), async (req, res) =
     clientCompany: jo.clientCompany,
     quotationId:     linkedQuotation ? linkedQuotation.id : null,
     quotationNumber: linkedQuotation ? linkedQuotation.quotationNumber : null,
-    requestedById: req.user.id, requestedByName: req.user.name,
+    requestedById: requester.id, requestedByName: requester.name, requestedByDesignation: requester.designation,
     status: 'Requested',
     date: body.date || new Date().toISOString().slice(0, 10),
     neededBy: body.neededBy || '',
@@ -137,6 +138,11 @@ router.put('/:id', requirePermission('manageMaterialRequests'), async (req, res)
   }
   if ('neededBy' in body) mr.neededBy = body.neededBy;
   if ('notes' in body) mr.notes = body.notes;
+  if (req.user.role === 'Super Admin' && body.requestedByName && body.requestedByName.trim()) {
+    mr.requestedById = null;
+    mr.requestedByName = body.requestedByName.trim();
+    mr.requestedByDesignation = (body.requestedByDesignation || '').trim();
+  }
   mr.updatedAt = Date.now();
   await db.persist();
   res.json({ materialRequest: withComputed(mr) });

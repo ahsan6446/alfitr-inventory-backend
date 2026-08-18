@@ -1,6 +1,6 @@
 const express = require('express');
 const db = require('../lib/db');
-const { requireAuth, requirePermission } = require('../lib/auth');
+const { requireAuth, requirePermission, resolveAttribution } = require('../lib/auth');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -46,13 +46,14 @@ router.post('/', requirePermission('manageMaterialRequests'), async (req, res) =
     });
   }
 
+  const requester = resolveAttribution(req, state, body, 'requestedBy');
   const pr = {
     id: db.uuid(),
     prNumber: nextPrNumber(state),
     materialRequestId: mr.id, materialRequestNumber: mr.mrNumber,
     jobOrderId: mr.jobOrderId, jobOrderNumber: mr.jobOrderNumber,
     status: 'Requested',
-    requestedById: req.user.id, requestedByName: req.user.name,
+    requestedById: requester.id, requestedByName: requester.name, requestedByDesignation: requester.designation,
     date: new Date().toISOString().slice(0, 10),
     lineItems,
     notes: body.notes || '',

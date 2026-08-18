@@ -2,7 +2,7 @@ const express = require('express');
 const path    = require('path');
 const fs      = require('fs');
 const db      = require('../lib/db');
-const { requireAuth, requirePermission } = require('../lib/auth');
+const { requireAuth, requirePermission, resolveAttribution } = require('../lib/auth');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -79,6 +79,7 @@ router.post('/', requirePermission('manageReports'), docUpload, async (req, res)
   const lpoFile   = req.files?.lpoFile?.[0];
   const quoteFile = req.files?.quoteFile?.[0];
 
+  const creator = resolveAttribution(req, state, body, 'createdBy');
   const jo = {
     id:             db.uuid(),
     jobOrderNumber: customNumber || nextJobOrderNumber(state),
@@ -105,8 +106,9 @@ router.post('/', requirePermission('manageReports'), docUpload, async (req, res)
     lpoFileName:  lpoFile   ? lpoFile.originalname                        : null,
     quoteFileUrl: quoteFile ? `/uploads/job-orders/${quoteFile.filename}` : null,
     quoteFileName: quoteFile ? quoteFile.originalname                     : null,
-    createdById:  req.user.id,
-    createdByName: req.user.name,
+    createdById:  creator.id,
+    createdByName: creator.name,
+    createdByDesignation: creator.designation,
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
@@ -144,6 +146,11 @@ router.put('/:id', requirePermission('manageReports'), docUpload, async (req, re
     if (f in body) jo[f] = body[f];
   }
   if ('value' in body) jo.value = Number(body.value || 0);
+  if (req.user.role === 'Super Admin' && body.createdByName && body.createdByName.trim()) {
+    jo.createdById = null;
+    jo.createdByName = body.createdByName.trim();
+    jo.createdByDesignation = (body.createdByDesignation || '').trim();
+  }
 
   // Handle document uploads (replace if new file provided)
   const lpoFile   = req.files?.lpoFile?.[0];

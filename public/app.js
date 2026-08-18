@@ -1296,6 +1296,8 @@ function renderAddAbnormalityForm(clId) {
     <button class="btn btn-primary" id="saveAbnBtn" data-cl-id="${clId}">Add Entry</button>
   </div>`;
 }
+
+function onFmTplSelect() {
   const id  = document.getElementById('fm_tplId')?.value;
   const box = document.getElementById('fm_tpl_preview');
   const tpl = state.fmTemplates.find(t => t.id === id);

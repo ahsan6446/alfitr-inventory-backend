@@ -3132,30 +3132,31 @@ function renderExclusionsLibrary() {
 /* ---------------- Quotation form ---------------- */
 // Helper — dropdown of all active users (for Super Admin name override)
 function userPickerHtml(fieldId, currentName, currentDesig, label) {
-  const isSA = state.user?.role === 'Super Admin';
-  const name  = currentName  || (isSA ? '' : state.user?.name        || '');
-  const desig = currentDesig || (isSA ? '' : state.user?.designation  || '');
-  const users = (state.users||[]).filter(u => u.active !== false);
+  const isSA  = state.user?.role === 'Super Admin';
+  const name  = currentName  || state.user?.name        || '';
+  const desig = currentDesig || state.user?.designation  || '';
+  if (!isSA) {
+    return `<div class="field"><label>${label}</label>
+      <input value="${name}" disabled style="background:#f5f5f5;margin-bottom:4px;">
+      <input value="${desig}" disabled style="background:#f5f5f5;font-size:12px;">
+    </div>`;
+  }
+  const opts = (state.users||[]).filter(u=>u.active!==false)
+    .map(u=>`<option value="${u.name}|${u.designation||''}" ${name===u.name?'selected':''}>${u.name}${u.designation?' — '+u.designation:''}</option>`).join('');
   return `<div class="field"><label>${label}</label>
-    ${isSA ? `
-    <select id="${fieldId}_pick" style="margin-bottom:6px;" onchange="(function(){
-      var sel=document.getElementById('${fieldId}_pick');
-      var opt=sel.options[sel.selectedIndex];
-      document.getElementById('${fieldId}_name').value=opt.getAttribute('data-name')||'';
-      document.getElementById('${fieldId}_desig').value=opt.getAttribute('data-desig')||'';
-    })()">
-      <option value="">— Select from users —</option>
-      ${users.map(u=>`<option value="${u.id}" data-name="${u.name}" data-desig="${u.designation||''}" ${name===u.name?'selected':''}>${u.name}${u.designation?' ('+u.designation+')':''}</option>`).join('')}
-    </select>` : ''}
-    <input id="${fieldId}_name" value="${name}" placeholder="Name" ${!isSA?'readonly style="background:#f5f5f5;color:#888;"':''}>
-    <input id="${fieldId}_desig" value="${desig}" placeholder="Designation" ${!isSA?'readonly style="background:#f5f5f5;color:#888;margin-top:4px;"':'style="margin-top:4px;"'}>
+    <select onchange="var v=this.value.split('|');document.getElementById('${fieldId}_name').value=v[0]||'';document.getElementById('${fieldId}_desig').value=v[1]||'';" style="margin-bottom:6px;">
+      <option value="|">— Select from team —</option>
+      ${opts}
+    </select>
+    <input id="${fieldId}_name" value="${name}" placeholder="Name" style="margin-bottom:4px;">
+    <input id="${fieldId}_desig" value="${desig}" placeholder="Designation e.g. Sales Manager" style="font-size:12px;">
   </div>`;
 }
 
 function getUserPickerValue(fieldId) {
   return {
-    name:        (document.getElementById(fieldId + '_name')?.value  || '').trim(),
-    designation: (document.getElementById(fieldId + '_desig')?.value || '').trim(),
+    name:        (document.getElementById(fieldId+'_name')?.value||'').trim(),
+    designation: (document.getElementById(fieldId+'_desig')?.value||'').trim(),
   };
 }
 

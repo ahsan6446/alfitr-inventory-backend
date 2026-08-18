@@ -1094,17 +1094,22 @@ async function fmSetItemRemarks(clId, itemId, remarks) {
 }
 
 function renderFmChecklistForm() {
-  const jos = state.jobOrders.filter(j => j.status === 'Open' || j.status === 'In Process' || j.status === 'Pending');
+  const jos = state.jobOrders;
   const cats = {};
   state.fmTemplates.forEach(t => {
     if (!cats[t.category]) cats[t.category] = [];
     cats[t.category].push(t);
   });
   return `
-  <div class="field"><label>Job Order (Client + Project) *</label>
-    <select id="fm_joId" onchange="onFmJoSelect()">
-      <option value="">— Select Job Order —</option>
-      ${jos.map(j=>`<option value="${j.id}">${j.jobOrderNumber} — ${j.clientCompany} — ${j.subject||''}</option>`).join('')}
+  <div class="field"><label>Client *</label>
+    <select id="fm_clientId" onchange="onFmClientSelect()">
+      <option value="">— Select Client —</option>
+      ${[...state.clients].sort((a,b)=>a.companyName.localeCompare(b.companyName)).map(c=>`<option value="${c.id}">${c.companyName}</option>`).join('')}
+    </select>
+  </div>
+  <div class="field"><label>Job Order / Project *</label>
+    <select id="fm_joId" onchange="onFmJoSelect()" disabled>
+      <option value="">— Select client first —</option>
     </select>
   </div>
   <div id="fm_jo_info" style="display:none;background:#f0faf5;border:1px solid #d1fae5;border-radius:6px;padding:10px 12px;margin-bottom:12px;font-size:12px;color:#085041;"></div>
@@ -1134,17 +1139,163 @@ function renderFmChecklistForm() {
   </div>`;
 }
 
+function onFmClientSelect() {
+  const clientId = document.getElementById('fm_clientId')?.value;
+  const joSel    = document.getElementById('fm_joId');
+  if (!joSel) return;
+  if (!clientId) {
+    joSel.innerHTML = '<option value="">— Select client first —</option>';
+    joSel.disabled = true;
+    return;
+  }
+  const client = state.clients.find(c => c.id === clientId);
+  const jos    = state.jobOrders.filter(j => j.clientId === clientId || j.clientCompany === client?.companyName);
+  joSel.innerHTML = `<option value="">— Select Job Order —</option>` +
+    jos.map(j=>`<option value="${j.id}">${j.jobOrderNumber} — ${j.subject||j.siteDetail||'No subject'}</option>`).join('');
+  joSel.disabled = jos.length === 0;
+  if (jos.length === 0) joSel.innerHTML = '<option value="">No job orders for this client</option>';
+}
+
 function onFmJoSelect() {
-  const id = document.getElementById('fm_joId')?.value;
+  const id   = document.getElementById('fm_joId')?.value;
   const info = document.getElementById('fm_jo_info');
-  const jo = state.jobOrders.find(j => j.id === id);
+  const jo   = state.jobOrders.find(j => j.id === id);
   if (jo && info) {
     info.style.display = '';
     info.innerHTML = `🔒 <strong>${jo.clientCompany}</strong> · ${jo.subject||jo.jobOrderNumber} · ${jo.location||''}`;
   } else if (info) info.style.display = 'none';
 }
 
-function onFmTplSelect() {
+function buildFmChecklistPdf(cl) {
+  const co      = state.company || {};
+  const okCnt   = cl.items.filter(i=>i.status==='ok').length;
+  const failCnt = cl.items.filter(i=>i.status==='fail').length;
+  const naCnt   = cl.items.filter(i=>i.status==='na').length;
+  const logoHtml = co.logoPath
+    ? `<img src="${co.logoPath}" style="height:48px;object-fit:contain;" alt="logo">`
+    : `<div style="font-size:14px;font-weight:700;color:#1D9E75;">AL FITR</div>`;
+  const rows = cl.items.map(item => {
+    const bg = item.status==='fail'?'#fff5f5':item.status==='ok'?'#f0faf5':'#fff';
+    const st = item.status==='ok'?'<span style="color:#1D9E75;font-weight:700;">✓ OK</span>':
+               item.status==='fail'?'<span style="color:#dc2626;font-weight:700;">✗ FAIL</span>':
+               item.status==='na'?'<span style="color:#888;">N/A</span>':'<span style="color:#ccc;">—</span>';
+    return `<tr style="background:${bg};border-bottom:1px solid #e5e7eb;">
+      <td style="padding:6px 8px;font-size:11px;color:#888;text-align:center;border:1px solid #e5e7eb;">${item.id}</td>
+      <td style="padding:6px 8px;font-size:11px;border:1px solid #e5e7eb;">${item.description}</td>
+      <td style="padding:6px 8px;font-size:10px;color:#888;text-align:center;border:1px solid #e5e7eb;">${item.frequency||'Daily'}</td>
+      <td style="padding:6px 8px;text-align:center;border:1px solid #e5e7eb;">${st}</td>
+      <td style="padding:6px 8px;font-size:11px;color:#555;border:1px solid #e5e7eb;">${item.remarks||''}</td>
+    </tr>`;
+  }).join('');
+  const abnRows = cl.abnormalities.length===0
+    ? '<tr><td colspan="5" style="padding:10px;text-align:center;color:#aaa;font-size:11px;">No abnormalities recorded</td></tr>'
+    : cl.abnormalities.map(a=>`<tr>
+        <td style="padding:6px 8px;font-size:11px;border:1px solid #e5e7eb;">${a.date||''}</td>
+        <td style="padding:6px 8px;font-size:11px;border:1px solid #e5e7eb;">${a.abnormality||''}</td>
+        <td style="padding:6px 8px;font-size:11px;border:1px solid #e5e7eb;">${a.actionTaken||''}</td>
+        <td style="padding:6px 8px;font-size:11px;border:1px solid #e5e7eb;">${a.status||''}</td>
+        <td style="padding:6px 8px;font-size:11px;border:1px solid #e5e7eb;">${a.doneBy||''}</td>
+      </tr>`).join('');
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${cl.refNumber}</title>
+  <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:Arial,sans-serif;font-size:11px;color:#1a1a1a;}@page{size:A4 portrait;margin:12mm;}</style>
+  </head><body>
+  <div style="border-bottom:3px solid #E8520A;display:flex;align-items:center;justify-content:space-between;padding-bottom:10px;margin-bottom:12px;">
+    <div style="display:flex;align-items:center;gap:12px;">${logoHtml}
+      <div style="font-size:14px;font-weight:700;color:#E8520A;">${co.name||'Al Fitr Electromechanical Works LLC'}</div>
+    </div>
+    <div style="text-align:right;">
+      <div style="font-size:13px;font-weight:700;color:#00627B;">${cl.templateName}</div>
+      <div style="font-size:11px;color:#E8520A;font-weight:700;">${cl.refNumber}</div>
+      <div style="font-size:10px;color:#555;">Month: ${cl.month||'—'}</div>
+    </div>
+  </div>
+  <table style="width:100%;border-collapse:collapse;margin-bottom:12px;font-size:11px;">
+    <tr>
+      <td style="padding:5px 8px;border:1px solid #ddd;font-weight:700;background:#f5f5f5;width:18%;">Client</td>
+      <td style="padding:5px 8px;border:1px solid #ddd;width:32%;">${cl.clientCompany||'—'}</td>
+      <td style="padding:5px 8px;border:1px solid #ddd;font-weight:700;background:#f5f5f5;width:18%;">Project</td>
+      <td style="padding:5px 8px;border:1px solid #ddd;">${cl.projectName||'—'}</td>
+    </tr>
+    <tr>
+      <td style="padding:5px 8px;border:1px solid #ddd;font-weight:700;background:#f5f5f5;">Job Order</td>
+      <td style="padding:5px 8px;border:1px solid #ddd;font-family:monospace;">${cl.jobOrderNumber||'—'}</td>
+      <td style="padding:5px 8px;border:1px solid #ddd;font-weight:700;background:#f5f5f5;">Location</td>
+      <td style="padding:5px 8px;border:1px solid #ddd;">${cl.location||'—'} ${cl.building?'· '+cl.building:''}</td>
+    </tr>
+    <tr>
+      <td style="padding:5px 8px;border:1px solid #ddd;font-weight:700;background:#f5f5f5;">Technician</td>
+      <td style="padding:5px 8px;border:1px solid #ddd;">${cl.technicianName||'—'}</td>
+      <td style="padding:5px 8px;border:1px solid #ddd;font-weight:700;background:#f5f5f5;">Supervisor</td>
+      <td style="padding:5px 8px;border:1px solid #ddd;">${cl.supervisorName||'—'}</td>
+    </tr>
+  </table>
+  <div style="display:flex;gap:10px;margin-bottom:12px;">
+    <div style="background:#f0faf5;border:1px solid #d1fae5;border-radius:6px;padding:6px 14px;font-size:12px;font-weight:700;color:#1D9E75;">✓ ${okCnt} OK</div>
+    <div style="background:#fff5f5;border:1px solid #fecaca;border-radius:6px;padding:6px 14px;font-size:12px;font-weight:700;color:#dc2626;">✗ ${failCnt} FAIL</div>
+    <div style="background:#f5f5f5;border:1px solid #e5e7eb;border-radius:6px;padding:6px 14px;font-size:12px;font-weight:700;color:#888;">— ${naCnt} N/A</div>
+    <div style="background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:6px 14px;font-size:12px;color:#555;">${cl.items.length} Total Items</div>
+  </div>
+  <table style="width:100%;border-collapse:collapse;margin-bottom:14px;">
+    <thead><tr style="background:#2c2c2c;">
+      <th style="padding:7px 8px;color:#fff;font-size:10px;text-align:center;border:1px solid #444;width:5%;">S.No</th>
+      <th style="padding:7px 8px;color:#fff;font-size:10px;text-align:left;border:1px solid #444;">Description</th>
+      <th style="padding:7px 8px;color:#fff;font-size:10px;text-align:center;border:1px solid #444;width:10%;">Freq.</th>
+      <th style="padding:7px 8px;color:#fff;font-size:10px;text-align:center;border:1px solid #444;width:10%;">Status</th>
+      <th style="padding:7px 8px;color:#fff;font-size:10px;text-align:left;border:1px solid #444;width:25%;">Remarks</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
+  <div style="font-size:11px;font-weight:700;color:#0B2B36;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Abnormality Log</div>
+  <table style="width:100%;border-collapse:collapse;margin-bottom:20px;">
+    <thead><tr style="background:#f5f5f5;">
+      <th style="padding:6px 8px;font-size:10px;border:1px solid #ddd;width:12%;">Date</th>
+      <th style="padding:6px 8px;font-size:10px;border:1px solid #ddd;">Abnormality</th>
+      <th style="padding:6px 8px;font-size:10px;border:1px solid #ddd;">Action Taken</th>
+      <th style="padding:6px 8px;font-size:10px;border:1px solid #ddd;width:12%;">Status</th>
+      <th style="padding:6px 8px;font-size:10px;border:1px solid #ddd;width:14%;">Done By</th>
+    </tr></thead>
+    <tbody>${abnRows}</tbody>
+  </table>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:10px;">
+    <div><div style="border-bottom:1px solid #555;height:30px;margin-bottom:5px;"></div>
+      <div style="font-size:11px;font-weight:700;">${cl.technicianName||'Technician'}</div>
+      <div style="font-size:10px;color:#1D9E75;">Signature of the Technician</div></div>
+    <div><div style="border-bottom:1px solid #555;height:30px;margin-bottom:5px;"></div>
+      <div style="font-size:11px;font-weight:700;">${cl.supervisorName||'Supervisor/Engineer'}</div>
+      <div style="font-size:10px;color:#1D9E75;">Signature of Supervisor/Engineer with date</div></div>
+  </div>
+  <div style="margin-top:16px;border-top:1px solid #e5e7eb;padding-top:6px;display:flex;justify-content:space-between;font-size:9px;color:#aaa;">
+    <span>${co.name||''} · FM Department</span>
+    <span>${cl.refNumber} · ${cl.templateName}</span>
+    <span>Restricted: ${co.name||'Al Fitr Electromechanical Works LLC'} - FM Department</span>
+  </div>
+  </body></html>`;
+}
+
+function renderAddAbnormalityForm(clId) {
+  return `
+  <div class="grid2">
+    <div class="field"><label>Date *</label><input type="date" id="abn_date" value="${new Date().toISOString().slice(0,10)}"></div>
+    <div class="field"><label>Done By</label><input id="abn_doneBy" value="${state.user?.name||''}" placeholder="Technician name"></div>
+  </div>
+  <div class="field"><label>Abnormality Observed *</label>
+    <textarea id="abn_desc" rows="3" placeholder="Describe the abnormality observed..."></textarea>
+  </div>
+  <div class="field"><label>Action Taken</label>
+    <textarea id="abn_action" rows="2" placeholder="What action was taken?"></textarea>
+  </div>
+  <div class="field"><label>Status</label>
+    <select id="abn_status">
+      <option value="Open">Open</option>
+      <option value="In Progress">In Progress</option>
+      <option value="Resolved">Resolved</option>
+    </select>
+  </div>
+  <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">
+    <button class="btn btn-ghost" id="modalCancel">Cancel</button>
+    <button class="btn btn-primary" id="saveAbnBtn" data-cl-id="${clId}">Add Entry</button>
+  </div>`;
+}
   const id  = document.getElementById('fm_tplId')?.value;
   const box = document.getElementById('fm_tpl_preview');
   const tpl = state.fmTemplates.find(t => t.id === id);
@@ -1954,10 +2105,17 @@ function renderMaterialRequestForm(payload) {
   const acceptedQuotations = (state.quotations || []).filter(q => ['Accepted','Approved','Sent'].includes(q.status));
   const lines = payload.lineItems || [];
   return `
-  <div class="field"><label>Job Order *</label>
-    <select id="mrJobOrderPick" ${isEdit ? 'disabled' : ''}>
-      <option value="">— Select Job Order —</option>
-      ${jobOrderOptions}
+  ${!isEdit ? `
+  <div class="field"><label>Client *</label>
+    <select id="mr_clientPick" onchange="onMrClientSelect()">
+      <option value="">— Select Client —</option>
+      ${[...state.clients].sort((a,b)=>a.companyName.localeCompare(b.companyName)).map(c=>`<option value="${c.id}" ${payload.clientId===c.id?'selected':''}>${c.companyName}</option>`).join('')}
+    </select>
+  </div>` : ''}
+  <div class="field"><label>Job Order / Project *</label>
+    <select id="mrJobOrderPick" ${isEdit ? 'disabled' : ''} ${!isEdit?'disabled':''}>
+      <option value="">— ${isEdit?'':'Select client first —'}</option>
+      ${isEdit ? state.jobOrders.filter(j=>j.id===payload.jobOrderId).map(j=>`<option value="${j.id}" selected>${j.jobOrderNumber} — ${j.clientCompany}</option>`).join('') : ''}
     </select>
   </div>
   <div class="grid2">
@@ -2908,7 +3066,8 @@ function renderModal() {
   const { type, payload } = state.modal;
   if (type === 'item') return modalWrap(renderItemForm(payload), 'Item Details');
   if (type === 'movement') return modalWrap(renderMovementForm(payload), payload.id ? 'Edit Stock Movement' : 'Log Stock Movement');
-  if (type === 'fmChecklist') return modalWrap(renderFmChecklistForm(), 'New Daily Checklist', false);
+  if (type === 'fmChecklist')      return modalWrap(renderFmChecklistForm(), 'New Daily Checklist', false);
+  if (type === 'addAbnormality')   return modalWrap(renderAddAbnormalityForm(payload.clId), 'Add Abnormality Entry', false);
   if (type === 'vendor') return modalWrap(renderVendorForm(payload), 'Vendor Details');
   if (type === 'userEdit') return modalWrap(renderUserForm(payload), 'User Details');
   if (type === 'forcePwd') return modalWrap(renderForcePwdForm(payload), 'Change Your Password');
@@ -3448,7 +3607,35 @@ function attachHandlers() {
   });
 
   const addAbnBtn = document.getElementById('addAbnBtn');
-  if (addAbnBtn) addAbnBtn.addEventListener('click', () => openModal('addAbnormality', { clId: addAbnBtn.getAttribute('data-id') }));
+  if (addAbnBtn) addAbnBtn.addEventListener('click', () => {
+    const clId = addAbnBtn.getAttribute('data-id');
+    openModal('addAbnormality', { clId });
+  });
+
+  const saveAbnBtn = document.getElementById('saveAbnBtn');
+  if (saveAbnBtn) saveAbnBtn.addEventListener('click', async () => {
+    const clId = saveAbnBtn.getAttribute('data-cl-id');
+    const desc = document.getElementById('abn_desc')?.value?.trim();
+    if (!desc) { showToast('Please describe the abnormality.', 'err'); return; }
+    const cl = state.fmChecklists.find(c => c.id === clId);
+    if (!cl) return;
+    const entry = {
+      date:         document.getElementById('abn_date')?.value || new Date().toISOString().slice(0,10),
+      abnormality:  desc,
+      actionTaken:  document.getElementById('abn_action')?.value?.trim() || '',
+      status:       document.getElementById('abn_status')?.value || 'Open',
+      doneBy:       document.getElementById('abn_doneBy')?.value?.trim() || state.user?.name || '',
+    };
+    cl.abnormalities = [...(cl.abnormalities||[]), entry];
+    try {
+      await api('PUT', '/api/fm-checklists/' + clId, { abnormalities: cl.abnormalities });
+      await loadAll();
+      showToast('Abnormality entry added.', 'ok');
+      closeModal();
+      state.fmChecklistView = clId;
+      render();
+    } catch(e) { showToast(e.message, 'err'); }
+  });
 
   const saveFmClBtn = document.getElementById('saveFmClBtn');
   if (saveFmClBtn) saveFmClBtn.addEventListener('click', async () => {
@@ -4344,6 +4531,18 @@ function syncMrFormIntoPayload() {
   p.neededBy = val('mrNeededBy');
   p.notes = val('mrNotes');
   p.lineItems = readMrLinesFromDom();
+}
+
+function onMrClientSelect() {
+  const clientId = document.getElementById('mr_clientPick')?.value;
+  const joSel    = document.getElementById('mrJobOrderPick');
+  if (!joSel) return;
+  if (!clientId) { joSel.innerHTML = '<option value="">— Select client first —</option>'; joSel.disabled = true; return; }
+  const client = state.clients.find(c => c.id === clientId);
+  const jos    = state.jobOrders.filter(j => j.clientId === clientId || j.clientCompany === client?.companyName);
+  joSel.innerHTML = `<option value="">— Select Job Order —</option>` +
+    jos.map(j=>`<option value="${j.id}">${j.jobOrderNumber} — ${j.subject||j.siteDetail||'No subject'}</option>`).join('');
+  joSel.disabled = false;
 }
 
 function onMrQuotationSelect() {

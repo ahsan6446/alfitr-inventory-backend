@@ -34,6 +34,7 @@ app.use('/api/purchase-orders', require('./routes/purchaseOrders'));
 app.use('/api/delay-reports', require('./routes/delayReports'));
 app.use("/api/exclusions", require("./routes/exclusions"));
 app.use("/api/fm-checklists", require("./routes/fmChecklists"));
+app.use("/api/work-reports", require("./routes/fmWorkReports").router);
 
 app.get('/api/health', (req, res) => res.json({ ok: true, time: new Date().toISOString() }));
 

@@ -52,6 +52,7 @@ const state = {
   tab: 'dashboard', branch: 'All', search: '', invFilter: 'All', exportIncludePricing: true, drFilter: 'All',
   fmChecklists: [], fmTemplates: [], fmChecklistView: null,
   fmFilterClient: 'All', fmFilterJO: 'All', fmFilterTemplate: 'All', fmFilterStatus: 'All', fmFilterMonth: '',
+  workReports: [], workReportView: null,
   user: null, permissions: {}, company: {}, branches: [], brands: [], units: [],
   items: [], movements: [], clients: [], dns: [], users: [], roles: {}, permLabels: [],
   loaded: false, modal: null, toast: null,
@@ -168,7 +169,7 @@ async function loadAll() {
   const me = await api('GET', '/api/auth/me');
   state.user = me.user; state.permissions = me.permissions;
 
-  const [company, branchesR, brandsR, unitsR, itemsR, movementsR, clientsR, dnsR, quotCatR, exclR, quotesR, joR, mrR, vendR, prR, poR, drR, fmClR, fmTplR] = await Promise.all([
+  const [company, branchesR, brandsR, unitsR, itemsR, movementsR, clientsR, dnsR, quotCatR, exclR, quotesR, joR, mrR, vendR, prR, poR, drR, fmClR, fmTplR, wrR] = await Promise.all([
     api('GET', '/api/company'),
     api('GET', '/api/meta/branches'),
     api('GET', '/api/meta/brands'),
@@ -188,6 +189,7 @@ async function loadAll() {
     api('GET', '/api/delay-reports'),
     api('GET', '/api/fm-checklists'),
     api('GET', '/api/fm-checklists/templates'),
+    api('GET', '/api/work-reports'),
   ]);
   state.company = company.company; state.nextDnPreview = company.nextDnPreview; state.nextQuotationCounter = company.nextQuotationCounter;
   if (state.company.name) document.title = state.company.name;
@@ -199,6 +201,7 @@ async function loadAll() {
   state.delayReports = drR.delayReports;
   state.fmChecklists = fmClR.checklists || [];
   state.fmTemplates  = fmTplR.templates  || [];
+  state.workReports  = wrR.workReports   || [];
 
   if (can('manageUsers')) {
     const [usersR, rolesR] = await Promise.all([api('GET', '/api/users'), api('GET', '/api/users/roles/all')]);
@@ -241,7 +244,7 @@ function currentFilterSummary() {
 function shouldExportPricing() { return can('viewPricing') && can('exportPricing') && !!state.exportIncludePricing; }
 
 /* ---------------- render shell ---------------- */
-function setTab(t) { state.tab = t; state.modal = null; state.clientView = null; state.fmChecklistView = null; render(); }
+function setTab(t) { state.tab = t; state.modal = null; state.clientView = null; state.fmChecklistView = null; state.workReportView = null; render(); }
 
 // Navigate to a tab with a pre-applied filter
 function goFiltered(tab, filterKey, filterVal) {
@@ -367,6 +370,7 @@ function renderSidebar() {
     materialRequests: 'projects',
     delayReports:     'projects',
     fmChecklists:     'fm',
+    fmWorkReports:    'fm',
     fmIncidents:      'fm',
     procurement:      'procurement',
     vendors:          'procurement',
@@ -431,8 +435,9 @@ function renderSidebar() {
       ])}
 
       ${navGroup('fm', '🏢', 'FM Services', [
-        ['fmChecklists', 'Daily Checklists'],
-        ['fmIncidents',  'Incident Reports'],
+        ['fmChecklists',  'Daily Checklists'],
+        ['fmWorkReports', 'Work Completion'],
+        ['fmIncidents',   'Incident Reports'],
       ])}
 
       ${navGroup('procurement', '🛒', 'Procurement', [
@@ -466,6 +471,7 @@ function renderTopbar() {
     delayReports:     ['Delay Reports',    'Site delay reports raised against a Job Order'],
     clients:          ['Clients',          'Client directory with 360 project history'],
     fmChecklists:     ['FM Daily Checklists', 'Routine maintenance checklists for FM sites'],
+    fmWorkReports:    ['Work Completion Reports', 'WCR and Service Notification Reports'],
     fmIncidents:      ['FM Incident Reports', 'Incident and investigation reports'],
     settings:         ['Settings',         'Branches, brands, units, security and company details'],
   };
@@ -495,8 +501,9 @@ function renderPage() {
   if (state.tab === 'vendors') return renderVendors();
   if (state.tab === 'delayReports') return renderDelayReports();
   if (state.tab === 'clients')      return state.clientView ? renderClient360(state.clientView) : renderClients();
-  if (state.tab === 'fmChecklists') return state.fmChecklistView ? renderFmChecklistDetail(state.fmChecklistView) : renderFmChecklists();
-  if (state.tab === 'fmIncidents')  return renderFmIncidents();
+  if (state.tab === 'fmChecklists')  return state.fmChecklistView  ? renderFmChecklistDetail(state.fmChecklistView)   : renderFmChecklists();
+  if (state.tab === 'fmWorkReports') return state.workReportView   ? renderWorkReportDetail(state.workReportView)      : renderWorkReports();
+  if (state.tab === 'fmIncidents')   return renderFmIncidents();
   if (state.tab === 'settings') return renderSettings();
   return '';
 }
@@ -1140,6 +1147,383 @@ function renderFmChecklistDetail(id) {
       </tbody>
     </table></div>`}
   </div>`;
+}
+
+/* ════════════════════════════════════════════════════════════════
+   WORK COMPLETION REPORTS (WCR + SNR)
+════════════════════════════════════════════════════════════════ */
+const WR_WORK_TYPES = ['Painting / Touch Up','Plumbing','Electrical','HVAC / AC','Civil / Carpentry','Fire Alarm / FF','ELV / IT','Cleaning','General Maintenance','Other'];
+
+function renderWorkReports() {
+  const wcrs = [...state.workReports].sort((a,b) => b.createdAt - a.createdAt);
+  return `
+  <div class="toolbar">
+    <div style="font-size:13px;color:var(--ink-soft);">${wcrs.length} report${wcrs.length!==1?'s':''}</div>
+    <div style="display:flex;gap:8px;">
+      ${can('manageReports')?`<button class="btn btn-outline" id="newSnrBtn">+ Service Notification</button>`:''}
+      ${can('manageReports')?`<button class="btn btn-primary" id="newWcrBtn">+ Work Completion Report</button>`:''}
+    </div>
+  </div>
+  ${wcrs.length===0?`<div class="card"><div class="empty"><div class="big">📋</div>No work reports yet.</div></div>`:`
+  <div class="card">
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Ref No.</th><th>Type</th><th>Client</th><th>Project</th><th>Date</th><th>Tasks</th><th>Status</th><th>For Client</th><th></th></tr></thead>
+      <tbody>${wcrs.map(wr=>`<tr>
+        <td style="font-family:var(--mono);color:#E8520A;font-weight:700;font-size:12px;">${wr.refNumber}</td>
+        <td><span class="badge ${wr.type==='WCR'?'badge-in':'badge-low'}" style="font-size:10px;">${wr.type}</span></td>
+        <td style="font-size:12px;">${wr.clientCompany||'—'}</td>
+        <td style="font-size:12px;">${wr.projectName||wr.jobOrderNumber||'—'}</td>
+        <td style="font-size:12px;">${fmtDate(wr.date)}</td>
+        <td style="font-size:12px;">${wr.type==='WCR'?(wr.tasks||[]).length+' task(s)':wr.subject||'—'}</td>
+        <td><span class="badge ${wr.status==='Completed'?'badge-issued':'badge-low'}">${wr.status}</span></td>
+        <td style="text-align:center;">${wr.forClient?'<span style="color:#1D9E75;font-weight:700;">✓</span>':'—'}</td>
+        <td><button class="btn btn-outline btn-sm" data-view-wr="${wr.id}">Open</button></td>
+      </tr>`).join('')}</tbody>
+    </table></div>
+  </div>`}`;
+}
+
+function renderWorkReportDetail(id) {
+  const wr = state.workReports.find(r => r.id === id);
+  if (!wr) return '<div class="empty">Report not found.</div>';
+  const isWCR = wr.type === 'WCR';
+  return `
+  <div class="fm-cl-title-bar" style="border-left:5px solid #E8520A;">
+    <div style="flex:1;">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#E8520A;margin-bottom:4px;">${isWCR?'Work Completion Report':'Service Notification Report'}</div>
+      <div style="font-size:20px;font-weight:700;color:var(--ink);">${wr.refNumber}</div>
+      <div style="font-size:12px;color:var(--ink-soft);margin-top:3px;">${wr.clientCompany} · ${wr.projectName||wr.jobOrderNumber} · ${fmtDate(wr.date)}</div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <span class="badge ${wr.status==='Completed'?'badge-issued':'badge-low'}">${wr.status}</span>
+      ${wr.forClient?'<span class="badge badge-in">For Client</span>':''}
+      <button class="btn btn-ghost btn-sm" onclick="state.workReportView=null;render()">← Back</button>
+      <button class="btn btn-teal btn-sm" id="printWrBtn" data-id="${wr.id}">🖨 Print PDF</button>
+      ${state.user?.role==='Super Admin'?`<button class="btn btn-outline btn-sm" data-delete-wr="${wr.id}" style="color:#dc2626;border-color:#fca5a5;">🗑 Delete</button>`:''}
+    </div>
+  </div>
+
+  <!-- Info -->
+  <div class="card" style="margin-bottom:14px;">
+    <div class="card-body">
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;">
+        <div><div class="k muted">Client</div><div>${wr.clientCompany||'—'}</div></div>
+        <div><div class="k muted">Project</div><div>${wr.projectName||'—'}</div></div>
+        <div><div class="k muted">Job Order</div><div style="font-family:var(--mono);">${wr.jobOrderNumber||'—'}</div></div>
+        <div><div class="k muted">Location</div><div>${wr.location||'—'}</div></div>
+        <div><div class="k muted">Date</div><div>${fmtDate(wr.date)}</div></div>
+        <div><div class="k muted">Technician</div><div>${wr.technicianName||'—'}</div></div>
+        <div><div class="k muted">Supervisor</div><div>${wr.supervisorName||'—'}</div></div>
+        <div><div class="k muted">Received By</div><div>${wr.receivedBy||'—'}</div></div>
+        <div><div class="k muted">Status</div><div>${wr.status||'—'}</div></div>
+      </div>
+      ${wr.notes?`<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--rule);font-size:13px;"><strong>Notes:</strong> ${wr.notes}</div>`:''}
+    </div>
+  </div>
+
+  ${isWCR ? `
+  <!-- Tasks -->
+  ${(wr.tasks||[]).map((task,i)=>`
+  <div class="card" style="margin-bottom:12px;">
+    <div class="card-head">
+      <div class="card-title">Task ${i+1} — ${task.workType||'General Work'}</div>
+      <span class="badge ${task.status==='Completed'?'badge-issued':'badge-low'}">${task.status||'Completed'}</span>
+    </div>
+    <div class="card-body">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+        <div><div class="k muted">Work Type</div><div>${task.workType||'—'}</div></div>
+        <div><div class="k muted">Area / Location</div><div>${task.area||'—'}</div></div>
+        ${task.materials?`<div style="grid-column:span 2;"><div class="k muted">Materials Used</div><div>${task.materials}</div></div>`:''}
+      </div>
+      ${task.description?`<div style="margin-bottom:12px;"><div class="k muted">Work Description</div><div style="font-size:13px;line-height:1.6;">${task.description}</div></div>`:''}
+      <!-- Before / After Photos -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div>
+          <div style="font-size:11px;font-weight:700;color:#dc2626;text-transform:uppercase;margin-bottom:6px;">📷 Before</div>
+          ${task.beforePhotoUrl
+            ?`<img src="${task.beforePhotoUrl}" style="width:100%;max-height:200px;object-fit:cover;border-radius:8px;border:2px solid #fecaca;" alt="Before">`
+            :`<div style="width:100%;height:140px;background:#f5f5f5;border:2px dashed #e5e7eb;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:12px;color:#aaa;">No photo</div>`}
+        </div>
+        <div>
+          <div style="font-size:11px;font-weight:700;color:#1D9E75;text-transform:uppercase;margin-bottom:6px;">📷 After</div>
+          ${task.afterPhotoUrl
+            ?`<img src="${task.afterPhotoUrl}" style="width:100%;max-height:200px;object-fit:cover;border-radius:8px;border:2px solid #d1fae5;" alt="After">`
+            :`<div style="width:100%;height:140px;background:#f5f5f5;border:2px dashed #e5e7eb;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:12px;color:#aaa;">No photo</div>`}
+        </div>
+      </div>
+    </div>
+  </div>`).join('')}` : `
+  <!-- SNR Detail -->
+  <div class="card" style="margin-bottom:14px;">
+    <div class="card-head"><div class="card-title">${wr.subject||'Service Notification'}</div></div>
+    <div class="card-body">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
+        <div><div class="k muted">Work Type</div><div>${wr.workType||'—'}</div></div>
+        <div><div class="k muted">Time</div><div>${wr.time||'—'}</div></div>
+      </div>
+      ${wr.description?`<div style="margin-bottom:14px;"><div class="k muted">Description</div><div style="font-size:13px;line-height:1.6;">${wr.description}</div></div>`:''}
+      ${wr.photoUrl?`<div><div style="font-size:11px;font-weight:700;color:#E8520A;text-transform:uppercase;margin-bottom:6px;">📷 Photo</div>
+        <img src="${wr.photoUrl}" style="max-width:100%;max-height:300px;object-fit:contain;border-radius:8px;border:1px solid var(--rule);" alt="Photo"></div>`:''}
+    </div>
+  </div>`}
+  `;
+}
+
+function renderWcrForm() {
+  const WORK_TYPES = ['Painting / Touch Up','Plumbing','Electrical','HVAC / AC','Civil / Carpentry','Fire Alarm / FF','ELV / IT','Cleaning','General Maintenance','Other'];
+  const p = state.modal?.payload || {};
+  const tasks = p.tasks || [{ workType:'', area:'', description:'', materials:'', status:'Completed' }];
+  return `
+  <div class="grid2">
+    <div class="field"><label>Client *</label>
+      <select id="wcr_clientId" onchange="onWcrClientSelect()">
+        <option value="">— Select Client —</option>
+        ${[...state.clients].sort((a,b)=>a.companyName.localeCompare(b.companyName)).map(c=>`<option value="${c.id}" ${p.clientId===c.id?'selected':''}>${c.companyName}</option>`).join('')}
+      </select>
+    </div>
+    <div class="field"><label>Job Order / Project *</label>
+      <select id="wcr_joId" disabled>
+        <option value="">— Select client first —</option>
+      </select>
+    </div>
+  </div>
+  <div class="grid2">
+    <div class="field"><label>Date</label><input type="date" id="wcr_date" value="${p.date||new Date().toISOString().slice(0,10)}"></div>
+    <div class="field"><label>Location / Area</label><input id="wcr_location" value="${p.location||''}" placeholder="e.g. Common Area, Building A"></div>
+  </div>
+  <div class="grid2">
+    <div class="field"><label>Technician Name</label><input id="wcr_tech" value="${p.technicianName||state.user?.name||''}"></div>
+    <div class="field"><label>Supervisor</label><input id="wcr_supervisor" value="${p.supervisorName||''}"></div>
+  </div>
+
+  <div style="border-top:1px solid var(--rule);margin:14px 0 10px;"></div>
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+    <div style="font-size:13px;font-weight:700;">Tasks</div>
+    <button class="btn btn-ghost btn-sm" type="button" id="addWcrTaskBtn">+ Add Task</button>
+  </div>
+  <div id="wcrTasksList">
+    ${tasks.map((t,i) => renderWcrTaskRow(t, i, WORK_TYPES)).join('')}
+  </div>
+
+  <div class="field" style="margin-top:10px;"><label>Notes</label><textarea id="wcr_notes" rows="2" placeholder="Any additional notes...">${p.notes||''}</textarea></div>
+  <div class="grid2">
+    <div class="field"><label>Status</label>
+      <select id="wcr_status">
+        <option value="Completed">Completed</option>
+        <option value="Partially Completed">Partially Completed</option>
+        <option value="Pending">Pending</option>
+      </select>
+    </div>
+    <div class="field"><label>Report Type</label>
+      <select id="wcr_forClient">
+        <option value="false">Internal Only</option>
+        <option value="true">For Client (include in PDF)</option>
+      </select>
+    </div>
+  </div>
+  <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">
+    <button class="btn btn-ghost" id="modalCancel">Cancel</button>
+    <button class="btn btn-primary" id="saveWcrBtn">Submit Report</button>
+  </div>`;
+}
+
+function renderWcrTaskRow(t, i, WORK_TYPES) {
+  return `
+  <div class="card" style="margin-bottom:10px;background:#fafafa;" data-wcr-task="${i}">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+      <div style="font-size:12px;font-weight:700;color:#E8520A;">Task ${i+1}</div>
+      ${i>0?`<button class="btn btn-ghost btn-sm removeWcrTaskBtn" data-idx="${i}" style="color:#dc2626;">✕ Remove</button>`:''}
+    </div>
+    <div class="grid2">
+      <div class="field"><label>Work Type</label>
+        <select class="wcr_task_type" data-idx="${i}">
+          ${WORK_TYPES.map(wt=>`<option ${t.workType===wt?'selected':''}>${wt}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field"><label>Area / Location</label>
+        <input class="wcr_task_area" data-idx="${i}" value="${t.area||''}" placeholder="e.g. Room 201, Lobby">
+      </div>
+    </div>
+    <div class="field"><label>Work Description</label>
+      <textarea class="wcr_task_desc" data-idx="${i}" rows="2" placeholder="Describe the work done...">${t.description||''}</textarea>
+    </div>
+    <div class="field"><label>Materials Used (optional)</label>
+      <input class="wcr_task_materials" data-idx="${i}" value="${t.materials||''}" placeholder="e.g. 1L paint, 2 PVC fittings">
+    </div>
+    <div class="grid2">
+      <div class="field"><label>📷 Before Photo</label>
+        <input type="file" class="wcr_task_before" data-idx="${i}" accept="image/*" style="font-size:12px;padding:6px;">
+        ${t.beforePhotoUrl?`<div style="font-size:11px;color:#1D9E75;margin-top:3px;">✓ Photo uploaded</div>`:''}
+      </div>
+      <div class="field"><label>📷 After Photo</label>
+        <input type="file" class="wcr_task_after" data-idx="${i}" accept="image/*" style="font-size:12px;padding:6px;">
+        ${t.afterPhotoUrl?`<div style="font-size:11px;color:#1D9E75;margin-top:3px;">✓ Photo uploaded</div>`:''}
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderSnrForm() {
+  const WORK_TYPES = ['Painting / Touch Up','Plumbing','Electrical','HVAC / AC','Civil / Carpentry','Fire Alarm / FF','ELV / IT','Cleaning','General Maintenance','Other'];
+  const p = state.modal?.payload || {};
+  return `
+  <div class="grid2">
+    <div class="field"><label>Client *</label>
+      <select id="snr_clientId" onchange="onSnrClientSelect()">
+        <option value="">— Select Client —</option>
+        ${[...state.clients].sort((a,b)=>a.companyName.localeCompare(b.companyName)).map(c=>`<option value="${c.id}">${c.companyName}</option>`).join('')}
+      </select>
+    </div>
+    <div class="field"><label>Job Order / Project *</label>
+      <select id="snr_joId" disabled>
+        <option value="">— Select client first —</option>
+      </select>
+    </div>
+  </div>
+  <div class="field"><label>Subject / Title *</label>
+    <input id="snr_subject" value="${p.subject||''}" placeholder="e.g. AC not cooling in Room 201">
+  </div>
+  <div class="grid2">
+    <div class="field"><label>Work Type</label>
+      <select id="snr_workType">
+        ${WORK_TYPES.map(wt=>`<option>${wt}</option>`).join('')}
+      </select>
+    </div>
+    <div class="field"><label>Location / Area</label>
+      <input id="snr_location" value="${p.location||''}" placeholder="e.g. Common Area, Block B">
+    </div>
+  </div>
+  <div class="grid2">
+    <div class="field"><label>Date</label><input type="date" id="snr_date" value="${new Date().toISOString().slice(0,10)}"></div>
+    <div class="field"><label>Time</label><input type="time" id="snr_time" value="${new Date().toTimeString().slice(0,5)}"></div>
+  </div>
+  <div class="field"><label>Description *</label>
+    <textarea id="snr_desc" rows="3" placeholder="Describe the issue or work done...">${p.description||''}</textarea>
+  </div>
+  <div class="field"><label>📷 Photo *</label>
+    <input type="file" id="snr_photo" accept="image/*" style="font-size:12px;padding:6px;">
+    <div style="font-size:11px;color:var(--muted);margin-top:3px;">Attach one clear photo of the work/issue</div>
+  </div>
+  <div class="grid2">
+    <div class="field"><label>Technician</label><input id="snr_tech" value="${state.user?.name||''}"></div>
+    <div class="field"><label>Status</label>
+      <select id="snr_status">
+        <option value="Completed">Completed</option>
+        <option value="In Progress">In Progress</option>
+        <option value="Pending">Pending</option>
+      </select>
+    </div>
+  </div>
+  <div class="field"><label>For Client</label>
+    <select id="snr_forClient">
+      <option value="false">Internal Only</option>
+      <option value="true">For Client</option>
+    </select>
+  </div>
+  <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">
+    <button class="btn btn-ghost" id="modalCancel">Cancel</button>
+    <button class="btn btn-primary" id="saveSnrBtn">Submit</button>
+  </div>`;
+}
+
+function onWcrClientSelect() {
+  const clientId = document.getElementById('wcr_clientId')?.value;
+  const joSel    = document.getElementById('wcr_joId');
+  if (!clientId||!joSel) return;
+  const client = state.clients.find(c=>c.id===clientId);
+  const jos    = state.jobOrders.filter(j=>j.clientId===clientId||j.clientCompany===client?.companyName);
+  joSel.innerHTML = `<option value="">— Select Job Order —</option>` +
+    jos.map(j=>`<option value="${j.id}">${j.jobOrderNumber} — ${j.subject||j.siteDetail||''}</option>`).join('');
+  joSel.disabled = false;
+}
+
+function onSnrClientSelect() {
+  const clientId = document.getElementById('snr_clientId')?.value;
+  const joSel    = document.getElementById('snr_joId');
+  if (!clientId||!joSel) return;
+  const client = state.clients.find(c=>c.id===clientId);
+  const jos    = state.jobOrders.filter(j=>j.clientId===clientId||j.clientCompany===client?.companyName);
+  joSel.innerHTML = `<option value="">— Select Job Order —</option>` +
+    jos.map(j=>`<option value="${j.id}">${j.jobOrderNumber} — ${j.subject||j.siteDetail||''}</option>`).join('');
+  joSel.disabled = false;
+}
+
+function buildWcrPdf(wr) {
+  const co = state.company||{};
+  const isWCR = wr.type==='WCR';
+  const logoHtml = co.logoPath?`<img src="${co.logoPath}" style="height:48px;object-fit:contain;" alt="logo">`:`<div style="font-size:14px;font-weight:700;color:#1D9E75;">AL FITR</div>`;
+  const tasksHtml = isWCR ? (wr.tasks||[]).map((t,i)=>`
+  <div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px;margin-bottom:12px;page-break-inside:avoid;">
+    <div style="font-size:12px;font-weight:700;color:#E8520A;margin-bottom:8px;border-bottom:1px solid #e5e7eb;padding-bottom:6px;">Task ${i+1} — ${t.workType||'General Work'}</div>
+    <table style="width:100%;font-size:11px;margin-bottom:8px;"><tr>
+      <td style="width:50%;padding:4px 0;"><strong>Area:</strong> ${t.area||'—'}</td>
+      <td style="padding:4px 0;"><strong>Status:</strong> ${t.status||'Completed'}</td>
+    </tr></table>
+    ${t.description?`<div style="font-size:11px;margin-bottom:8px;"><strong>Work Done:</strong> ${t.description}</div>`:''}
+    ${t.materials?`<div style="font-size:11px;margin-bottom:8px;"><strong>Materials:</strong> ${t.materials}</div>`:''}
+    <table style="width:100%;border-collapse:collapse;">
+      <tr>
+        <td style="width:50%;padding-right:6px;vertical-align:top;">
+          <div style="font-size:10px;font-weight:700;color:#dc2626;text-transform:uppercase;margin-bottom:4px;">Before</div>
+          ${t.beforePhotoUrl?`<img src="${t.beforePhotoUrl}" style="width:100%;max-height:180px;object-fit:cover;border-radius:6px;border:2px solid #fecaca;">`:`<div style="height:120px;background:#f5f5f5;border:2px dashed #e5e7eb;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:11px;color:#aaa;">No photo</div>`}
+        </td>
+        <td style="width:50%;padding-left:6px;vertical-align:top;">
+          <div style="font-size:10px;font-weight:700;color:#1D9E75;text-transform:uppercase;margin-bottom:4px;">After</div>
+          ${t.afterPhotoUrl?`<img src="${t.afterPhotoUrl}" style="width:100%;max-height:180px;object-fit:cover;border-radius:6px;border:2px solid #d1fae5;">`:`<div style="height:120px;background:#f5f5f5;border:2px dashed #e5e7eb;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:11px;color:#aaa;">No photo</div>`}
+        </td>
+      </tr>
+    </table>
+  </div>`).join('') : `
+  <div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px;margin-bottom:12px;">
+    <div style="font-size:12px;font-weight:700;color:#E8520A;margin-bottom:8px;">${wr.subject||'Service Notification'}</div>
+    ${wr.description?`<div style="font-size:11px;margin-bottom:12px;line-height:1.6;">${wr.description}</div>`:''}
+    ${wr.photoUrl?`<img src="${wr.photoUrl}" style="max-width:100%;max-height:300px;object-fit:contain;border-radius:8px;border:1px solid #e5e7eb;">`:''}
+  </div>`;
+
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${wr.refNumber}</title>
+  <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:Arial,sans-serif;font-size:11px;color:#1a1a1a;}@page{size:A4 portrait;margin:12mm;}img{max-width:100%;}</style>
+  </head><body>
+  <div style="border-bottom:3px solid #E8520A;display:flex;align-items:center;justify-content:space-between;padding-bottom:10px;margin-bottom:14px;">
+    <div style="display:flex;align-items:center;gap:12px;">${logoHtml}
+      <div><div style="font-size:14px;font-weight:700;color:#E8520A;">${co.name||'Al Fitr Electromechanical Works LLC'}</div></div>
+    </div>
+    <div style="text-align:right;">
+      <div style="font-size:13px;font-weight:700;color:#00627B;">${isWCR?'WORK COMPLETION REPORT':'SERVICE NOTIFICATION REPORT'}</div>
+      <div style="font-size:12px;color:#E8520A;font-weight:700;">${wr.refNumber}</div>
+      <div style="font-size:10px;color:#555;">Date: ${fmtDate(wr.date)}</div>
+    </div>
+  </div>
+  <table style="width:100%;border-collapse:collapse;margin-bottom:14px;font-size:11px;">
+    <tr>
+      <td style="padding:5px 8px;border:1px solid #ddd;font-weight:700;background:#f5f5f5;width:18%;">Client</td>
+      <td style="padding:5px 8px;border:1px solid #ddd;width:32%;">${wr.clientCompany||'—'}</td>
+      <td style="padding:5px 8px;border:1px solid #ddd;font-weight:700;background:#f5f5f5;width:18%;">Project</td>
+      <td style="padding:5px 8px;border:1px solid #ddd;">${wr.projectName||'—'}</td>
+    </tr>
+    <tr>
+      <td style="padding:5px 8px;border:1px solid #ddd;font-weight:700;background:#f5f5f5;">Job Order</td>
+      <td style="padding:5px 8px;border:1px solid #ddd;font-family:monospace;">${wr.jobOrderNumber||'—'}</td>
+      <td style="padding:5px 8px;border:1px solid #ddd;font-weight:700;background:#f5f5f5;">Location</td>
+      <td style="padding:5px 8px;border:1px solid #ddd;">${wr.location||'—'}</td>
+    </tr>
+    <tr>
+      <td style="padding:5px 8px;border:1px solid #ddd;font-weight:700;background:#f5f5f5;">Technician</td>
+      <td style="padding:5px 8px;border:1px solid #ddd;">${wr.technicianName||'—'}</td>
+      <td style="padding:5px 8px;border:1px solid #ddd;font-weight:700;background:#f5f5f5;">Supervisor</td>
+      <td style="padding:5px 8px;border:1px solid #ddd;">${wr.supervisorName||'—'}</td>
+    </tr>
+  </table>
+  ${tasksHtml}
+  ${wr.notes?`<div style="border:1px solid #e5e7eb;border-radius:6px;padding:10px;margin-bottom:14px;font-size:11px;"><strong>Notes:</strong> ${wr.notes}</div>`:''}
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:16px;">
+    <div><div style="border-bottom:1px solid #555;height:30px;margin-bottom:5px;"></div>
+      <div style="font-size:11px;font-weight:700;">${wr.technicianName||'Technician'}</div>
+      <div style="font-size:10px;color:#1D9E75;">Prepared By — Al Fitr</div></div>
+    <div><div style="border-bottom:1px solid #555;height:30px;margin-bottom:5px;"></div>
+      <div style="font-size:11px;font-weight:700;">${wr.receivedBy||'Client Representative'}</div>
+      <div style="font-size:10px;color:#1D9E75;">Received By — Signature & Date</div></div>
+  </div>
+  </body></html>`;
 }
 
 function renderFmIncidents() {
@@ -3142,6 +3526,8 @@ function renderModal() {
   if (type === 'movement') return modalWrap(renderMovementForm(payload), payload.id ? 'Edit Stock Movement' : 'Log Stock Movement');
   if (type === 'fmChecklist')      return modalWrap(renderFmChecklistForm(), 'New Daily Checklist', false);
   if (type === 'addAbnormality')   return modalWrap(renderAddAbnormalityForm(payload.clId), 'Add Abnormality Entry', false);
+  if (type === 'newWcr')           return modalWrap(renderWcrForm(), 'New Work Completion Report', true);
+  if (type === 'newSnr')           return modalWrap(renderSnrForm(), 'New Service Notification Report', false);
   if (type === 'vendor') return modalWrap(renderVendorForm(payload), 'Vendor Details');
   if (type === 'userEdit') return modalWrap(renderUserForm(payload), 'User Details');
   if (type === 'forcePwd') return modalWrap(renderForcePwdForm(payload), 'Change Your Password');
@@ -3648,8 +4034,128 @@ function attachHandlers() {
     openModal('viewDn', state.dns.find(d => d.id === e.currentTarget.getAttribute('data-view-dn')));
   }));
 
-  // FM Checklists
-  const newFmClBtn = document.getElementById('newFmChecklistBtn');
+  // Work Reports
+  const newWcrBtn = document.getElementById('newWcrBtn');
+  if (newWcrBtn) newWcrBtn.addEventListener('click', () => openModal('newWcr', { tasks:[{workType:'',area:'',description:'',materials:'',status:'Completed'}] }));
+
+  const newSnrBtn = document.getElementById('newSnrBtn');
+  if (newSnrBtn) newSnrBtn.addEventListener('click', () => openModal('newSnr', {}));
+
+  document.querySelectorAll('[data-view-wr]').forEach(b => b.addEventListener('click', e => {
+    state.workReportView = e.currentTarget.getAttribute('data-view-wr');
+    render();
+  }));
+
+  const printWrBtn = document.getElementById('printWrBtn');
+  if (printWrBtn) printWrBtn.addEventListener('click', () => {
+    const id = printWrBtn.getAttribute('data-id');
+    const wr = state.workReports.find(r => r.id === id);
+    if (!wr) return;
+    const win = window.open('', '_blank');
+    win.document.write(buildWcrPdf(wr));
+    win.document.close();
+    setTimeout(() => win.print(), 800);
+  });
+
+  document.querySelectorAll('[data-delete-wr]').forEach(b => b.addEventListener('click', async e => {
+    const id = e.currentTarget.getAttribute('data-delete-wr');
+    const wr = state.workReports.find(r => r.id === id);
+    if (!wr || !confirm(`Delete ${wr.refNumber}? This cannot be undone.`)) return;
+    try {
+      await api('DELETE', '/api/work-reports/' + id);
+      await loadAll();
+      showToast('Report deleted.', 'ok');
+      state.workReportView = null;
+      render();
+    } catch(e) { showToast(e.message, 'err'); }
+  }));
+
+  // WCR form handlers
+  const addWcrTaskBtn = document.getElementById('addWcrTaskBtn');
+  if (addWcrTaskBtn) addWcrTaskBtn.addEventListener('click', () => {
+    const p = state.modal.payload;
+    if (!p.tasks) p.tasks = [];
+    p.tasks.push({workType:'',area:'',description:'',materials:'',status:'Completed'});
+    render();
+  });
+  document.querySelectorAll('.removeWcrTaskBtn').forEach(b => b.addEventListener('click', e => {
+    const idx = Number(e.currentTarget.getAttribute('data-idx'));
+    const p = state.modal.payload;
+    p.tasks.splice(idx, 1);
+    render();
+  }));
+
+  const saveWcrBtn = document.getElementById('saveWcrBtn');
+  if (saveWcrBtn) saveWcrBtn.addEventListener('click', async () => {
+    const joId = document.getElementById('wcr_joId')?.value;
+    if (!joId) { showToast('Please select a Job Order.', 'err'); return; }
+    const tasks = [];
+    document.querySelectorAll('[data-wcr-task]').forEach((row, i) => {
+      tasks.push({
+        workType:    row.querySelector('.wcr_task_type')?.value   || '',
+        area:        row.querySelector('.wcr_task_area')?.value   || '',
+        description: row.querySelector('.wcr_task_desc')?.value   || '',
+        materials:   row.querySelector('.wcr_task_materials')?.value || '',
+        status:      'Completed',
+      });
+    });
+    const fd = new FormData();
+    fd.append('jobOrderId',     joId);
+    fd.append('date',           document.getElementById('wcr_date')?.value || '');
+    fd.append('location',       document.getElementById('wcr_location')?.value || '');
+    fd.append('technicianName', document.getElementById('wcr_tech')?.value || '');
+    fd.append('supervisorName', document.getElementById('wcr_supervisor')?.value || '');
+    fd.append('notes',          document.getElementById('wcr_notes')?.value || '');
+    fd.append('status',         document.getElementById('wcr_status')?.value || 'Completed');
+    fd.append('forClient',      document.getElementById('wcr_forClient')?.value || 'false');
+    fd.append('tasks',          JSON.stringify(tasks));
+    document.querySelectorAll('[data-wcr-task]').forEach((row, i) => {
+      const bf = row.querySelector('.wcr_task_before')?.files[0];
+      const af = row.querySelector('.wcr_task_after')?.files[0];
+      if (bf) fd.append(`beforePhoto_${i}`, bf);
+      if (af) fd.append(`afterPhoto_${i}`,  af);
+    });
+    try {
+      const r   = await fetch('/api/work-reports/wcr', { method:'POST', headers:{'Authorization':`Bearer ${authToken}`}, body:fd });
+      const d   = await r.json();
+      if (!r.ok) throw new Error(d.error);
+      await loadAll();
+      showToast('Work Completion Report submitted.', 'ok');
+      closeModal();
+      state.workReportView = d.workReport.id;
+      render();
+    } catch(e) { showToast(e.message, 'err'); }
+  });
+
+  const saveSnrBtn = document.getElementById('saveSnrBtn');
+  if (saveSnrBtn) saveSnrBtn.addEventListener('click', async () => {
+    const joId = document.getElementById('snr_joId')?.value;
+    if (!joId) { showToast('Please select a Job Order.', 'err'); return; }
+    if (!document.getElementById('snr_subject')?.value?.trim()) { showToast('Subject is required.', 'err'); return; }
+    const fd = new FormData();
+    fd.append('jobOrderId',  joId);
+    fd.append('subject',     document.getElementById('snr_subject')?.value || '');
+    fd.append('workType',    document.getElementById('snr_workType')?.value || '');
+    fd.append('location',    document.getElementById('snr_location')?.value || '');
+    fd.append('date',        document.getElementById('snr_date')?.value || '');
+    fd.append('time',        document.getElementById('snr_time')?.value || '');
+    fd.append('description', document.getElementById('snr_desc')?.value || '');
+    fd.append('technicianName', document.getElementById('snr_tech')?.value || '');
+    fd.append('status',      document.getElementById('snr_status')?.value || 'Completed');
+    fd.append('forClient',   document.getElementById('snr_forClient')?.value || 'false');
+    const photo = document.getElementById('snr_photo')?.files[0];
+    if (photo) fd.append('servicePhoto', photo);
+    try {
+      const r = await fetch('/api/work-reports/snr', { method:'POST', headers:{'Authorization':`Bearer ${authToken}`}, body:fd });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error);
+      await loadAll();
+      showToast('Service Notification submitted.', 'ok');
+      closeModal();
+      state.workReportView = d.workReport.id;
+      render();
+    } catch(e) { showToast(e.message, 'err'); }
+  });
   if (newFmClBtn) newFmClBtn.addEventListener('click', () => openModal('fmChecklist', {}));
 
   document.querySelectorAll('[data-view-fm-cl]').forEach(b => b.addEventListener('click', e => {

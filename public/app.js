@@ -3134,51 +3134,33 @@ function userPickerHtml(fieldId, currentName, currentDesig, label) {
   const isSA = state.user?.role === 'Super Admin';
   if (!isSA) {
     return `<div class="field"><label>${label}</label>
-      <input value="${currentName||state.user?.name||''}" disabled style="background:#f5f5f5;color:#888;">
+      <div style="padding:8px 10px;background:#f5f5f5;border:1px solid var(--rule);border-radius:7px;font-size:13px;color:#888;">${currentName||state.user?.name||'—'}</div>
     </div>`;
   }
   const users = (state.users||[]).filter(u => u.active !== false);
   return `<div class="field"><label>${label}</label>
-    <select id="${fieldId}" onchange="onUserPickerChange('${fieldId}')">
+    <select id="${fieldId}_pick" onchange="
+      var opt=this.options[this.selectedIndex];
+      document.getElementById('${fieldId}_name').value=opt.dataset.name||'';
+      document.getElementById('${fieldId}_desig').value=opt.dataset.desig||'';
+    ">
       <option value="">— Select User —</option>
-      ${users.map(u=>`<option value="${u.id}" data-name="${u.name}" data-desig="${u.designation||''}" ${(currentName===u.name)?'selected':''}>${u.name}${u.designation?' — '+u.designation:''}</option>`).join('')}
-      <option value="__custom__">✏️ Type manually...</option>
+      ${users.map(u=>`<option value="${u.id}" data-name="${u.name}" data-desig="${u.designation||''}" ${currentName===u.name?'selected':''}>${u.name}${u.designation?' — '+u.designation:''}</option>`).join('')}
     </select>
-    <div id="${fieldId}_custom" style="display:none;margin-top:4px;">
-      <input id="${fieldId}_name" placeholder="Name" style="margin-bottom:4px;" value="${currentName||''}">
-      <input id="${fieldId}_desig" placeholder="Designation" value="${currentDesig||''}">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px;">
+      <input id="${fieldId}_name" placeholder="Name" value="${currentName||''}" style="font-size:12px;">
+      <input id="${fieldId}_desig" placeholder="Designation" value="${currentDesig||''}" style="font-size:12px;">
     </div>
   </div>`;
-}
-
-function onUserPickerChange(fieldId) {
-  const sel  = document.getElementById(fieldId);
-  const box  = document.getElementById(fieldId + '_custom');
-  if (!sel || !box) return;
-  if (sel.value === '__custom__') {
-    box.style.display = '';
-  } else {
-    box.style.display = 'none';
-    const opt  = sel.options[sel.selectedIndex];
-    const name = opt?.dataset?.name || '';
-    const desig= opt?.dataset?.desig || '';
-    const nameEl = document.getElementById(fieldId + '_name');
-    const desigEl= document.getElementById(fieldId + '_desig');
-    if (nameEl) nameEl.value  = name;
-    if (desigEl) desigEl.value = desig;
-  }
 }
 
 function getUserPickerValue(fieldId) {
   const nameEl  = document.getElementById(fieldId + '_name');
   const desigEl = document.getElementById(fieldId + '_desig');
-  const sel     = document.getElementById(fieldId);
-  if (!sel) return { name: '', designation: '' };
-  if (sel.value === '__custom__' || sel.value === '') {
-    return { name: nameEl?.value?.trim()||'', designation: desigEl?.value?.trim()||'' };
-  }
-  const opt = sel.options[sel.selectedIndex];
-  return { name: opt?.dataset?.name||'', designation: opt?.dataset?.desig||'' };
+  return {
+    name:        nameEl?.value?.trim()  || '',
+    designation: desigEl?.value?.trim() || '',
+  };
 }
 
 function renderQuoteForm(payload) {

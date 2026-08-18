@@ -520,6 +520,7 @@ tr:hover td{background:#FAFCFC;}
   margin-bottom: 16px;
 }
 @media(max-width:900px){.client-360-kpis{grid-template-columns:repeat(3,1fr);}}
+@media(max-width:600px){.client-360-kpis{grid-template-columns:repeat(2,1fr);}}
 
 .c360-kpi {
   background: #fff;
@@ -539,6 +540,7 @@ tr:hover td{background:#FAFCFC;}
   margin-bottom: 16px;
 }
 @media(max-width:900px){.client-360-charts{grid-template-columns:1fr 1fr;}}
+@media(max-width:600px){.client-360-charts{grid-template-columns:1fr;}}
 
 /* ═══ FM Checklist Styles ════════════════════════════════════════ */
 .fm-cl-title-bar {

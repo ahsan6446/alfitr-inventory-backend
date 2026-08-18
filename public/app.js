@@ -1917,36 +1917,37 @@ function renderClient360(clientId) {
     </div>
   </div>
 
-  <!-- KPI strip -->
+  <!-- KPI strip — each card jumps to its client-scoped section below, not a global list -->
   <div class="client-360-kpis">
-    <div class="c360-kpi" style="border-top:3px solid ${ORANGE};">
+    <div class="c360-kpi" style="border-top:3px solid ${ORANGE};cursor:pointer;" onclick="document.getElementById('c360-sec-quotations').scrollIntoView({behavior:'smooth',block:'start'})">
       <div class="c360-kpi-num" style="color:${ORANGE}">${quotes.length}</div>
       <div class="c360-kpi-lbl">Quotations</div>
       <div class="c360-kpi-sub">${quotes.filter(q=>q.status==='Accepted').length} accepted · ${quotes.filter(q=>q.status==='Declined').length} declined</div>
     </div>
-    <div class="c360-kpi" style="border-top:3px solid ${NAVY};">
+    <div class="c360-kpi" style="border-top:3px solid ${NAVY};cursor:pointer;" onclick="document.getElementById('c360-sec-joborders').scrollIntoView({behavior:'smooth',block:'start'})">
       <div class="c360-kpi-num" style="color:${NAVY}">${jos.length}</div>
       <div class="c360-kpi-lbl">Job Orders</div>
       <div class="c360-kpi-sub">${jos.filter(j=>j.status==='Open'||j.status==='In Process').length} active</div>
     </div>
-    <div class="c360-kpi" style="border-top:3px solid ${TEAL};">
+    <div class="c360-kpi" style="border-top:3px solid ${TEAL};cursor:pointer;" onclick="document.getElementById('c360-sec-dns').scrollIntoView({behavior:'smooth',block:'start'})">
       <div class="c360-kpi-num" style="color:${TEAL}">${dns.length}</div>
       <div class="c360-kpi-lbl">Delivery Notes</div>
       <div class="c360-kpi-sub">${issuedDns} issued · ${dns.length-issuedDns} draft</div>
     </div>
-    <div class="c360-kpi" style="border-top:3px solid #7F77DD;">
+    <div class="c360-kpi" style="border-top:3px solid #7F77DD;cursor:pointer;" onclick="document.getElementById('c360-sec-materialrequests').scrollIntoView({behavior:'smooth',block:'start'})">
       <div class="c360-kpi-num" style="color:#7F77DD">${mrs.length}</div>
       <div class="c360-kpi-lbl">Material Requests</div>
       <div class="c360-kpi-sub">${mrs.filter(m=>computeMrStatus(m)==='Fulfilled').length} fulfilled</div>
     </div>
-    <div class="c360-kpi" style="border-top:3px solid ${openDel>0?RED:'#e5e7eb'};">
+    <div class="c360-kpi" style="border-top:3px solid ${openDel>0?RED:'#e5e7eb'};cursor:pointer;" onclick="document.getElementById('c360-sec-delayreports').scrollIntoView({behavior:'smooth',block:'start'})">
       <div class="c360-kpi-num" style="color:${openDel>0?RED:'#aaa'}">${openDel}</div>
       <div class="c360-kpi-lbl">Open Delays</div>
       <div class="c360-kpi-sub">${drs.length} reports total</div>
     </div>
   </div>
 
-  <!-- Charts row -->
+  <!-- Charts row — clicking a segment jumps to the matching client-scoped section below,
+       instead of navigating to the global list (which would mix in every other client's data) -->
   <div class="client-360-charts">
     <div class="dash-chart-card">
       <div class="dash-chart-title">Quotation Status</div>
@@ -1955,7 +1956,7 @@ function renderClient360(clientId) {
           [quotes.filter(q=>q.status==='Draft').length, quotes.filter(q=>q.status==='Sent'||q.status==='PendingApproval').length, quotes.filter(q=>q.status==='Accepted').length, quotes.filter(q=>q.status==='Declined').length],
           ['#aaa', ORANGE, TEAL, RED], 90,
           ['Draft', 'Pending/Sent', 'Accepted', 'Declined'],
-          ["goFiltered('quotations','quoteFilter','Draft')", "goFiltered('quotations','quoteFilter','Sent')", "goFiltered('quotations','quoteFilter','Accepted')", "goFiltered('quotations','quoteFilter','Declined')"]
+          Array(4).fill("document.getElementById('c360-sec-quotations').scrollIntoView({behavior:'smooth',block:'start'})")
         )}
         <div style="font-size:11px;line-height:2;">
           <div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#aaa;margin-right:5px;"></span>Draft (${quotes.filter(q=>q.status==='Draft').length})</div>
@@ -1972,7 +1973,7 @@ function renderClient360(clientId) {
           [jos.filter(j=>j.status==='Open').length, jos.filter(j=>j.status==='In Process').length, jos.filter(j=>j.status==='Resolved').length],
           [ORANGE, NAVY, TEAL], 90,
           ['Open', 'In Process', 'Resolved'],
-          ["goFiltered('jobOrders','joFilter','Open')", "goFiltered('jobOrders','joFilter','In Process')", "goFiltered('jobOrders','joFilter','Resolved')"]
+          Array(3).fill("document.getElementById('c360-sec-joborders').scrollIntoView({behavior:'smooth',block:'start'})")
         )}
         <div style="font-size:11px;line-height:2;">
           <div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${ORANGE};margin-right:5px;"></span>Open (${jos.filter(j=>j.status==='Open').length})</div>
@@ -1984,7 +1985,7 @@ function renderClient360(clientId) {
     <div class="dash-chart-card">
       <div class="dash-chart-title">Delivery Notes</div>
       <div style="display:flex;align-items:center;gap:14px;margin-top:10px;">
-        ${miniDonut([issuedDns, dns.length-issuedDns], [TEAL, '#e5e7eb'], 90, ['Issued', 'Draft'], ["goFiltered('dns','dnFilter','Issued')", "goFiltered('dns','dnFilter','Draft')"])}
+        ${miniDonut([issuedDns, dns.length-issuedDns], [TEAL, '#e5e7eb'], 90, ['Issued', 'Draft'], Array(2).fill("document.getElementById('c360-sec-dns').scrollIntoView({behavior:'smooth',block:'start'})"))}
         <div style="font-size:11px;line-height:2;">
           <div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${TEAL};margin-right:5px;"></span>Issued (${issuedDns})</div>
           <div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#e5e7eb;margin-right:5px;"></span>Draft (${dns.length-issuedDns})</div>
@@ -1994,9 +1995,9 @@ function renderClient360(clientId) {
   </div>
 
   <!-- Data Tables -->
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">
+  <div class="grid2" style="margin-bottom:14px;">
     <!-- Job Orders -->
-    <div class="card">
+    <div class="card" id="c360-sec-joborders">
       <div class="card-head"><div class="card-title">Job Orders</div></div>
       ${jos.length===0?`<div class="empty">No job orders yet.</div>`:`
       <div class="tbl-wrap"><table>
@@ -2009,7 +2010,7 @@ function renderClient360(clientId) {
       </table></div>`}
     </div>
     <!-- Quotations -->
-    <div class="card">
+    <div class="card" id="c360-sec-quotations">
       <div class="card-head"><div class="card-title">Quotations</div></div>
       ${quotes.length===0?`<div class="empty">No quotations yet.</div>`:`
       <div class="tbl-wrap"><table>
@@ -2023,9 +2024,9 @@ function renderClient360(clientId) {
     </div>
   </div>
 
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+  <div class="grid2" style="margin-bottom:14px;">
     <!-- Delivery Notes -->
-    <div class="card">
+    <div class="card" id="c360-sec-dns">
       <div class="card-head"><div class="card-title">Delivery Notes</div></div>
       ${dns.length===0?`<div class="empty">No delivery notes yet.</div>`:`
       <div class="tbl-wrap"><table>
@@ -2038,7 +2039,7 @@ function renderClient360(clientId) {
       </table></div>`}
     </div>
     <!-- Delay Reports -->
-    <div class="card">
+    <div class="card" id="c360-sec-delayreports">
       <div class="card-head"><div class="card-title">Delay Reports</div></div>
       ${drs.length===0?`<div class="empty">No delay reports yet.</div>`:`
       <div class="tbl-wrap"><table>
@@ -2050,6 +2051,21 @@ function renderClient360(clientId) {
         </tr>`).join('')}</tbody>
       </table></div>`}
     </div>
+  </div>
+
+  <!-- Material Requests — new section, previously had a KPI card but nowhere to click through to -->
+  <div class="card" id="c360-sec-materialrequests">
+    <div class="card-head"><div class="card-title">Material Requests</div></div>
+    ${mrs.length===0?`<div class="empty">No material requests yet.</div>`:`
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>MR No.</th><th>Job Order</th><th>Lines</th><th>Status</th></tr></thead>
+      <tbody>${mrs.map(m=>`<tr>
+        <td style="font-family:var(--mono);color:#E8520A;font-weight:700;">${m.mrNumber}</td>
+        <td style="font-size:12px;font-family:var(--mono);">${m.jobOrderNumber||'—'}</td>
+        <td style="font-size:12px;">${(m.lineItems||[]).length}</td>
+        <td>${mrStatusBadge(computeMrStatus(m))}</td>
+      </tr>`).join('')}</tbody>
+    </table></div>`}
   </div>`;
 }
 

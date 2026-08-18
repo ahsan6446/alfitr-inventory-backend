@@ -3470,7 +3470,8 @@ function attachHandlers() {
       render();
     } catch(e) { showToast(e.message, 'err'); }
   });
-  if (addClientBtn) addClientBtn.addEventListener('click', () => openModal('client', {}));
+
+  const addClientBtn = document.getElementById('addClientBtn');
   document.querySelectorAll('[data-view-client]').forEach(b => b.addEventListener('click', e => {
     state.clientView = e.currentTarget.getAttribute('data-view-client');
     render();

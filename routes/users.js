@@ -99,3 +99,33 @@ router.put('/roles/:role', requirePermission('manageUsers'), async (req, res) =>
 });
 
 module.exports = router;
+
+// Seed missing default roles (Supervisor, Technician, Coordinator)
+router.post('/roles/seed', requirePermission('manageUsers'), async (req, res) => {
+  const state = db.get();
+  const { DEFAULT_PERMS } = require('../lib/permissions');
+  let added = [];
+  for (const [role, perms] of Object.entries(DEFAULT_PERMS)) {
+    if (!state.roles[role]) {
+      state.roles[role] = { ...perms };
+      added.push(role);
+    }
+  }
+  if (added.length) await db.persist();
+  res.json({ added, roles: state.roles });
+});
+
+// Create new custom role
+router.post('/roles', requirePermission('manageUsers'), async (req, res) => {
+  const state = db.get();
+  const { name } = req.body || {};
+  if (!name || !name.trim()) return res.status(400).json({ error: 'Role name is required.' });
+  const roleName = name.trim();
+  if (state.roles[roleName]) return res.status(400).json({ error: `Role "${roleName}" already exists.` });
+  const { DEFAULT_PERMS } = require('../lib/permissions');
+  state.roles[roleName] = { ...DEFAULT_PERMS['Viewer'] };
+  await db.persist();
+  res.status(201).json({ roleName, role: state.roles[roleName] });
+});
+
+module.exports = router;

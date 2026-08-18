@@ -3548,8 +3548,13 @@ function renderQuotationSettings() {
 function renderUsersRolesSettings() {
   return `
   <div class="card">
-    <div class="card-head"><div class="card-title">Users <span>${state.users.length} user(s)</span></div>
-      <button class="btn btn-primary btn-sm" id="addUserBtn">+ Add User</button></div>
+    <div class="card-head">
+      <div class="card-title">Users <span>${state.users.length} user(s)</span></div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-ghost btn-sm" id="seedRolesBtn">+ Add Default Roles</button>
+        <button class="btn btn-primary btn-sm" id="addUserBtn">+ Add User</button>
+      </div>
+    </div>
     <div class="tbl-wrap"><table>
       <thead><tr><th>Name</th><th>Designation</th><th>Username</th><th>Role</th><th>Active</th><th></th></tr></thead>
       <tbody>
@@ -5786,6 +5791,16 @@ function attachSettingsHandlers() {
   document.querySelectorAll('[data-del-unit]').forEach(b => b.addEventListener('click', async e => {
     try { await api('DELETE', '/api/meta/units/' + encodeURIComponent(e.currentTarget.getAttribute('data-del-unit'))); await loadAll(); render(); } catch (err) { showToast(err.message, 'err'); }
   }));
+
+  const seedRolesBtn = document.getElementById('seedRolesBtn');
+  if (seedRolesBtn) seedRolesBtn.addEventListener('click', async () => {
+    try {
+      const res = await api('POST', '/api/users/roles/seed', {});
+      await loadAll();
+      showToast(`Added roles: ${res.added.length > 0 ? res.added.join(', ') : 'None new (all already exist)'}`, 'ok');
+      render();
+    } catch(e) { showToast(e.message, 'err'); }
+  });
 
   const addUserBtn = document.getElementById('addUserBtn');
   if (addUserBtn) addUserBtn.addEventListener('click', () => {

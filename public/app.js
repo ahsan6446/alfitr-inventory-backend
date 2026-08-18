@@ -1236,7 +1236,6 @@ function renderWorkReportDetail(id) {
         ${task.materials?`<div style="grid-column:span 2;"><div class="k muted">Materials Used</div><div>${task.materials}</div></div>`:''}
       </div>
       ${task.description?`<div style="margin-bottom:12px;"><div class="k muted">Work Description</div><div style="font-size:13px;line-height:1.6;">${task.description}</div></div>`:''}
-      <!-- Before / After Photos -->
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
         <div>
           <div style="font-size:11px;font-weight:700;color:#dc2626;text-transform:uppercase;margin-bottom:6px;">📷 Before</div>
@@ -1253,17 +1252,42 @@ function renderWorkReportDetail(id) {
       </div>
     </div>
   </div>`).join('')}` : `
-  <!-- SNR Detail -->
-  <div class="card" style="margin-bottom:14px;">
-    <div class="card-head"><div class="card-title">${wr.subject||'Service Notification'}</div></div>
+  <!-- SNR Full Detail -->
+  <div class="card" style="margin-bottom:12px;">
+    <div class="card-head"><div class="card-title">${wr.subject||'Service Notification'}</div>
+      <span class="badge ${wr.status==='Completed'?'badge-issued':'badge-low'}">${wr.status}</span>
+    </div>
     <div class="card-body">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:12px;">
         <div><div class="k muted">Work Type</div><div>${wr.workType||'—'}</div></div>
+        <div><div class="k muted">Location</div><div>${wr.location||'—'}</div></div>
         <div><div class="k muted">Time</div><div>${wr.time||'—'}</div></div>
       </div>
-      ${wr.description?`<div style="margin-bottom:14px;"><div class="k muted">Description</div><div style="font-size:13px;line-height:1.6;">${wr.description}</div></div>`:''}
-      ${wr.photoUrl?`<div><div style="font-size:11px;font-weight:700;color:#E8520A;text-transform:uppercase;margin-bottom:6px;">📷 Photo</div>
-        <img src="${wr.photoUrl}" style="max-width:100%;max-height:300px;object-fit:contain;border-radius:8px;border:1px solid var(--rule);" alt="Photo"></div>`:''}
+      ${wr.description?`<div style="margin-bottom:14px;"><div class="k muted">Description</div>
+        <div style="font-size:13px;line-height:1.6;background:#f8f9fa;border-radius:6px;padding:10px;border-left:3px solid #E8520A;">${wr.description}</div>
+      </div>`:''}
+      ${wr.photoUrl?`<div>
+        <div style="font-size:11px;font-weight:700;color:#E8520A;text-transform:uppercase;margin-bottom:8px;">📷 Photo</div>
+        <img src="${wr.photoUrl}" style="max-width:100%;max-height:400px;object-fit:contain;border-radius:10px;border:2px solid #e5e7eb;" alt="Photo">
+      </div>`:`<div style="height:140px;background:#f5f5f5;border:2px dashed #e5e7eb;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:12px;color:#aaa;">No photo attached</div>`}
+    </div>
+  </div>
+  <!-- SNR Signatures -->
+  <div class="card" style="margin-bottom:12px;">
+    <div class="card-head"><div class="card-title">Sign-Off</div></div>
+    <div class="card-body">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+        <div>
+          <div style="border-bottom:1px solid #555;height:30px;margin-bottom:6px;"></div>
+          <div style="font-size:13px;font-weight:700;">${wr.technicianName||'—'}</div>
+          <div style="font-size:11px;color:#1D9E75;">Prepared By — Al Fitr</div>
+        </div>
+        <div>
+          <div style="border-bottom:1px solid #555;height:30px;margin-bottom:6px;"></div>
+          <div style="font-size:13px;font-weight:700;">${wr.receivedBy||'Client Representative'}</div>
+          <div style="font-size:11px;color:#1D9E75;">Received By — Signature & Date</div>
+        </div>
+      </div>
     </div>
   </div>`}
   `;
@@ -4156,6 +4180,9 @@ function attachHandlers() {
       render();
     } catch(e) { showToast(e.message, 'err'); }
   });
+
+  // FM Checklists
+  const newFmClBtn = document.getElementById('newFmChecklistBtn');
   if (newFmClBtn) newFmClBtn.addEventListener('click', () => openModal('fmChecklist', {}));
 
   document.querySelectorAll('[data-view-fm-cl]').forEach(b => b.addEventListener('click', e => {

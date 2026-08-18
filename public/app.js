@@ -50,6 +50,7 @@ async function apiDownload(path) {
 /* ---------------- state ---------------- */
 const state = {
   tab: 'dashboard', branch: 'All', search: '', invFilter: 'All', exportIncludePricing: true, drFilter: 'All',
+  fmChecklists: [], fmTemplates: [], fmChecklistView: null,
   user: null, permissions: {}, company: {}, branches: [], brands: [], units: [],
   items: [], movements: [], clients: [], dns: [], users: [], roles: {}, permLabels: [],
   loaded: false, modal: null, toast: null,
@@ -166,7 +167,7 @@ async function loadAll() {
   const me = await api('GET', '/api/auth/me');
   state.user = me.user; state.permissions = me.permissions;
 
-  const [company, branchesR, brandsR, unitsR, itemsR, movementsR, clientsR, dnsR, quotCatR, exclR, quotesR, joR, mrR, vendR, prR, poR, drR] = await Promise.all([
+  const [company, branchesR, brandsR, unitsR, itemsR, movementsR, clientsR, dnsR, quotCatR, exclR, quotesR, joR, mrR, vendR, prR, poR, drR, fmClR, fmTplR] = await Promise.all([
     api('GET', '/api/company'),
     api('GET', '/api/meta/branches'),
     api('GET', '/api/meta/brands'),
@@ -184,6 +185,8 @@ async function loadAll() {
     api('GET', '/api/purchase-requests'),
     api('GET', '/api/purchase-orders'),
     api('GET', '/api/delay-reports'),
+    api('GET', '/api/fm-checklists'),
+    api('GET', '/api/fm-checklists/templates'),
   ]);
   state.company = company.company; state.nextDnPreview = company.nextDnPreview; state.nextQuotationCounter = company.nextQuotationCounter;
   if (state.company.name) document.title = state.company.name;
@@ -193,6 +196,8 @@ async function loadAll() {
   state.quotations = quotesR.quotations; state.jobOrders = joR.jobOrders; state.materialRequests = mrR.materialRequests;
   state.vendors = vendR.vendors; state.purchaseRequests = prR.purchaseRequests; state.purchaseOrders = poR.purchaseOrders;
   state.delayReports = drR.delayReports;
+  state.fmChecklists = fmClR.checklists || [];
+  state.fmTemplates  = fmTplR.templates  || [];
 
   if (can('manageUsers')) {
     const [usersR, rolesR] = await Promise.all([api('GET', '/api/users'), api('GET', '/api/users/roles/all')]);
@@ -235,7 +240,7 @@ function currentFilterSummary() {
 function shouldExportPricing() { return can('viewPricing') && can('exportPricing') && !!state.exportIncludePricing; }
 
 /* ---------------- render shell ---------------- */
-function setTab(t) { state.tab = t; state.modal = null; state.clientView = null; render(); }
+function setTab(t) { state.tab = t; state.modal = null; state.clientView = null; state.fmChecklistView = null; render(); }
 
 // Navigate to a tab with a pre-applied filter
 function goFiltered(tab, filterKey, filterVal) {
@@ -360,6 +365,8 @@ function renderSidebar() {
     clients:          'sales',
     materialRequests: 'projects',
     delayReports:     'projects',
+    fmChecklists:     'fm',
+    fmIncidents:      'fm',
     procurement:      'procurement',
     vendors:          'procurement',
     settings:         'settings',
@@ -422,6 +429,11 @@ function renderSidebar() {
         ['delayReports',     'Delay Reports'],
       ])}
 
+      ${navGroup('fm', '🏢', 'FM Services', [
+        ['fmChecklists', 'Daily Checklists'],
+        ['fmIncidents',  'Incident Reports'],
+      ])}
+
       ${navGroup('procurement', '🛒', 'Procurement', [
         ['procurement', 'Purchase Requests & POs'],
         ['vendors',     'Vendors'],
@@ -479,7 +491,8 @@ function renderPage() {
   if (state.tab === 'procurement') return renderProcurement();
   if (state.tab === 'vendors') return renderVendors();
   if (state.tab === 'delayReports') return renderDelayReports();
-  if (state.tab === 'clients') return state.clientView ? renderClient360(state.clientView) : renderClients();
+  if (state.tab === 'fmChecklists') return state.fmChecklistView ? renderFmChecklistDetail(state.fmChecklistView) : renderFmChecklists();
+  if (state.tab === 'fmIncidents')  return renderFmIncidents();
   if (state.tab === 'settings') return renderSettings();
   return '';
 }
@@ -901,6 +914,244 @@ function renderDns() {
 }
 
 /* ---------------- Clients ---------------- */
+/* ════════════════════════════════════════════════════════════════
+   FM MODULE — Daily Checklists
+════════════════════════════════════════════════════════════════ */
+function renderFmChecklists() {
+  const list = [...state.fmChecklists].sort((a,b) => b.createdAt - a.createdAt);
+  return `
+  <div class="toolbar">
+    <div style="font-size:13px;color:var(--ink-soft);">${list.length} checklist${list.length!==1?'s':''} total</div>
+    ${can('manageReports') ? `<button class="btn btn-primary" id="newFmChecklistBtn">+ New Checklist</button>` : ''}
+  </div>
+  ${list.length === 0 ? `<div class="card"><div class="empty"><div class="big">✅</div>No checklists yet.</div></div>` : `
+  <div class="card">
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Ref No.</th><th>Template</th><th>Category</th><th>Client</th><th>Project</th><th>Month</th><th>Technician</th><th>Status</th><th>Progress</th><th></th></tr></thead>
+      <tbody>${list.map(cl => {
+        const total = cl.items.length;
+        const done  = cl.items.filter(i => i.status !== null).length;
+        const fails = cl.items.filter(i => i.status === 'fail').length;
+        const pct   = total ? Math.round((done/total)*100) : 0;
+        return `<tr>
+          <td style="font-family:var(--mono);color:#E8520A;font-weight:700;font-size:12px;">${cl.refNumber}</td>
+          <td style="font-size:12px;">${cl.templateName}</td>
+          <td><span class="badge badge-draft" style="font-size:10px;">${cl.category}</span></td>
+          <td style="font-size:12px;">${cl.clientCompany||'—'}</td>
+          <td style="font-size:12px;">${cl.projectName||'—'}</td>
+          <td style="font-size:12px;">${cl.month||'—'}</td>
+          <td style="font-size:12px;">${cl.technicianName||'—'}</td>
+          <td><span class="badge ${cl.status==='Submitted'?'badge-issued':'badge-draft'}">${cl.status}</span></td>
+          <td>
+            <div style="display:flex;align-items:center;gap:6px;">
+              <div style="flex:1;background:#e5e7eb;border-radius:4px;height:6px;min-width:60px;">
+                <div style="background:${fails>0?'#dc2626':'#1D9E75'};width:${pct}%;height:6px;border-radius:4px;"></div>
+              </div>
+              <span style="font-size:11px;color:var(--ink-soft);">${done}/${total}</span>
+              ${fails>0?`<span style="font-size:11px;color:#dc2626;font-weight:600;">${fails} FAIL</span>`:''}
+            </div>
+          </td>
+          <td><button class="btn btn-outline btn-sm" data-view-fm-cl="${cl.id}">Open</button></td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table></div>
+  </div>`}
+  `;
+}
+
+function renderFmChecklistDetail(id) {
+  const cl = state.fmChecklists.find(c => c.id === id);
+  if (!cl) return '<div class="empty">Checklist not found.</div>';
+  const total  = cl.items.length;
+  const okCnt  = cl.items.filter(i => i.status === 'ok').length;
+  const failCnt= cl.items.filter(i => i.status === 'fail').length;
+  const naCnt  = cl.items.filter(i => i.status === 'na').length;
+  const pct    = total ? Math.round(((okCnt+naCnt)/total)*100) : 0;
+  return `
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px;flex-wrap:wrap;">
+    <button class="btn btn-ghost btn-sm" onclick="state.fmChecklistView=null;render()">← Back</button>
+    <div style="flex:1;font-size:15px;font-weight:700;color:var(--ink);">${cl.templateName}</div>
+    <span class="badge ${cl.status==='Submitted'?'badge-issued':'badge-draft'}">${cl.status}</span>
+    ${cl.status==='Draft'&&can('manageReports') ? `<button class="btn btn-primary btn-sm" id="submitFmClBtn" data-id="${cl.id}">Submit Report</button>` : ''}
+    <button class="btn btn-teal btn-sm" id="printFmClBtn" data-id="${cl.id}">🖨 Print PDF</button>
+  </div>
+  <div class="card" style="margin-bottom:14px;">
+    <div class="card-head"><div class="card-title">Checklist Details</div></div>
+    <div class="card-body">
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;">
+        <div><div class="k muted">Ref No.</div><div style="font-family:var(--mono);color:#E8520A;font-weight:700;">${cl.refNumber}</div></div>
+        <div><div class="k muted">Client</div><div>${cl.clientCompany||'—'}</div></div>
+        <div><div class="k muted">Project</div><div>${cl.projectName||'—'}</div></div>
+        <div><div class="k muted">Job Order</div><div style="font-family:var(--mono);">${cl.jobOrderNumber||'—'}</div></div>
+        <div><div class="k muted">Location</div><div>${cl.location||'—'} ${cl.building?'· '+cl.building:''}</div></div>
+        <div><div class="k muted">Month</div><div>${cl.month||'—'}</div></div>
+        <div><div class="k muted">Technician</div><div>${cl.technicianName||'—'}</div></div>
+        <div><div class="k muted">Supervisor</div><div>${cl.supervisorName||'—'}</div></div>
+        <div><div class="k muted">Category</div><div>${cl.category||'—'}</div></div>
+      </div>
+    </div>
+  </div>
+  <div class="card" style="margin-bottom:14px;">
+    <div class="card-body" style="padding:14px 16px;">
+      <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+        <div style="flex:1;background:#e5e7eb;border-radius:6px;height:10px;min-width:100px;">
+          <div style="background:${failCnt>0?'#dc2626':'#1D9E75'};width:${pct}%;height:10px;border-radius:6px;"></div>
+        </div>
+        <span style="font-size:13px;font-weight:600;">${pct}% complete</span>
+        <span style="font-size:12px;color:#1D9E75;font-weight:600;">✓ ${okCnt} OK</span>
+        <span style="font-size:12px;color:#dc2626;font-weight:600;">✗ ${failCnt} FAIL</span>
+        <span style="font-size:12px;color:#888;font-weight:600;">— ${naCnt} N/A</span>
+        <span style="font-size:12px;color:#aaa;">${total-(okCnt+failCnt+naCnt)} pending</span>
+      </div>
+    </div>
+  </div>
+  <div class="card" style="margin-bottom:14px;">
+    <div class="card-head"><div class="card-title">Checklist Items</div></div>
+    <div style="overflow-x:auto;">
+      <table style="width:100%;border-collapse:collapse;">
+        <thead><tr style="background:#f5f5f5;">
+          <th style="padding:10px 12px;text-align:left;font-size:11px;color:#555;font-weight:700;border-bottom:2px solid #e5e7eb;width:36px;">#</th>
+          <th style="padding:10px 12px;text-align:left;font-size:11px;color:#555;font-weight:700;border-bottom:2px solid #e5e7eb;">Description</th>
+          <th style="padding:10px 12px;text-align:center;font-size:11px;color:#555;font-weight:700;border-bottom:2px solid #e5e7eb;width:80px;">Freq.</th>
+          <th style="padding:10px 8px;text-align:center;font-size:11px;color:#1D9E75;font-weight:700;border-bottom:2px solid #e5e7eb;width:70px;">✓ OK</th>
+          <th style="padding:10px 8px;text-align:center;font-size:11px;color:#dc2626;font-weight:700;border-bottom:2px solid #e5e7eb;width:70px;">✗ FAIL</th>
+          <th style="padding:10px 8px;text-align:center;font-size:11px;color:#888;font-weight:700;border-bottom:2px solid #e5e7eb;width:70px;">— N/A</th>
+          <th style="padding:10px 12px;text-align:left;font-size:11px;color:#555;font-weight:700;border-bottom:2px solid #e5e7eb;">Remarks</th>
+        </tr></thead>
+        <tbody>${cl.items.map((item) => `
+          <tr style="border-bottom:1px solid #f0f0f0;${item.status==='fail'?'background:#fff5f5;':item.status==='ok'?'background:#f0faf5;':''}">
+            <td style="padding:10px 12px;font-size:12px;color:#888;font-weight:600;">${item.id}</td>
+            <td style="padding:10px 12px;font-size:13px;color:#0B2B36;">${item.description}</td>
+            <td style="padding:10px 12px;text-align:center;font-size:11px;color:#888;">${item.frequency||'Daily'}</td>
+            <td style="padding:8px;text-align:center;">
+              <button onclick="fmSetItemStatus('${cl.id}','${item.id}','ok')" style="width:36px;height:36px;border-radius:8px;border:2px solid ${item.status==='ok'?'#1D9E75':'#e5e7eb'};background:${item.status==='ok'?'#1D9E75':'#fff'};color:${item.status==='ok'?'#fff':'#aaa'};font-size:16px;cursor:pointer;transition:all .15s;">✓</button>
+            </td>
+            <td style="padding:8px;text-align:center;">
+              <button onclick="fmSetItemStatus('${cl.id}','${item.id}','fail')" style="width:36px;height:36px;border-radius:8px;border:2px solid ${item.status==='fail'?'#dc2626':'#e5e7eb'};background:${item.status==='fail'?'#dc2626':'#fff'};color:${item.status==='fail'?'#fff':'#aaa'};font-size:16px;cursor:pointer;transition:all .15s;">✗</button>
+            </td>
+            <td style="padding:8px;text-align:center;">
+              <button onclick="fmSetItemStatus('${cl.id}','${item.id}','na')" style="width:36px;height:36px;border-radius:8px;border:2px solid ${item.status==='na'?'#888':'#e5e7eb'};background:${item.status==='na'?'#888':'#fff'};color:${item.status==='na'?'#fff':'#aaa'};font-size:14px;cursor:pointer;font-weight:600;transition:all .15s;">N/A</button>
+            </td>
+            <td style="padding:8px 12px;">
+              <input type="text" placeholder="Remarks..." value="${item.remarks||''}"
+                onchange="fmSetItemRemarks('${cl.id}','${item.id}',this.value)"
+                style="width:100%;padding:6px 8px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;color:#0B2B36;">
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title">Abnormality Log</div>
+      ${cl.status==='Draft'?`<button class="btn btn-ghost btn-sm" id="addAbnBtn" data-id="${cl.id}">+ Add Entry</button>`:''}
+    </div>
+    ${cl.abnormalities.length===0?`<div class="empty" style="padding:20px;">No abnormalities recorded.</div>`:`
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Date</th><th>Abnormality</th><th>Action Taken</th><th>Status</th><th>Done By</th></tr></thead>
+      <tbody>${cl.abnormalities.map(a=>`<tr>
+        <td style="font-size:12px;">${a.date||'—'}</td>
+        <td style="font-size:12px;">${a.abnormality||'—'}</td>
+        <td style="font-size:12px;">${a.actionTaken||'—'}</td>
+        <td><span class="badge ${a.status==='Resolved'?'badge-issued':'badge-low'}">${a.status||'Open'}</span></td>
+        <td style="font-size:12px;">${a.doneBy||'—'}</td>
+      </tr>`).join('')}
+      </tbody>
+    </table></div>`}
+  </div>`;
+}
+
+function renderFmIncidents() {
+  return `
+  <div class="toolbar">
+    <div style="font-size:13px;color:var(--ink-soft);">Incident Reports — Coming Soon</div>
+  </div>
+  <div class="card"><div class="empty"><div class="big">🚨</div>Incident Report module coming soon.</div></div>`;
+}
+
+async function fmSetItemStatus(clId, itemId, status) {
+  const cl = state.fmChecklists.find(c => c.id === clId);
+  if (!cl) return;
+  const item = cl.items.find(i => String(i.id) === String(itemId));
+  if (!item) return;
+  item.status = item.status === status ? null : status;
+  render();
+  try { await api('PUT', '/api/fm-checklists/' + clId, { items: cl.items }); }
+  catch(e) { showToast('Save failed: ' + e.message, 'err'); }
+}
+
+async function fmSetItemRemarks(clId, itemId, remarks) {
+  const cl = state.fmChecklists.find(c => c.id === clId);
+  if (!cl) return;
+  const item = cl.items.find(i => String(i.id) === String(itemId));
+  if (item) item.remarks = remarks;
+  try { await api('PUT', '/api/fm-checklists/' + clId, { items: cl.items }); }
+  catch(e) { console.error(e); }
+}
+
+function renderFmChecklistForm() {
+  const jos = state.jobOrders.filter(j => j.status === 'Open' || j.status === 'In Process' || j.status === 'Pending');
+  const cats = {};
+  state.fmTemplates.forEach(t => {
+    if (!cats[t.category]) cats[t.category] = [];
+    cats[t.category].push(t);
+  });
+  return `
+  <div class="field"><label>Job Order (Client + Project) *</label>
+    <select id="fm_joId" onchange="onFmJoSelect()">
+      <option value="">— Select Job Order —</option>
+      ${jos.map(j=>`<option value="${j.id}">${j.jobOrderNumber} — ${j.clientCompany} — ${j.subject||''}</option>`).join('')}
+    </select>
+  </div>
+  <div id="fm_jo_info" style="display:none;background:#f0faf5;border:1px solid #d1fae5;border-radius:6px;padding:10px 12px;margin-bottom:12px;font-size:12px;color:#085041;"></div>
+  <div class="field"><label>Checklist Template *</label>
+    <select id="fm_tplId" onchange="onFmTplSelect()">
+      <option value="">— Select Template —</option>
+      ${Object.entries(cats).map(([cat, tpls]) => `
+        <optgroup label="${cat}">${tpls.map(t=>`<option value="${t.id}">${t.name}</option>`).join('')}</optgroup>`).join('')}
+    </select>
+  </div>
+  <div id="fm_tpl_preview" style="display:none;background:#f8f9fa;border:1px solid #e5e7eb;border-radius:6px;padding:10px 12px;margin-bottom:12px;max-height:150px;overflow-y:auto;">
+    <div style="font-size:11px;font-weight:700;color:#555;text-transform:uppercase;margin-bottom:6px;">Items in this template</div>
+    <div id="fm_tpl_items" style="font-size:12px;color:#555;"></div>
+  </div>
+  <div class="grid2">
+    <div class="field"><label>Month *</label><input type="month" id="fm_month" value="${new Date().toISOString().slice(0,7)}"></div>
+    <div class="field"><label>Location / Building</label><input id="fm_location" placeholder="e.g. Abu Dhabi, Block A"></div>
+  </div>
+  <div class="grid2">
+    <div class="field"><label>Floor</label><input id="fm_floor" placeholder="e.g. Ground Floor, 1F"></div>
+    <div class="field"><label>Technician Name</label><input id="fm_tech" value="${state.user?.name||''}"></div>
+  </div>
+  <div class="field"><label>Supervisor / Engineer</label><input id="fm_supervisor" placeholder="e.g. Engr. Nazir Hussain"></div>
+  <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">
+    <button class="btn btn-ghost" id="modalCancel">Cancel</button>
+    <button class="btn btn-primary" id="saveFmClBtn">Create Checklist</button>
+  </div>`;
+}
+
+function onFmJoSelect() {
+  const id = document.getElementById('fm_joId')?.value;
+  const info = document.getElementById('fm_jo_info');
+  const jo = state.jobOrders.find(j => j.id === id);
+  if (jo && info) {
+    info.style.display = '';
+    info.innerHTML = `🔒 <strong>${jo.clientCompany}</strong> · ${jo.subject||jo.jobOrderNumber} · ${jo.location||''}`;
+  } else if (info) info.style.display = 'none';
+}
+
+function onFmTplSelect() {
+  const id  = document.getElementById('fm_tplId')?.value;
+  const box = document.getElementById('fm_tpl_preview');
+  const tpl = state.fmTemplates.find(t => t.id === id);
+  if (tpl && box) {
+    box.style.display = '';
+    document.getElementById('fm_tpl_items').innerHTML =
+      tpl.items.map((it,i) => `<div style="padding:3px 0;border-bottom:1px solid #f0f0f0;">${i+1}. ${it.description}</div>`).join('');
+  } else if (box) box.style.display = 'none';
+}
+
 function renderClients() {
   const list = [...state.clients].sort((a, b) => a.companyName.localeCompare(b.companyName));
 
@@ -2654,7 +2905,7 @@ function renderModal() {
   const { type, payload } = state.modal;
   if (type === 'item') return modalWrap(renderItemForm(payload), 'Item Details');
   if (type === 'movement') return modalWrap(renderMovementForm(payload), payload.id ? 'Edit Stock Movement' : 'Log Stock Movement');
-  if (type === 'client') return modalWrap(renderClientForm(payload), 'Client Details');
+  if (type === 'fmChecklist') return modalWrap(renderFmChecklistForm(), 'New Daily Checklist', false);
   if (type === 'vendor') return modalWrap(renderVendorForm(payload), 'Vendor Details');
   if (type === 'userEdit') return modalWrap(renderUserForm(payload), 'User Details');
   if (type === 'forcePwd') return modalWrap(renderForcePwdForm(payload), 'Change Your Password');
@@ -3161,7 +3412,64 @@ function attachHandlers() {
     openModal('viewDn', state.dns.find(d => d.id === e.currentTarget.getAttribute('data-view-dn')));
   }));
 
-  const addClientBtn = document.getElementById('addClientBtn');
+  // FM Checklists
+  const newFmClBtn = document.getElementById('newFmChecklistBtn');
+  if (newFmClBtn) newFmClBtn.addEventListener('click', () => openModal('fmChecklist', {}));
+
+  document.querySelectorAll('[data-view-fm-cl]').forEach(b => b.addEventListener('click', e => {
+    state.fmChecklistView = e.currentTarget.getAttribute('data-view-fm-cl');
+    render();
+  }));
+
+  const submitFmClBtn = document.getElementById('submitFmClBtn');
+  if (submitFmClBtn) submitFmClBtn.addEventListener('click', async () => {
+    const id = submitFmClBtn.getAttribute('data-id');
+    if (!confirm('Submit this checklist? It will be marked as Submitted and locked.')) return;
+    try {
+      await api('PUT', '/api/fm-checklists/' + id, { submit: true });
+      await loadAll();
+      showToast('Checklist submitted.', 'ok');
+      render();
+    } catch(e) { showToast(e.message, 'err'); }
+  });
+
+  const printFmClBtn = document.getElementById('printFmClBtn');
+  if (printFmClBtn) printFmClBtn.addEventListener('click', () => {
+    const id = printFmClBtn.getAttribute('data-id');
+    const cl = state.fmChecklists.find(c => c.id === id);
+    if (!cl) return;
+    const win = window.open('', '_blank');
+    win.document.write(buildFmChecklistPdf(cl));
+    win.document.close();
+    setTimeout(() => win.print(), 600);
+  });
+
+  const addAbnBtn = document.getElementById('addAbnBtn');
+  if (addAbnBtn) addAbnBtn.addEventListener('click', () => openModal('addAbnormality', { clId: addAbnBtn.getAttribute('data-id') }));
+
+  const saveFmClBtn = document.getElementById('saveFmClBtn');
+  if (saveFmClBtn) saveFmClBtn.addEventListener('click', async () => {
+    const joId  = document.getElementById('fm_joId')?.value;
+    const tplId = document.getElementById('fm_tplId')?.value;
+    if (!joId)  { showToast('Please select a Job Order.', 'err'); return; }
+    if (!tplId) { showToast('Please select a checklist template.', 'err'); return; }
+    try {
+      const res = await api('POST', '/api/fm-checklists', {
+        jobOrderId:     joId,
+        templateId:     tplId,
+        month:          document.getElementById('fm_month')?.value,
+        location:       document.getElementById('fm_location')?.value,
+        floor:          document.getElementById('fm_floor')?.value,
+        technicianName: document.getElementById('fm_tech')?.value,
+        supervisorName: document.getElementById('fm_supervisor')?.value,
+      });
+      await loadAll();
+      showToast('Checklist created.', 'ok');
+      closeModal();
+      state.fmChecklistView = res.checklist.id;
+      render();
+    } catch(e) { showToast(e.message, 'err'); }
+  });
   if (addClientBtn) addClientBtn.addEventListener('click', () => openModal('client', {}));
   document.querySelectorAll('[data-view-client]').forEach(b => b.addEventListener('click', e => {
     state.clientView = e.currentTarget.getAttribute('data-view-client');

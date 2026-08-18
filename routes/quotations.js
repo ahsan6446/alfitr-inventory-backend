@@ -85,6 +85,14 @@ router.post('/', requirePermission('manageQuotations'), async (req, res) => {
   if (err) return res.status(400).json({ error: err });
 
   const preparer = state.users.find(u => u.id === req.user.id);
+  // Only Super Admin can attribute a quote to someone other than whoever is actually
+  // logged in — e.g. when they're operating the software on behalf of the person who
+  // really prepared it. Everyone else is always attributed to themselves.
+  const canOverridePreparer = req.user.role === 'Super Admin';
+  const preparedByName = (canOverridePreparer && body.preparedByName && body.preparedByName.trim()) || req.user.name;
+  const preparedByDesignation = canOverridePreparer && body.preparedByName && body.preparedByName.trim()
+    ? (body.preparedByDesignation || '').trim()
+    : ((preparer && preparer.designation) || '');
   const q = {
     id: db.uuid(),
     quotationNumber: null, // assigned only when first sent, so drafts don't burn real sequence numbers
@@ -120,8 +128,8 @@ router.post('/', requirePermission('manageQuotations'), async (req, res) => {
     exclusions: Array.isArray(body.exclusions) ? body.exclusions : [],
     notes: body.notes || '',
     preparedById: req.user.id,
-    preparedByName: req.user.name,
-    preparedByDesignation: (preparer && preparer.designation) || '',
+    preparedByName: preparedByName,
+    preparedByDesignation: preparedByDesignation,
     approverIds: [],
     approvedById: null, approvedByName: null, approvedByDesignation: null, approvedAt: null,
     rejectionReason: null,
@@ -151,6 +159,21 @@ router.put('/:id', requirePermission('manageQuotations'), async (req, res) => {
   const editable = ['date', 'validityDays', 'clientId', 'clientCompany', 'clientAttn', 'clientContact', 'clientEmail',
     'clientPoBox', 'subject', 'siteDetail', 'sitesCovered', 'discount', 'showVat', 'paymentTerms', 'exclusions', 'notes'];
   for (const f of editable) if (f in body) q[f] = body[f];
+  // Only Super Admin can change who a quote is attributed to — same rule as at creation time.
+  if (req.user.role === 'Super Admin') {
+    if (body.preparedByName && body.preparedByName.trim()) {
+      q.preparedByName = body.preparedByName.trim();
+      q.preparedByDesignation = (body.preparedByDesignation || '').trim();
+    }
+    // Approved By is normally only ever set by the real approval workflow (see /approve
+    // below) so it can't be faked for a quote going forward — but Super Admin can still
+    // backfill it here for a historical quote that was approved outside the system before
+    // it existed, as long as it hasn't already gone through a real digital approval.
+    if (body.approvedByName && body.approvedByName.trim() && !q.approvedAt) {
+      q.approvedByName = body.approvedByName.trim();
+      q.approvedByDesignation = (body.approvedByDesignation || '').trim();
+    }
+  }
   if (Array.isArray(body.lineItems)) {
     q.lineItems = body.lineItems.map(l => ({
       id: l.id || db.uuid(), category: l.category || 'General', siteId: l.siteId || null,

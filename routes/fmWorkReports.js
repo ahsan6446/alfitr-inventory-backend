@@ -33,6 +33,7 @@ try {
   }).fields([
     ...Array.from({length:10}, (_,i) => ({ name: `beforePhoto_${i}`, maxCount: 1 })),
     ...Array.from({length:10}, (_,i) => ({ name: `afterPhoto_${i}`,  maxCount: 1 })),
+    ...Array.from({length:5},  (_,i) => ({ name: `generalPhoto_${i}`,maxCount: 1 })),
     { name: 'servicePhoto', maxCount: 1 },
   ]);
 } catch { upload = (_req, _res, next) => next(); }
@@ -120,7 +121,15 @@ router.post('/snr', requirePermission('manageReports'), upload, async (req, res)
   const jo    = (state.jobOrders || []).find(j => j.id === body.jobOrderId);
   if (!jo) return res.status(400).json({ error: 'Select a valid Job Order.' });
 
-  const photo = req.files?.servicePhoto?.[0];
+  // Collect photos
+  const beforePhotos=[], afterPhotos=[], generalPhotos=[];
+  for(let i=0;i<3;i++){const f=req.files?.[`beforePhoto_${i}`]?.[0];if(f)beforePhotos.push(`/uploads/work-reports/${f.filename}`);}
+  for(let i=0;i<3;i++){const f=req.files?.[`afterPhoto_${i}`]?.[0];if(f)afterPhotos.push(`/uploads/work-reports/${f.filename}`);}
+  for(let i=0;i<5;i++){const f=req.files?.[`generalPhoto_${i}`]?.[0];if(f)generalPhotos.push(`/uploads/work-reports/${f.filename}`);}
+  const legacyPhoto=req.files?.servicePhoto?.[0];
+  if(legacyPhoto)generalPhotos.push(`/uploads/work-reports/${legacyPhoto.filename}`);
+  const photoMode=(beforePhotos.length>0||afterPhotos.length>0)?'before-after':generalPhotos.length>0?'general':'none';
+
   if (!state.workReports) state.workReports = [];
   const snr = {
     id:             db.uuid(),
@@ -133,12 +142,20 @@ router.post('/snr', requirePermission('manageReports'), upload, async (req, res)
     location:       body.location || jo.location || '',
     date:           body.date || new Date().toISOString().slice(0,10),
     time:           body.time || new Date().toTimeString().slice(0,5),
-    technicianName: body.technicianName || req.user.name,
+    technicianName: body.preparedByName || body.technicianName || req.user.name,
     supervisorName: body.supervisorName || '',
+    receivedBy:     body.receivedBy || '',
     subject:        body.subject || '',
     description:    body.description || '',
+    immediateAction:body.immediateAction || '',
     workType:       body.workType || '',
-    photoUrl:       photo ? `/uploads/work-reports/${photo.filename}` : null,
+    photoMode,
+    beforePhotos,
+    afterPhotos,
+    generalPhotos,
+    photoUrl:       generalPhotos[0]||beforePhotos[0]||null,
+    preparedByName: body.preparedByName||req.user.name,
+    preparedByDesig:body.preparedByDesig||'',
     status:         body.status || 'Completed',
     forClient:      body.forClient === 'true' || body.forClient === true,
     createdById:    req.user.id,

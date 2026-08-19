@@ -374,7 +374,8 @@ function renderSidebar() {
     materialRequests: 'projects',
     delayReports:     'projects',
     fmChecklists:     'fm',
-    fmWorkReports:    'fm',
+    fmWcr:            'fm',
+    fmSnr:            'fm',
     fmIncidents:      'fm',
     procurement:      'procurement',
     vendors:          'procurement',
@@ -442,7 +443,8 @@ function renderSidebar() {
 
       ${navGroup('fm', '🏢', 'FM Services', [
         ['fmChecklists',  'Daily Checklists'],
-        ['fmWorkReports', 'Work Completion'],
+        ['fmWcr',         'Work Completion'],
+        ['fmSnr',         'Service Notification'],
         ['fmIncidents',   'Incident Reports'],
       ])}
 
@@ -478,6 +480,8 @@ function renderTopbar() {
     clients:          ['Clients',          'Client directory with 360 project history'],
     fmChecklists:     ['FM Daily Checklists', 'Routine maintenance checklists for FM sites'],
     fmWorkReports:    ['Work Completion Reports', 'WCR and Service Notification Reports'],
+    fmWcr:            ['Work Completion Reports', 'Before/After photo reports for completed work'],
+    fmSnr:            ['Service Notification Reports', 'Quick service reports with photo evidence'],
     fmIncidents:      ['Incident Reports', 'Site incident and investigation reports'],
     settings:         ['Settings',         'Branches, brands, units, security and company details'],
   };
@@ -508,7 +512,9 @@ function renderPage() {
   if (state.tab === 'delayReports') return renderDelayReports();
   if (state.tab === 'clients')      return state.clientView ? renderClient360(state.clientView) : renderClients();
   if (state.tab === 'fmChecklists')  return state.fmChecklistView  ? renderFmChecklistDetail(state.fmChecklistView)   : renderFmChecklists();
-  if (state.tab === 'fmWorkReports') return state.workReportView   ? renderWorkReportDetail(state.workReportView)      : renderWorkReports();
+  if (state.tab === 'fmWorkReports') return state.workReportView ? renderWorkReportDetail(state.workReportView) : renderWorkReports();
+  if (state.tab === 'fmWcr')         return state.workReportView ? renderWorkReportDetail(state.workReportView) : renderWcrList();
+  if (state.tab === 'fmSnr')         return state.workReportView ? renderWorkReportDetail(state.workReportView) : renderSnrList();
   if (state.tab === 'fmIncidents')   return state.incidentView     ? renderIncidentDetail(state.incidentView)           : renderIncidents();
   if (state.tab === 'settings') return renderSettings();
   return '';
@@ -1276,27 +1282,57 @@ function renderWorkReportDetail(id) {
         <div><div class="k muted">Location</div><div>${wr.location||'—'}</div></div>
         <div><div class="k muted">Time</div><div>${wr.time||'—'}</div></div>
       </div>
-      ${wr.description?`<div style="margin-bottom:14px;"><div class="k muted">Description</div>
-        <div style="font-size:13px;line-height:1.6;background:#f8f9fa;border-radius:6px;padding:10px;border-left:3px solid #E8520A;">${wr.description}</div>
-      </div>`:''}
-      ${wr.photoUrl?`<div>
-        <div style="font-size:11px;font-weight:700;color:#E8520A;text-transform:uppercase;margin-bottom:8px;">📷 Photo</div>
-        <img src="${wr.photoUrl}" style="max-width:100%;max-height:400px;object-fit:contain;border-radius:10px;border:2px solid #e5e7eb;" alt="Photo">
-      </div>`:`<div style="height:140px;background:#f5f5f5;border:2px dashed #e5e7eb;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:12px;color:#aaa;">No photo attached</div>`}
+      ${wr.description?`<div style="margin-bottom:10px;"><div class="k muted">Description</div><div style="font-size:13px;line-height:1.6;background:#f8f9fa;border-radius:6px;padding:10px;border-left:3px solid #E8520A;margin-top:4px;">${wr.description}</div></div>`:''}
+      ${wr.immediateAction?`<div><div class="k muted">Immediate Action</div><div style="font-size:13px;line-height:1.6;background:#f0faf5;border-radius:6px;padding:10px;border-left:3px solid #1D9E75;margin-top:4px;">${wr.immediateAction}</div></div>`:''}
     </div>
   </div>
-  <!-- SNR Signatures -->
-  <div class="card" style="margin-bottom:12px;">
+
+  ${(()=>{
+    const before = wr.beforePhotos||[];
+    const after  = wr.afterPhotos||[];
+    const general= wr.generalPhotos||(wr.photoUrl?[wr.photoUrl]:[]);
+    const hasBA  = before.length>0||after.length>0;
+    if(!hasBA && general.length===0) return '';
+    if(hasBA) return `
+    <div class="card" style="margin-bottom:12px;">
+      <div class="card-head"><div class="card-title">Photos — Before & After</div></div>
+      <div class="card-body">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div>
+            <div style="font-size:10px;font-weight:700;color:#dc2626;text-transform:uppercase;margin-bottom:8px;">Before</div>
+            <div style="display:grid;grid-template-columns:${before.length>1?'1fr 1fr':'1fr'};gap:6px;">
+              ${before.length>0?before.map((url,i)=>`<img src="${url}" style="width:100%;height:150px;object-fit:cover;border-radius:6px;border:2px solid #fecaca;" alt="Before ${i+1}">`).join(''):`<div style="height:150px;background:#fff5f5;border:2px dashed #fecaca;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;color:#fca5a5;">No before photo</div>`}
+            </div>
+          </div>
+          <div>
+            <div style="font-size:10px;font-weight:700;color:#1D9E75;text-transform:uppercase;margin-bottom:8px;">After</div>
+            <div style="display:grid;grid-template-columns:${after.length>1?'1fr 1fr':'1fr'};gap:6px;">
+              ${after.length>0?after.map((url,i)=>`<img src="${url}" style="width:100%;height:150px;object-fit:cover;border-radius:6px;border:2px solid #d1fae5;" alt="After ${i+1}">`).join(''):`<div style="height:150px;background:#f0faf5;border:2px dashed #d1fae5;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;color:#6ee7b7;">No after photo</div>`}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+    return `
+    <div class="card" style="margin-bottom:12px;">
+      <div class="card-head"><div class="card-title">Photos</div></div>
+      <div class="card-body">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          ${general.map((url,i)=>`<img src="${url}" style="width:100%;height:180px;object-fit:cover;border-radius:8px;border:1px solid var(--rule);" alt="Photo ${i+1}">`).join('')}
+        </div>
+      </div>
+    </div>`;
+  })()}
+
+  <div class="card">
     <div class="card-head"><div class="card-title">Sign-Off</div></div>
     <div class="card-body">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
-        <div>
-          <div style="border-bottom:1px solid #555;height:30px;margin-bottom:6px;"></div>
-          <div style="font-size:13px;font-weight:700;">${wr.technicianName||'—'}</div>
-          <div style="font-size:11px;color:#1D9E75;">Prepared By — Al Fitr</div>
+        <div><div style="border-bottom:1px solid #555;height:30px;margin-bottom:6px;"></div>
+          <div style="font-size:13px;font-weight:700;">${wr.preparedByName||wr.technicianName||'—'}</div>
+          <div style="font-size:11px;color:#1D9E75;">${wr.preparedByDesig||'Prepared By — Al Fitr'}</div>
         </div>
-        <div>
-          <div style="border-bottom:1px solid #555;height:30px;margin-bottom:6px;"></div>
+        <div><div style="border-bottom:1px solid #555;height:30px;margin-bottom:6px;"></div>
           <div style="font-size:13px;font-weight:700;">${wr.receivedBy||'Client Representative'}</div>
           <div style="font-size:11px;color:#1D9E75;">Received By — Signature & Date</div>
         </div>
@@ -1400,9 +1436,64 @@ function renderWcrTaskRow(t, i, WORK_TYPES) {
   </div>`;
 }
 
+function renderWcrList() {
+  const list = state.workReports.filter(r=>r.type==='WCR').sort((a,b)=>b.createdAt-a.createdAt);
+  return `
+  <div class="toolbar">
+    <div style="font-size:13px;color:var(--ink-soft);">${list.length} WCR report${list.length!==1?'s':''}</div>
+    ${can('manageReports')?`<button class="btn btn-primary" id="newWcrBtn">+ New WCR</button>`:''}
+  </div>
+  ${list.length===0?`<div class="card"><div class="empty"><div class="big">📋</div>No Work Completion Reports yet.</div></div>`:`
+  <div class="card">
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Ref No.</th><th>Client</th><th>Project</th><th>Date</th><th>Tasks</th><th>Status</th><th>For Client</th><th></th></tr></thead>
+      <tbody>${list.map(wr=>`<tr>
+        <td style="font-family:var(--mono);color:#E8520A;font-weight:700;font-size:12px;">${wr.refNumber}</td>
+        <td style="font-size:12px;">${wr.clientCompany||'—'}</td>
+        <td style="font-size:12px;">${wr.projectName||'—'}</td>
+        <td style="font-size:12px;">${fmtDate(wr.date)}</td>
+        <td style="font-size:12px;">${(wr.tasks||[]).length} task(s)</td>
+        <td><span class="badge ${wr.status==='Completed'?'badge-issued':'badge-low'}">${wr.status}</span></td>
+        <td style="text-align:center;">${wr.forClient?'<span style="color:#1D9E75;font-weight:700;">✓</span>':'—'}</td>
+        <td><button class="btn btn-outline btn-sm" data-view-wr="${wr.id}">Open</button></td>
+      </tr>`).join('')}</tbody>
+    </table></div>
+  </div>`}`;
+}
+
+function renderSnrList() {
+  const list = state.workReports.filter(r=>r.type==='SNR').sort((a,b)=>b.createdAt-a.createdAt);
+  return `
+  <div class="toolbar">
+    <div style="font-size:13px;color:var(--ink-soft);">${list.length} SNR report${list.length!==1?'s':''}</div>
+    ${can('manageReports')?`<button class="btn btn-primary" id="newSnrBtn">+ New Service Notification</button>`:''}
+  </div>
+  ${list.length===0?`<div class="card"><div class="empty"><div class="big">📝</div>No Service Notification Reports yet.</div></div>`:`
+  <div class="card">
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Ref No.</th><th>Client</th><th>Subject</th><th>Work Type</th><th>Date</th><th>Photos</th><th>Status</th><th></th></tr></thead>
+      <tbody>${list.map(wr=>`<tr>
+        <td style="font-family:var(--mono);color:#E8520A;font-weight:700;font-size:12px;">${wr.refNumber}</td>
+        <td style="font-size:12px;">${wr.clientCompany||'—'}</td>
+        <td style="font-size:12px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${wr.subject||'—'}</td>
+        <td style="font-size:12px;">${wr.workType||'—'}</td>
+        <td style="font-size:12px;">${fmtDate(wr.date)}</td>
+        <td style="font-size:12px;">${
+          (wr.beforePhotos||[]).length>0||(wr.afterPhotos||[]).length>0
+            ?`<span style="color:#1D9E75;font-size:11px;font-weight:600;">Before/After</span>`
+            :(wr.generalPhotos||[]).length>0
+            ?`<span style="color:#E8520A;font-size:11px;font-weight:600;">${(wr.generalPhotos||[]).length} photo(s)</span>`
+            :'—'
+        }</td>
+        <td><span class="badge ${wr.status==='Completed'?'badge-issued':'badge-low'}">${wr.status}</span></td>
+        <td><button class="btn btn-outline btn-sm" data-view-wr="${wr.id}">Open</button></td>
+      </tr>`).join('')}</tbody>
+    </table></div>
+  </div>`}`;
+}
+
 function renderSnrForm() {
   const WORK_TYPES = ['Painting / Touch Up','Plumbing','Electrical','HVAC / AC','Civil / Carpentry','Fire Alarm / FF','ELV / IT','Cleaning','General Maintenance','Other'];
-  const p = state.modal?.payload || {};
   return `
   <div class="grid2">
     <div class="field"><label>Client *</label>
@@ -1418,16 +1509,14 @@ function renderSnrForm() {
     </div>
   </div>
   <div class="field"><label>Subject / Title *</label>
-    <input id="snr_subject" value="${p.subject||''}" placeholder="e.g. AC not cooling in Room 201">
+    <input id="snr_subject" placeholder="e.g. AC not cooling in Room 201">
   </div>
   <div class="grid2">
     <div class="field"><label>Work Type</label>
-      <select id="snr_workType">
-        ${WORK_TYPES.map(wt=>`<option>${wt}</option>`).join('')}
-      </select>
+      <select id="snr_workType">${WORK_TYPES.map(t=>`<option>${t}</option>`).join('')}</select>
     </div>
     <div class="field"><label>Location / Area</label>
-      <input id="snr_location" value="${p.location||''}" placeholder="e.g. Common Area, Block B">
+      <input id="snr_location" placeholder="e.g. Common Area, Block B">
     </div>
   </div>
   <div class="grid2">
@@ -1435,14 +1524,47 @@ function renderSnrForm() {
     <div class="field"><label>Time</label><input type="time" id="snr_time" value="${new Date().toTimeString().slice(0,5)}"></div>
   </div>
   <div class="field"><label>Description *</label>
-    <textarea id="snr_desc" rows="3" placeholder="Describe the issue or work done...">${p.description||''}</textarea>
+    <textarea id="snr_desc" rows="3" placeholder="Describe the issue or work done..."></textarea>
   </div>
-  <div class="field"><label>📷 Photo *</label>
-    <input type="file" id="snr_photo" accept="image/*" style="font-size:12px;padding:6px;">
-    <div style="font-size:11px;color:var(--muted);margin-top:3px;">Attach one clear photo of the work/issue</div>
+  <div class="field"><label>Immediate Action Taken</label>
+    <textarea id="snr_action" rows="2" placeholder="What was done..."></textarea>
   </div>
-  <div class="grid2">
-    <div class="field"><label>Technician</label><input id="snr_tech" value="${state.user?.name||''}"></div>
+
+  <div style="border-top:1px solid var(--rule);margin:14px 0 12px;padding-top:12px;">
+    <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;margin-bottom:10px;">Photos — Upload what you have (system auto-detects layout)</div>
+
+    <!-- Before Photos -->
+    <div style="margin-bottom:12px;">
+      <div style="font-size:11px;font-weight:700;color:#dc2626;margin-bottom:6px;">Before Photos (optional — up to 3)</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
+        ${[0,1,2].map(i=>`<div class="field"><label style="color:#dc2626;">Before ${i+1}</label><input type="file" id="snr_before_${i}" accept="image/*" style="font-size:11px;padding:5px;"></div>`).join('')}
+      </div>
+    </div>
+
+    <!-- After Photos -->
+    <div style="margin-bottom:12px;">
+      <div style="font-size:11px;font-weight:700;color:#1D9E75;margin-bottom:6px;">After Photos (optional — up to 3)</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
+        ${[0,1,2].map(i=>`<div class="field"><label style="color:#1D9E75;">After ${i+1}</label><input type="file" id="snr_after_${i}" accept="image/*" style="font-size:11px;padding:5px;"></div>`).join('')}
+      </div>
+    </div>
+
+    <!-- General Photos -->
+    <div>
+      <div style="font-size:11px;font-weight:700;color:#E8520A;margin-bottom:6px;">General Photos (optional — up to 5, if no before/after)</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        ${[0,1,2,3,4].map(i=>`<div class="field"><label>Photo ${i+1}</label><input type="file" id="snr_general_${i}" accept="image/*" style="font-size:11px;padding:5px;"></div>`).join('')}
+      </div>
+    </div>
+
+    <div style="background:#f0faf5;border-radius:6px;padding:8px 12px;margin-top:10px;font-size:11px;color:#085041;">
+      💡 Before + After upload karo → PDF mein side by side layout<br>
+      &nbsp;&nbsp;&nbsp;Sirf General photos → 2 column grid layout<br>
+      &nbsp;&nbsp;&nbsp;System automatically detect karega
+    </div>
+  </div>
+
+  <div class="grid2" style="margin-top:4px;">
     <div class="field"><label>Status</label>
       <select id="snr_status">
         <option value="Completed">Completed</option>
@@ -1450,16 +1572,20 @@ function renderSnrForm() {
         <option value="Pending">Pending</option>
       </select>
     </div>
+    <div class="field"><label>For Client</label>
+      <select id="snr_forClient">
+        <option value="false">Internal Only</option>
+        <option value="true">For Client</option>
+      </select>
+    </div>
   </div>
-  <div class="field"><label>For Client</label>
-    <select id="snr_forClient">
-      <option value="false">Internal Only</option>
-      <option value="true">For Client</option>
-    </select>
+  <div class="grid2" style="margin-top:4px;">
+    ${userPickerHtml('snrPreparedBy', state.user?.name, state.user?.designation, 'Prepared By')}
+    <div class="field"><label>Received By (Client)</label><input id="snr_receivedBy" placeholder="Client rep name"></div>
   </div>
   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">
     <button class="btn btn-ghost" id="modalCancel">Cancel</button>
-    <button class="btn btn-primary" id="saveSnrBtn">Submit</button>
+    <button class="btn btn-primary" id="saveSnrBtn">Submit Report</button>
   </div>`;
 }
 
@@ -4721,19 +4847,36 @@ function attachHandlers() {
     const joId = document.getElementById('snr_joId')?.value;
     if (!joId) { showToast('Please select a Job Order.', 'err'); return; }
     if (!document.getElementById('snr_subject')?.value?.trim()) { showToast('Subject is required.', 'err'); return; }
+    const prepVal = getUserPickerValue('snrPreparedBy');
     const fd = new FormData();
-    fd.append('jobOrderId',  joId);
-    fd.append('subject',     document.getElementById('snr_subject')?.value || '');
-    fd.append('workType',    document.getElementById('snr_workType')?.value || '');
-    fd.append('location',    document.getElementById('snr_location')?.value || '');
-    fd.append('date',        document.getElementById('snr_date')?.value || '');
-    fd.append('time',        document.getElementById('snr_time')?.value || '');
-    fd.append('description', document.getElementById('snr_desc')?.value || '');
-    fd.append('technicianName', document.getElementById('snr_tech')?.value || '');
-    fd.append('status',      document.getElementById('snr_status')?.value || 'Completed');
-    fd.append('forClient',   document.getElementById('snr_forClient')?.value || 'false');
-    const photo = document.getElementById('snr_photo')?.files[0];
-    if (photo) fd.append('servicePhoto', photo);
+    fd.append('jobOrderId',     joId);
+    fd.append('subject',        document.getElementById('snr_subject')?.value||'');
+    fd.append('workType',       document.getElementById('snr_workType')?.value||'');
+    fd.append('location',       document.getElementById('snr_location')?.value||'');
+    fd.append('date',           document.getElementById('snr_date')?.value||'');
+    fd.append('time',           document.getElementById('snr_time')?.value||'');
+    fd.append('description',    document.getElementById('snr_desc')?.value||'');
+    fd.append('immediateAction',document.getElementById('snr_action')?.value||'');
+    fd.append('status',         document.getElementById('snr_status')?.value||'Completed');
+    fd.append('forClient',      document.getElementById('snr_forClient')?.value||'false');
+    fd.append('preparedByName', prepVal.name||state.user?.name||'');
+    fd.append('preparedByDesig',prepVal.designation||'');
+    fd.append('receivedBy',     document.getElementById('snr_receivedBy')?.value||'');
+    // Before photos
+    for (let i=0; i<3; i++) {
+      const f = document.getElementById(`snr_before_${i}`)?.files[0];
+      if (f) fd.append(`beforePhoto_${i}`, f);
+    }
+    // After photos
+    for (let i=0; i<3; i++) {
+      const f = document.getElementById(`snr_after_${i}`)?.files[0];
+      if (f) fd.append(`afterPhoto_${i}`, f);
+    }
+    // General photos
+    for (let i=0; i<5; i++) {
+      const f = document.getElementById(`snr_general_${i}`)?.files[0];
+      if (f) fd.append(`generalPhoto_${i}`, f);
+    }
     try {
       const r = await fetch('/api/work-reports/snr', { method:'POST', headers:{'Authorization':`Bearer ${authToken}`}, body:fd });
       const d = await r.json();
@@ -4742,6 +4885,7 @@ function attachHandlers() {
       showToast('Service Notification submitted.', 'ok');
       closeModal();
       state.workReportView = d.workReport.id;
+      state.tab = 'fmSnr';
       render();
     } catch(e) { showToast(e.message, 'err'); }
   });

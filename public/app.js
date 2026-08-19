@@ -5001,6 +5001,7 @@ function attachHandlers() {
       render();
     } catch(e) { showToast(e.message, 'err'); }
   });
+  const newFmClBtn = document.getElementById('newFmChecklistBtn');
   if (newFmClBtn) newFmClBtn.addEventListener('click', () => openModal('fmChecklist', {}));
 
   document.querySelectorAll('[data-view-fm-cl]').forEach(b => b.addEventListener('click', e => {

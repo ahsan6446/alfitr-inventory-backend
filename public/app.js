@@ -53,6 +53,7 @@ const state = {
   fmChecklists: [], fmTemplates: [], fmChecklistView: null,
   fmFilterClient: 'All', fmFilterJO: 'All', fmFilterTemplate: 'All', fmFilterStatus: 'All', fmFilterMonth: '',
   workReports: [], workReportView: null,
+  fmIncidents: [], incidentView: null,
   user: null, permissions: {}, company: {}, branches: [], brands: [], units: [],
   items: [], movements: [], clients: [], dns: [], users: [], roles: {}, permLabels: [],
   loaded: false, modal: null, toast: null,
@@ -169,7 +170,7 @@ async function loadAll() {
   const me = await api('GET', '/api/auth/me');
   state.user = me.user; state.permissions = me.permissions;
 
-  const [company, branchesR, brandsR, unitsR, itemsR, movementsR, clientsR, dnsR, quotCatR, exclR, quotesR, joR, mrR, vendR, prR, poR, drR, fmClR, fmTplR, wrR] = await Promise.all([
+  const [company, branchesR, brandsR, unitsR, itemsR, movementsR, clientsR, dnsR, quotCatR, exclR, quotesR, joR, mrR, vendR, prR, poR, drR, fmClR, fmTplR, wrR, irR] = await Promise.all([
     api('GET', '/api/company'),
     api('GET', '/api/meta/branches'),
     api('GET', '/api/meta/brands'),
@@ -190,6 +191,7 @@ async function loadAll() {
     api('GET', '/api/fm-checklists'),
     api('GET', '/api/fm-checklists/templates'),
     api('GET', '/api/work-reports'),
+    api('GET', '/api/incidents'),
   ]);
   state.company = company.company; state.nextDnPreview = company.nextDnPreview; state.nextQuotationCounter = company.nextQuotationCounter;
   if (state.company.name) document.title = state.company.name;
@@ -202,6 +204,7 @@ async function loadAll() {
   state.fmChecklists = fmClR.checklists || [];
   state.fmTemplates  = fmTplR.templates  || [];
   state.workReports  = wrR.workReports   || [];
+  state.fmIncidents  = irR.incidents     || [];
 
   if (can('manageUsers')) {
     const [usersR, rolesR] = await Promise.all([api('GET', '/api/users'), api('GET', '/api/users/roles/all')]);
@@ -244,7 +247,7 @@ function currentFilterSummary() {
 function shouldExportPricing() { return can('viewPricing') && can('exportPricing') && !!state.exportIncludePricing; }
 
 /* ---------------- render shell ---------------- */
-function setTab(t) { state.tab = t; state.modal = null; state.clientView = null; state.fmChecklistView = null; state.workReportView = null; state.mobileNavOpen = false; render(); }
+function setTab(t) { state.tab=t; state.modal=null; state.clientView=null; state.fmChecklistView=null; state.workReportView=null; state.incidentView=null; state.mobileNavOpen=false; render(); }
 
 // Navigate to a tab with a pre-applied filter
 function goFiltered(tab, filterKey, filterVal) {
@@ -475,7 +478,7 @@ function renderTopbar() {
     clients:          ['Clients',          'Client directory with 360 project history'],
     fmChecklists:     ['FM Daily Checklists', 'Routine maintenance checklists for FM sites'],
     fmWorkReports:    ['Work Completion Reports', 'WCR and Service Notification Reports'],
-    fmIncidents:      ['FM Incident Reports', 'Incident and investigation reports'],
+    fmIncidents:      ['Incident Reports', 'Site incident and investigation reports'],
     settings:         ['Settings',         'Branches, brands, units, security and company details'],
   };
   const [title, sub] = titles[state.tab] || [state.tab, ''];
@@ -506,7 +509,7 @@ function renderPage() {
   if (state.tab === 'clients')      return state.clientView ? renderClient360(state.clientView) : renderClients();
   if (state.tab === 'fmChecklists')  return state.fmChecklistView  ? renderFmChecklistDetail(state.fmChecklistView)   : renderFmChecklists();
   if (state.tab === 'fmWorkReports') return state.workReportView   ? renderWorkReportDetail(state.workReportView)      : renderWorkReports();
-  if (state.tab === 'fmIncidents')   return renderFmIncidents();
+  if (state.tab === 'fmIncidents')   return state.incidentView     ? renderIncidentDetail(state.incidentView)           : renderIncidents();
   if (state.tab === 'settings') return renderSettings();
   return '';
 }
@@ -1560,12 +1563,445 @@ function buildWcrPdf(wr) {
   </body></html>`;
 }
 
-function renderFmIncidents() {
+/* ════════════════════════════════════════════════════════════════
+   FM INCIDENT REPORTS
+════════════════════════════════════════════════════════════════ */
+const IR_TYPES     = ['Health & Safety','Fire','Electrical','Plumbing','HVAC / AC','Fire Alarm','Fire Fighting','Civil / Structural','Environmental','Other'];
+const IR_SEVERITIES= ['Near Miss','Minor','Major','Critical','Fatal'];
+const IR_SEV_COLOR = { 'Near Miss':'#888','Minor':'#1D9E75','Major':'#E8520A','Critical':'#dc2626','Fatal':'#7F1D1D' };
+
+function renderIncidents() {
+  const list = [...state.fmIncidents].sort((a,b) => b.createdAt - a.createdAt);
   return `
   <div class="toolbar">
-    <div style="font-size:13px;color:var(--ink-soft);">Incident Reports — Coming Soon</div>
+    <div style="font-size:13px;color:var(--ink-soft);">${list.length} incident report${list.length!==1?'s':''}</div>
+    ${can('manageReports')?`<button class="btn btn-primary" id="newIncidentBtn">+ New Incident Report</button>`:''}
   </div>
-  <div class="card"><div class="empty"><div class="big">🚨</div>Incident Report module coming soon.</div></div>`;
+  ${list.length===0?`<div class="card"><div class="empty"><div class="big">🚨</div>No incident reports yet.</div></div>`:`
+  <div class="card">
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Ref No.</th><th>Type</th><th>Severity</th><th>Client</th><th>Project</th><th>Date</th><th>Status</th><th></th></tr></thead>
+      <tbody>${list.map(ir=>`<tr>
+        <td style="font-family:var(--mono);color:#E8520A;font-weight:700;font-size:12px;">${ir.refNumber}</td>
+        <td style="font-size:12px;">${ir.incidentType}</td>
+        <td><span style="background:${IR_SEV_COLOR[ir.severity]||'#888'}20;color:${IR_SEV_COLOR[ir.severity]||'#888'};padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;">${ir.severity}</span></td>
+        <td style="font-size:12px;">${ir.clientCompany||'—'}</td>
+        <td style="font-size:12px;">${ir.projectName||'—'}</td>
+        <td style="font-size:12px;">${fmtDate(ir.date)}</td>
+        <td><span class="badge ${ir.status==='Closed'?'badge-issued':'badge-low'}">${ir.status||'Open'}</span></td>
+        <td><button class="btn btn-outline btn-sm" data-view-ir="${ir.id}">Open</button></td>
+      </tr>`).join('')}</tbody>
+    </table></div>
+  </div>`}`;
+}
+
+function renderIncidentDetail(id) {
+  const ir = state.fmIncidents.find(r => r.id === id);
+  if (!ir) return '<div class="empty">Report not found.</div>';
+  const sevColor = IR_SEV_COLOR[ir.severity] || '#888';
+  return `
+  <div class="fm-cl-title-bar" style="border-left:5px solid ${sevColor};">
+    <div style="flex:1;">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:${sevColor};margin-bottom:4px;">${ir.incidentType} Incident</div>
+      <div style="font-size:20px;font-weight:700;color:var(--ink);">${ir.refNumber}</div>
+      <div style="font-size:12px;color:var(--ink-soft);margin-top:3px;">${ir.clientCompany} · ${ir.projectName||ir.jobOrderNumber} · ${fmtDate(ir.date)}</div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <span style="background:${sevColor}20;color:${sevColor};padding:3px 10px;border-radius:4px;font-size:12px;font-weight:700;">${ir.severity}</span>
+      <button class="btn btn-ghost btn-sm" onclick="state.incidentView=null;render()">← Back</button>
+      <button class="btn btn-teal btn-sm" id="printIrBtn" data-id="${ir.id}">🖨 Print PDF</button>
+      ${can('manageReports')?`<button class="btn btn-outline btn-sm" style="color:#dc2626;border-color:#fca5a5;" data-delete-ir="${ir.id}">🗑 Delete</button>`:''}
+    </div>
+  </div>
+
+  <!-- Info Grid -->
+  <div class="card" style="margin-bottom:14px;">
+    <div class="card-body">
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;">
+        <div><div class="k muted">Incident Type</div><div>${ir.incidentType}</div></div>
+        <div><div class="k muted">Severity</div><div style="color:${sevColor};font-weight:700;">${ir.severity}</div></div>
+        <div><div class="k muted">Classification</div><div>${ir.classification||'—'}</div></div>
+        <div><div class="k muted">Client</div><div>${ir.clientCompany||'—'}</div></div>
+        <div><div class="k muted">Project</div><div>${ir.projectName||'—'}</div></div>
+        <div><div class="k muted">Job Order</div><div style="font-family:var(--mono);">${ir.jobOrderNumber||'—'}</div></div>
+        <div><div class="k muted">Location</div><div>${ir.location||'—'}</div></div>
+        <div><div class="k muted">Date</div><div>${fmtDate(ir.date)}</div></div>
+        <div><div class="k muted">Time</div><div>${ir.time||'—'}</div></div>
+        ${ir.supervisorName?`<div><div class="k muted">Supervisor</div><div>${ir.supervisorName}</div></div>`:''}
+        ${ir.affectedPerson?`<div><div class="k muted">Affected Person</div><div>${ir.affectedPerson}${ir.affectedDesignation?' ('+ir.affectedDesignation+')':''}</div></div>`:''}
+        ${ir.injuryType?`<div><div class="k muted">Injury Type</div><div>${ir.injuryType}</div></div>`:''}
+      </div>
+      ${ir.typeDetails?`<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--rule);">
+        <div class="k muted">Type-Specific Details</div>
+        <div style="font-size:13px;line-height:1.6;margin-top:4px;">${ir.typeDetails}</div>
+      </div>`:''}
+      ${(ir.material||ir.extinguishingMedia||ir.estimatedCost)?`
+      <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--rule);display:grid;grid-template-columns:repeat(3,1fr);gap:10px;">
+        ${ir.material?`<div><div class="k muted">Material Involved</div><div>${ir.material}</div></div>`:''}
+        ${ir.extinguishingMedia?`<div><div class="k muted">Extinguishing Media</div><div>${ir.extinguishingMedia}</div></div>`:''}
+        ${ir.estimatedCost?`<div><div class="k muted">Estimated Cost</div><div>AED ${ir.estimatedCost}</div></div>`:''}
+        ${ir.civilDefenseInformed!==undefined?`<div><div class="k muted">Civil Defense Informed</div><div>${ir.civilDefenseInformed?'Yes':'No'}</div></div>`:''}
+      </div>`:''}
+    </div>
+  </div>
+
+  <!-- Photos -->
+  ${ir.photos&&ir.photos.length>0?`
+  <div class="card" style="margin-bottom:14px;">
+    <div class="card-head"><div class="card-title">Incident Photos</div></div>
+    <div class="card-body">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        ${ir.photos.map((url,i)=>`
+        <div>
+          <div style="font-size:10px;font-weight:700;color:#E8520A;text-transform:uppercase;margin-bottom:4px;">Photo ${i+1}</div>
+          <img src="${url}" style="width:100%;height:200px;object-fit:cover;border-radius:8px;border:1px solid var(--rule);" alt="Photo ${i+1}">
+        </div>`).join('')}
+      </div>
+    </div>
+  </div>`:''}
+
+  <!-- Description & Actions -->
+  <div class="card" style="margin-bottom:14px;">
+    <div class="card-head"><div class="card-title">Description & Actions</div></div>
+    <div class="card-body">
+      ${ir.description?`<div style="margin-bottom:12px;"><div class="k muted">Description of Incident</div><div style="font-size:13px;line-height:1.6;background:#f8f9fa;border-radius:6px;padding:10px;border-left:3px solid #E8520A;margin-top:4px;">${ir.description}</div></div>`:''}
+      ${ir.immediateAction?`<div style="margin-bottom:12px;"><div class="k muted">Immediate Action Taken</div><div style="font-size:13px;line-height:1.6;background:#f8f9fa;border-radius:6px;padding:10px;border-left:3px solid #1D9E75;margin-top:4px;">${ir.immediateAction}</div></div>`:''}
+      ${ir.correctiveAction?`<div><div class="k muted">Corrective Action</div><div style="font-size:13px;line-height:1.6;background:#f8f9fa;border-radius:6px;padding:10px;border-left:3px solid #00627B;margin-top:4px;">${ir.correctiveAction}</div></div>`:''}
+    </div>
+  </div>
+
+  <!-- Cause Analysis -->
+  <div class="card" style="margin-bottom:14px;">
+    <div class="card-head"><div class="card-title">Cause Analysis</div></div>
+    <div class="card-body">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
+        <div style="background:#fff5f5;border-radius:8px;padding:12px;border-top:3px solid #dc2626;">
+          <div style="font-size:10px;font-weight:700;color:#dc2626;text-transform:uppercase;margin-bottom:6px;">Immediate Cause</div>
+          <div style="font-size:12px;">${ir.immediateCause||'—'}</div>
+        </div>
+        <div style="background:#fff8f0;border-radius:8px;padding:12px;border-top:3px solid #E8520A;">
+          <div style="font-size:10px;font-weight:700;color:#E8520A;text-transform:uppercase;margin-bottom:6px;">Underlying Cause</div>
+          <div style="font-size:12px;">${ir.underlyingCause||'—'}</div>
+        </div>
+        <div style="background:#f0faf5;border-radius:8px;padding:12px;border-top:3px solid #1D9E75;">
+          <div style="font-size:10px;font-weight:700;color:#1D9E75;text-transform:uppercase;margin-bottom:6px;">Root Cause</div>
+          <div style="font-size:12px;">${ir.rootCause||'—'}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Risk Controls -->
+  ${ir.riskControls&&ir.riskControls.length>0?`
+  <div class="card" style="margin-bottom:14px;">
+    <div class="card-head"><div class="card-title">Risk Control Measures</div></div>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Risk Control</th><th>Planned Date</th><th>Actual Date</th><th>Responsibility</th></tr></thead>
+      <tbody>${ir.riskControls.map(rc=>`<tr>
+        <td style="font-size:12px;">${rc.control||'—'}</td>
+        <td style="font-size:12px;">${rc.plannedDate||'—'}</td>
+        <td style="font-size:12px;">${rc.actualDate||'—'}</td>
+        <td style="font-size:12px;">${rc.responsibility||'—'}</td>
+      </tr>`).join('')}</tbody>
+    </table></div>
+  </div>`:''}
+
+  <!-- Signatures -->
+  <div class="card">
+    <div class="card-head"><div class="card-title">Sign-Off</div></div>
+    <div class="card-body">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+        <div>
+          <div style="border-bottom:1px solid #555;height:30px;margin-bottom:6px;"></div>
+          <div style="font-size:13px;font-weight:700;">${ir.preparedByName||'—'}</div>
+          <div style="font-size:11px;color:#1D9E75;">${ir.preparedByDesig||'Prepared By'}</div>
+        </div>
+        <div>
+          <div style="border-bottom:1px solid #555;height:30px;margin-bottom:6px;"></div>
+          <div style="font-size:13px;font-weight:700;">${ir.approvedByName||'—'}</div>
+          <div style="font-size:11px;color:#1D9E75;">${ir.approvedByDesig||'Approved By'}</div>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderIncidentForm() {
+  return `
+  <div class="grid2">
+    <div class="field"><label>Client *</label>
+      <select id="ir_clientId" onchange="onIrClientSelect()">
+        <option value="">— Select Client —</option>
+        ${[...state.clients].sort((a,b)=>a.companyName.localeCompare(b.companyName)).map(c=>`<option value="${c.id}">${c.companyName}</option>`).join('')}
+      </select>
+    </div>
+    <div class="field"><label>Job Order / Project *</label>
+      <select id="ir_joId" disabled>
+        <option value="">— Select client first —</option>
+      </select>
+    </div>
+  </div>
+  <div class="grid2">
+    <div class="field"><label>Incident Type *</label>
+      <select id="ir_type">
+        ${IR_TYPES.map(t=>`<option>${t}</option>`).join('')}
+      </select>
+    </div>
+    <div class="field"><label>Severity *</label>
+      <select id="ir_severity">
+        ${IR_SEVERITIES.map(s=>`<option>${s}</option>`).join('')}
+      </select>
+    </div>
+  </div>
+  <div class="grid2">
+    <div class="field"><label>Date *</label><input type="date" id="ir_date" value="${new Date().toISOString().slice(0,10)}"></div>
+    <div class="field"><label>Time</label><input type="time" id="ir_time" value="${new Date().toTimeString().slice(0,5)}"></div>
+  </div>
+  <div class="grid2">
+    <div class="field"><label>Location / Area *</label><input id="ir_location" placeholder="e.g. Ground Floor, Pump Room"></div>
+    <div class="field"><label>Classification</label><input id="ir_class" placeholder="e.g. Property Damage, Near Miss"></div>
+  </div>
+
+  <!-- Type specific -->
+  <div class="field"><label>Type-Specific Details</label>
+    <textarea id="ir_typeDetails" rows="2" placeholder="e.g. Material involved, equipment affected, chemical substance..."></textarea>
+  </div>
+  <div class="grid2">
+    <div class="field"><label>Material / Substance Involved</label><input id="ir_material" placeholder="e.g. Electrical wiring, refrigerant"></div>
+    <div class="field"><label>Extinguishing / Containment Media</label><input id="ir_extMedia" placeholder="e.g. CO2 extinguisher, absorbent material"></div>
+  </div>
+  <div class="grid2">
+    <div class="field"><label>Estimated Cost (AED)</label><input type="number" id="ir_cost" placeholder="0"></div>
+    <div class="field"><label>Civil Defense / Authority Informed</label>
+      <select id="ir_cdInformed">
+        <option value="false">No</option>
+        <option value="true">Yes</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- H&S Section -->
+  <div class="grid2">
+    <div class="field"><label>Affected Person (if any)</label><input id="ir_affectedPerson" placeholder="Name of affected person"></div>
+    <div class="field"><label>Designation / Role</label><input id="ir_affectedDesig" placeholder="e.g. Technician, Foreman"></div>
+  </div>
+  <div class="field"><label>Injury / Damage Type</label><input id="ir_injuryType" placeholder="e.g. Electrical burn, Sprain, Property damage"></div>
+
+  <div style="border-top:1px solid var(--rule);margin:12px 0;"></div>
+
+  <!-- Core fields -->
+  <div class="field"><label>Description of Incident *</label>
+    <textarea id="ir_desc" rows="3" placeholder="Describe what happened, when, where and how..."></textarea>
+  </div>
+  <div class="field"><label>Immediate Action Taken</label>
+    <textarea id="ir_immediate" rows="2" placeholder="What was done immediately after the incident..."></textarea>
+  </div>
+  <div class="field"><label>Corrective Action</label>
+    <textarea id="ir_corrective" rows="2" placeholder="Long-term corrective measures planned or taken..."></textarea>
+  </div>
+
+  <!-- Cause Analysis -->
+  <div style="border-top:1px solid var(--rule);margin:12px 0;padding-top:12px;">
+    <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;margin-bottom:10px;">Cause Analysis</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
+      <div class="field"><label style="color:#dc2626;">Immediate Cause</label><textarea id="ir_immCause" rows="2" placeholder="Direct cause of incident..."></textarea></div>
+      <div class="field"><label style="color:#E8520A;">Underlying Cause</label><textarea id="ir_undCause" rows="2" placeholder="Contributing factors..."></textarea></div>
+      <div class="field"><label style="color:#1D9E75;">Root Cause</label><textarea id="ir_rootCause" rows="2" placeholder="Fundamental reason..."></textarea></div>
+    </div>
+  </div>
+
+  <!-- Risk Controls -->
+  <div style="border-top:1px solid var(--rule);margin:12px 0;padding-top:12px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+      <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;">Risk Control Measures</div>
+      <button class="btn btn-ghost btn-sm" type="button" id="addRcBtn">+ Add Row</button>
+    </div>
+    <div id="rcRows">
+      <div class="rc-row" style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:6px;margin-bottom:6px;">
+        <input placeholder="Risk control measure..." style="font-size:12px;">
+        <input type="date" style="font-size:12px;">
+        <input type="date" style="font-size:12px;">
+        <input placeholder="Responsible person..." style="font-size:12px;">
+        <button type="button" onclick="this.closest('.rc-row').remove()" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:16px;">✕</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Photos -->
+  <div style="border-top:1px solid var(--rule);margin:12px 0;padding-top:12px;">
+    <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;margin-bottom:8px;">Photos (up to 5)</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+      ${[0,1,2,3,4].map(i=>`
+      <div class="field">
+        <label>Photo ${i+1}</label>
+        <input type="file" id="ir_photo_${i}" accept="image/*" style="font-size:12px;padding:6px;">
+      </div>`).join('')}
+    </div>
+  </div>
+
+  <!-- People -->
+  <div style="border-top:1px solid var(--rule);margin:12px 0;padding-top:12px;">
+    <div class="grid2">
+      ${userPickerHtml('irPreparedBy', state.user?.name, state.user?.designation, 'Prepared By')}
+      ${userPickerHtml('irApprovedBy', '', '', 'Approved By')}
+    </div>
+    <div class="field"><label>Supervisor on Site</label><input id="ir_supervisor" placeholder="Name of site supervisor"></div>
+  </div>
+
+  <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">
+    <button class="btn btn-ghost" id="modalCancel">Cancel</button>
+    <button class="btn btn-primary" id="saveIrBtn">Submit Incident Report</button>
+  </div>`;
+}
+
+function onIrClientSelect() {
+  const cId = document.getElementById('ir_clientId')?.value;
+  const joSel = document.getElementById('ir_joId');
+  if (!cId||!joSel) return;
+  const client = state.clients.find(c=>c.id===cId);
+  const jos    = state.jobOrders.filter(j=>j.clientId===cId||j.clientCompany===client?.companyName);
+  joSel.innerHTML = `<option value="">— Select Job Order —</option>` +
+    jos.map(j=>`<option value="${j.id}">${j.jobOrderNumber} — ${j.subject||''}</option>`).join('');
+  joSel.disabled = false;
+}
+
+function buildIrPdf(ir) {
+  const co   = state.company || {};
+  const sev  = IR_SEV_COLOR[ir.severity] || '#888';
+  const logo = co.logoPath ? `<img src="${co.logoPath}" style="height:48px;object-fit:contain;" alt="logo">` : `<div style="font-size:14px;font-weight:700;color:#1D9E75;">AL FITR</div>`;
+
+  const photosHtml = ir.photos&&ir.photos.length>0 ? `
+  <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#555;margin:12px 0 8px;letter-spacing:.5px;">Incident Photos</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">
+    ${ir.photos.map((url,i)=>`
+    <div>
+      <div style="font-size:10px;font-weight:700;color:#E8520A;margin-bottom:4px;">Photo ${i+1}</div>
+      <img src="${url}" style="width:100%;height:180px;object-fit:cover;border-radius:6px;border:1px solid #e5e7eb;">
+    </div>`).join('')}
+  </div>` : '';
+
+  const rcRows = ir.riskControls&&ir.riskControls.length>0 ? ir.riskControls.map(rc=>`
+  <tr>
+    <td style="padding:5px 8px;border:1px solid #ddd;font-size:11px;">${rc.control||''}</td>
+    <td style="padding:5px 8px;border:1px solid #ddd;font-size:11px;">${rc.plannedDate||''}</td>
+    <td style="padding:5px 8px;border:1px solid #ddd;font-size:11px;">${rc.actualDate||''}</td>
+    <td style="padding:5px 8px;border:1px solid #ddd;font-size:11px;">${rc.responsibility||''}</td>
+  </tr>`).join('') : '<tr><td colspan="4" style="padding:8px;text-align:center;color:#aaa;font-size:11px;">No risk control measures recorded</td></tr>';
+
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${ir.refNumber}</title>
+  <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:Arial,sans-serif;font-size:11px;color:#1a1a1a;}@page{size:A4 portrait;margin:12mm;}img{max-width:100%;}</style>
+  </head><body>
+
+  <!-- Header -->
+  <div style="border-bottom:3px solid #E8520A;display:flex;align-items:center;justify-content:space-between;padding-bottom:10px;margin-bottom:14px;">
+    <div style="display:flex;align-items:center;gap:12px;">${logo}
+      <div style="font-size:14px;font-weight:700;color:#E8520A;">${co.name||'Al Fitr Electromechanical Works LLC'}</div>
+    </div>
+    <div style="text-align:right;">
+      <div style="font-size:13px;font-weight:700;color:#00627B;">INCIDENT / INVESTIGATION REPORT</div>
+      <div style="font-size:12px;color:#E8520A;font-weight:700;">${ir.refNumber}</div>
+      <div style="font-size:10px;color:#555;">Date: ${fmtDate(ir.date)}</div>
+    </div>
+  </div>
+
+  <!-- Info Table -->
+  <table style="width:100%;border-collapse:collapse;margin-bottom:12px;">
+    <tr>
+      <td style="padding:5px 8px;border:1px solid #ddd;font-weight:700;background:#f5f5f5;width:20%;">Client</td>
+      <td style="padding:5px 8px;border:1px solid #ddd;width:30%;">${ir.clientCompany||'—'}</td>
+      <td style="padding:5px 8px;border:1px solid #ddd;font-weight:700;background:#f5f5f5;width:20%;">Project</td>
+      <td style="padding:5px 8px;border:1px solid #ddd;">${ir.projectName||'—'}</td>
+    </tr>
+    <tr>
+      <td style="padding:5px 8px;border:1px solid #ddd;font-weight:700;background:#f5f5f5;">Job Order</td>
+      <td style="padding:5px 8px;border:1px solid #ddd;font-family:monospace;">${ir.jobOrderNumber||'—'}</td>
+      <td style="padding:5px 8px;border:1px solid #ddd;font-weight:700;background:#f5f5f5;">Location</td>
+      <td style="padding:5px 8px;border:1px solid #ddd;">${ir.location||'—'}</td>
+    </tr>
+    <tr>
+      <td style="padding:5px 8px;border:1px solid #ddd;font-weight:700;background:#f5f5f5;">Incident Type</td>
+      <td style="padding:5px 8px;border:1px solid #ddd;">${ir.incidentType}</td>
+      <td style="padding:5px 8px;border:1px solid #ddd;font-weight:700;background:#f5f5f5;">Severity</td>
+      <td style="padding:5px 8px;border:1px solid #ddd;"><span style="color:${sev};font-weight:700;">${ir.severity}</span></td>
+    </tr>
+    <tr>
+      <td style="padding:5px 8px;border:1px solid #ddd;font-weight:700;background:#f5f5f5;">Date & Time</td>
+      <td style="padding:5px 8px;border:1px solid #ddd;">${fmtDate(ir.date)} ${ir.time||''}</td>
+      <td style="padding:5px 8px;border:1px solid #ddd;font-weight:700;background:#f5f5f5;">Classification</td>
+      <td style="padding:5px 8px;border:1px solid #ddd;">${ir.classification||'—'}</td>
+    </tr>
+    ${ir.affectedPerson?`<tr>
+      <td style="padding:5px 8px;border:1px solid #ddd;font-weight:700;background:#f5f5f5;">Affected Person</td>
+      <td style="padding:5px 8px;border:1px solid #ddd;">${ir.affectedPerson} ${ir.affectedDesignation?'('+ir.affectedDesignation+')':''}</td>
+      <td style="padding:5px 8px;border:1px solid #ddd;font-weight:700;background:#f5f5f5;">Injury / Damage</td>
+      <td style="padding:5px 8px;border:1px solid #ddd;">${ir.injuryType||'—'}</td>
+    </tr>`:''}
+    ${ir.material?`<tr>
+      <td style="padding:5px 8px;border:1px solid #ddd;font-weight:700;background:#f5f5f5;">Material Involved</td>
+      <td style="padding:5px 8px;border:1px solid #ddd;">${ir.material}</td>
+      <td style="padding:5px 8px;border:1px solid #ddd;font-weight:700;background:#f5f5f5;">Est. Cost (AED)</td>
+      <td style="padding:5px 8px;border:1px solid #ddd;">${ir.estimatedCost||'—'}</td>
+    </tr>`:''}
+  </table>
+
+  ${photosHtml}
+
+  <!-- Description -->
+  ${ir.description?`<div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#555;margin:10px 0 4px;letter-spacing:.5px;">Description of Incident</div>
+  <div style="border:1px solid #e5e7eb;border-left:3px solid #E8520A;border-radius:4px;padding:8px;font-size:11px;line-height:1.6;margin-bottom:10px;">${ir.description}</div>`:''}
+
+  ${ir.immediateAction?`<div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#555;margin:10px 0 4px;letter-spacing:.5px;">Immediate Action Taken</div>
+  <div style="border:1px solid #e5e7eb;border-left:3px solid #1D9E75;border-radius:4px;padding:8px;font-size:11px;line-height:1.6;margin-bottom:10px;">${ir.immediateAction}</div>`:''}
+
+  ${ir.correctiveAction?`<div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#555;margin:10px 0 4px;letter-spacing:.5px;">Corrective Action</div>
+  <div style="border:1px solid #e5e7eb;border-left:3px solid #00627B;border-radius:4px;padding:8px;font-size:11px;line-height:1.6;margin-bottom:10px;">${ir.correctiveAction}</div>`:''}
+
+  <!-- Cause Analysis -->
+  <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#555;margin:10px 0 6px;letter-spacing:.5px;">Cause Analysis</div>
+  <table style="width:100%;border-collapse:collapse;margin-bottom:12px;">
+    <tr>
+      <th style="padding:6px 8px;background:#dc2626;color:#fff;border:1px solid #dc2626;font-size:10px;width:33%;">Immediate Cause</th>
+      <th style="padding:6px 8px;background:#E8520A;color:#fff;border:1px solid #E8520A;font-size:10px;width:33%;">Underlying Cause</th>
+      <th style="padding:6px 8px;background:#1D9E75;color:#fff;border:1px solid #1D9E75;font-size:10px;width:33%;">Root Cause</th>
+    </tr>
+    <tr>
+      <td style="padding:8px;border:1px solid #ddd;font-size:11px;vertical-align:top;">${ir.immediateCause||'—'}</td>
+      <td style="padding:8px;border:1px solid #ddd;font-size:11px;vertical-align:top;">${ir.underlyingCause||'—'}</td>
+      <td style="padding:8px;border:1px solid #ddd;font-size:11px;vertical-align:top;">${ir.rootCause||'—'}</td>
+    </tr>
+  </table>
+
+  <!-- Risk Controls -->
+  <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#555;margin:10px 0 6px;letter-spacing:.5px;">Risk Control Measures</div>
+  <table style="width:100%;border-collapse:collapse;margin-bottom:16px;">
+    <tr style="background:#2c2c2c;">
+      <th style="padding:6px 8px;color:#fff;font-size:10px;text-align:left;border:1px solid #444;">Risk Control</th>
+      <th style="padding:6px 8px;color:#fff;font-size:10px;text-align:left;border:1px solid #444;width:15%;">Planned Date</th>
+      <th style="padding:6px 8px;color:#fff;font-size:10px;text-align:left;border:1px solid #444;width:15%;">Actual Date</th>
+      <th style="padding:6px 8px;color:#fff;font-size:10px;text-align:left;border:1px solid #444;width:20%;">Responsibility</th>
+    </tr>
+    ${rcRows}
+  </table>
+
+  <!-- Signatures -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:10px;">
+    <div style="text-align:center;">
+      <div style="border-bottom:1px solid #555;height:30px;margin-bottom:5px;"></div>
+      <div style="font-size:11px;font-weight:700;">${ir.preparedByName||'Prepared By'}</div>
+      <div style="font-size:10px;color:#1D9E75;">${ir.preparedByDesig||'Signature & Date'}</div>
+    </div>
+    <div style="text-align:center;">
+      <div style="border-bottom:1px solid #555;height:30px;margin-bottom:5px;"></div>
+      <div style="font-size:11px;font-weight:700;">${ir.approvedByName||'Approved By'}</div>
+      <div style="font-size:10px;color:#1D9E75;">${ir.approvedByDesig||'Signature & Date'}</div>
+    </div>
+  </div>
+
+  </body></html>`;
+}
+
+function renderFmIncidents() {
+  return renderIncidents();
 }
 
 async function fmSetItemStatus(clId, itemId, status) {
@@ -3671,6 +4107,7 @@ function renderModal() {
   if (type === 'addAbnormality')   return modalWrap(renderAddAbnormalityForm(payload.clId), 'Add Abnormality Entry', false);
   if (type === 'newWcr')           return modalWrap(renderWcrForm(), 'New Work Completion Report', true);
   if (type === 'newSnr')           return modalWrap(renderSnrForm(), 'New Service Notification Report', false);
+  if (type === 'newIncident')      return modalWrap(renderIncidentForm(), 'New Incident Report', true);
   if (type === 'vendor') return modalWrap(renderVendorForm(payload), 'Vendor Details');
   if (type === 'client') return modalWrap(renderClientForm(payload), payload.id ? 'Edit Client' : 'New Client');
   if (type === 'userEdit') return modalWrap(renderUserForm(payload), 'User Details');
@@ -4309,8 +4746,117 @@ function attachHandlers() {
     } catch(e) { showToast(e.message, 'err'); }
   });
 
-  // FM Checklists
-  const newFmClBtn = document.getElementById('newFmChecklistBtn');
+  // Incident Reports
+  const newIncidentBtn = document.getElementById('newIncidentBtn');
+  if (newIncidentBtn) newIncidentBtn.addEventListener('click', () => openModal('newIncident', {}));
+
+  document.querySelectorAll('[data-view-ir]').forEach(b => b.addEventListener('click', e => {
+    state.incidentView = e.currentTarget.getAttribute('data-view-ir');
+    render();
+  }));
+
+  const printIrBtn = document.getElementById('printIrBtn');
+  if (printIrBtn) printIrBtn.addEventListener('click', () => {
+    const id = printIrBtn.getAttribute('data-id');
+    const ir = state.fmIncidents.find(r => r.id === id);
+    if (!ir) return;
+    const win = window.open('', '_blank');
+    win.document.write(buildIrPdf(ir));
+    win.document.close();
+    setTimeout(() => win.print(), 800);
+  });
+
+  document.querySelectorAll('[data-delete-ir]').forEach(b => b.addEventListener('click', async e => {
+    const id = e.currentTarget.getAttribute('data-delete-ir');
+    const ir = state.fmIncidents.find(r => r.id === id);
+    if (!ir || !confirm(`Delete ${ir.refNumber}? This cannot be undone.`)) return;
+    try {
+      await api('DELETE', '/api/incidents/' + id);
+      await loadAll();
+      showToast('Incident report deleted.', 'ok');
+      state.incidentView = null;
+      render();
+    } catch(e) { showToast(e.message, 'err'); }
+  }));
+
+  const addRcBtn = document.getElementById('addRcBtn');
+  if (addRcBtn) addRcBtn.addEventListener('click', () => {
+    const div = document.createElement('div');
+    div.className = 'rc-row';
+    div.style.cssText = 'display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:6px;margin-bottom:6px;';
+    div.innerHTML = `
+      <input placeholder="Risk control measure..." style="font-size:12px;">
+      <input type="date" style="font-size:12px;">
+      <input type="date" style="font-size:12px;">
+      <input placeholder="Responsible person..." style="font-size:12px;">
+      <button type="button" onclick="this.closest('.rc-row').remove()" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:16px;">✕</button>`;
+    document.getElementById('rcRows')?.appendChild(div);
+  });
+
+  const saveIrBtn = document.getElementById('saveIrBtn');
+  if (saveIrBtn) saveIrBtn.addEventListener('click', async () => {
+    const joId = document.getElementById('ir_joId')?.value;
+    if (!joId) { showToast('Please select a Job Order.', 'err'); return; }
+    const desc = document.getElementById('ir_desc')?.value?.trim();
+    if (!desc) { showToast('Description is required.', 'err'); return; }
+
+    // Collect risk controls
+    const riskControls = [];
+    document.querySelectorAll('.rc-row').forEach(row => {
+      const inputs = row.querySelectorAll('input');
+      if (inputs[0]?.value?.trim()) {
+        riskControls.push({ control: inputs[0].value.trim(), plannedDate: inputs[1]?.value||'', actualDate: inputs[2]?.value||'', responsibility: inputs[3]?.value?.trim()||'' });
+      }
+    });
+
+    const prepVal = getUserPickerValue('irPreparedBy');
+    const apprVal = getUserPickerValue('irApprovedBy');
+
+    const fd = new FormData();
+    fd.append('jobOrderId',         joId);
+    fd.append('incidentType',       document.getElementById('ir_type')?.value||'Other');
+    fd.append('severity',           document.getElementById('ir_severity')?.value||'Minor');
+    fd.append('date',               document.getElementById('ir_date')?.value||'');
+    fd.append('time',               document.getElementById('ir_time')?.value||'');
+    fd.append('location',           document.getElementById('ir_location')?.value||'');
+    fd.append('classification',     document.getElementById('ir_class')?.value||'');
+    fd.append('typeDetails',        document.getElementById('ir_typeDetails')?.value||'');
+    fd.append('material',           document.getElementById('ir_material')?.value||'');
+    fd.append('extinguishingMedia', document.getElementById('ir_extMedia')?.value||'');
+    fd.append('estimatedCost',      document.getElementById('ir_cost')?.value||'');
+    fd.append('civilDefenseInformed', document.getElementById('ir_cdInformed')?.value||'false');
+    fd.append('affectedPerson',     document.getElementById('ir_affectedPerson')?.value||'');
+    fd.append('affectedDesignation',document.getElementById('ir_affectedDesig')?.value||'');
+    fd.append('injuryType',         document.getElementById('ir_injuryType')?.value||'');
+    fd.append('description',        desc);
+    fd.append('immediateAction',    document.getElementById('ir_immediate')?.value||'');
+    fd.append('correctiveAction',   document.getElementById('ir_corrective')?.value||'');
+    fd.append('immediateCause',     document.getElementById('ir_immCause')?.value||'');
+    fd.append('underlyingCause',    document.getElementById('ir_undCause')?.value||'');
+    fd.append('rootCause',          document.getElementById('ir_rootCause')?.value||'');
+    fd.append('supervisorName',     document.getElementById('ir_supervisor')?.value||'');
+    fd.append('preparedByName',     prepVal.name||state.user?.name||'');
+    fd.append('preparedByDesig',    prepVal.designation||'');
+    fd.append('approvedByName',     apprVal.name||'');
+    fd.append('approvedByDesig',    apprVal.designation||'');
+    fd.append('riskControls',       JSON.stringify(riskControls));
+
+    for (let i=0; i<5; i++) {
+      const f = document.getElementById(`ir_photo_${i}`)?.files[0];
+      if (f) fd.append(`photo_${i}`, f);
+    }
+
+    try {
+      const r = await fetch('/api/incidents', { method:'POST', headers:{'Authorization':`Bearer ${authToken}`}, body:fd });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error);
+      await loadAll();
+      showToast('Incident report submitted.', 'ok');
+      closeModal();
+      state.incidentView = d.incident.id;
+      render();
+    } catch(e) { showToast(e.message, 'err'); }
+  });
   if (newFmClBtn) newFmClBtn.addEventListener('click', () => openModal('fmChecklist', {}));
 
   document.querySelectorAll('[data-view-fm-cl]').forEach(b => b.addEventListener('click', e => {

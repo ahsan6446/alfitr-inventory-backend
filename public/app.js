@@ -1230,6 +1230,8 @@ function renderWorkReportDetail(id) {
         <div><div class="k muted">Project</div><div>${wr.projectName||'—'}</div></div>
         <div><div class="k muted">Job Order</div><div style="font-family:var(--mono);">${wr.jobOrderNumber||'—'}</div></div>
         <div><div class="k muted">Location</div><div>${wr.location||'—'}</div></div>
+        <div><div class="k muted">Work Area</div><div style="font-weight:700;color:${wr.areaType==='Tenant Unit'?'#E8520A':'#00627B'}">${wr.areaType||'Common Area'}${wr.areaType==='Tenant Unit'&&wr.tenantName?' — '+wr.tenantName+(wr.tenantUnit?' ('+wr.tenantUnit+')':''):''}</div></div>
+        ${wr.areaType==='Tenant Unit'&&wr.tenantContact?`<div><div class="k muted">Tenant Contact</div><div>${wr.tenantContact}</div></div>`:''}
         <div><div class="k muted">Date</div><div>${fmtDate(wr.date)}</div></div>
         <div><div class="k muted">Technician</div><div>${wr.technicianName||'—'}</div></div>
         <div><div class="k muted">Supervisor</div><div>${wr.supervisorName||'—'}</div></div>
@@ -1280,6 +1282,8 @@ function renderWorkReportDetail(id) {
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:12px;">
         <div><div class="k muted">Work Type</div><div>${wr.workType||'—'}</div></div>
         <div><div class="k muted">Location</div><div>${wr.location||'—'}</div></div>
+        <div><div class="k muted">Work Area</div><div style="font-weight:700;color:${wr.areaType==='Tenant Unit'?'#E8520A':'#00627B'}">${wr.areaType||'Common Area'}${wr.areaType==='Tenant Unit'&&wr.tenantName?' — '+wr.tenantName+(wr.tenantUnit?' ('+wr.tenantUnit+')':''):''}</div></div>
+        ${wr.areaType==='Tenant Unit'&&wr.tenantContact?`<div><div class="k muted">Tenant Contact</div><div>${wr.tenantContact}</div></div>`:''}
         <div><div class="k muted">Time</div><div>${wr.time||'—'}</div></div>
       </div>
       ${wr.description?`<div style="margin-bottom:10px;"><div class="k muted">Description</div><div style="font-size:13px;line-height:1.6;background:#f8f9fa;border-radius:6px;padding:10px;border-left:3px solid #E8520A;margin-top:4px;">${wr.description}</div></div>`:''}
@@ -1362,7 +1366,33 @@ function renderWcrForm() {
   </div>
   <div class="grid2">
     <div class="field"><label>Date</label><input type="date" id="wcr_date" value="${p.date||new Date().toISOString().slice(0,10)}"></div>
-    <div class="field"><label>Location / Area</label><input id="wcr_location" value="${p.location||''}" placeholder="e.g. Common Area, Building A"></div>
+    <div class="field"><label>Location / Area</label><input id="wcr_location" value="${p.location||''}" placeholder="e.g. Ground Floor, Unit 201, Common Area"></div>
+  </div>
+
+  <!-- Work Area Type -->
+  <div class="field">
+    <label>Work Area *</label>
+    <div style="display:flex;gap:10px;margin-bottom:8px;">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;font-weight:600;">
+        <input type="radio" name="wcr_areaType" value="Common Area" checked onchange="document.getElementById('wcr_tenant_section').style.display='none'"> Common Area
+      </label>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;font-weight:600;">
+        <input type="radio" name="wcr_areaType" value="Tenant Unit" onchange="document.getElementById('wcr_tenant_section').style.display=''"> Tenant Unit
+      </label>
+    </div>
+    <div style="font-size:11px;color:var(--ink-soft);">
+      <span style="color:#00627B;font-weight:600;">Common Area</span> — charge to building management &nbsp;|&nbsp;
+      <span style="color:#E8520A;font-weight:600;">Tenant Unit</span> — charge to specific tenant
+    </div>
+  </div>
+
+  <div id="wcr_tenant_section" style="display:none;background:#fff8f0;border:1px solid #fed7aa;border-radius:8px;padding:12px;margin-bottom:4px;">
+    <div style="font-size:11px;font-weight:700;color:#E8520A;text-transform:uppercase;margin-bottom:8px;">Tenant Details</div>
+    <div class="grid2">
+      <div class="field"><label>Tenant Name *</label><input id="wcr_tenantName" placeholder="e.g. Al Noor Trading LLC"></div>
+      <div class="field"><label>Unit / Flat No.</label><input id="wcr_tenantUnit" placeholder="e.g. Unit 201, Flat 3B"></div>
+    </div>
+    <div class="field"><label>Tenant Contact (optional)</label><input id="wcr_tenantContact" placeholder="Phone or email"></div>
   </div>
   <div class="grid2">
     <div class="field"><label>Technician Name</label><input id="wcr_tech" value="${p.technicianName||state.user?.name||''}"></div>
@@ -1516,8 +1546,35 @@ function renderSnrForm() {
       <select id="snr_workType">${WORK_TYPES.map(t=>`<option>${t}</option>`).join('')}</select>
     </div>
     <div class="field"><label>Location / Area</label>
-      <input id="snr_location" placeholder="e.g. Common Area, Block B">
+      <input id="snr_location" placeholder="e.g. Ground Floor, Pump Room, Unit 201">
     </div>
+  </div>
+
+  <!-- Work Area Type -->
+  <div class="field">
+    <label>Work Area *</label>
+    <div style="display:flex;gap:10px;margin-bottom:8px;">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;font-weight:600;">
+        <input type="radio" name="snr_areaType" id="snr_area_common" value="Common Area" checked onchange="document.getElementById('snr_tenant_section').style.display='none'"> Common Area
+      </label>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;font-weight:600;">
+        <input type="radio" name="snr_areaType" id="snr_area_tenant" value="Tenant Unit" onchange="document.getElementById('snr_tenant_section').style.display=''"> Tenant Unit
+      </label>
+    </div>
+    <div style="font-size:11px;color:var(--ink-soft);">
+      <span style="color:#00627B;font-weight:600;">Common Area</span> — charge to building management &nbsp;|&nbsp; 
+      <span style="color:#E8520A;font-weight:600;">Tenant Unit</span> — charge to specific tenant
+    </div>
+  </div>
+
+  <!-- Tenant Details (hidden by default) -->
+  <div id="snr_tenant_section" style="display:none;background:#fff8f0;border:1px solid #fed7aa;border-radius:8px;padding:12px;margin-bottom:4px;">
+    <div style="font-size:11px;font-weight:700;color:#E8520A;text-transform:uppercase;margin-bottom:8px;">Tenant Details</div>
+    <div class="grid2">
+      <div class="field"><label>Tenant Name *</label><input id="snr_tenantName" placeholder="e.g. Al Noor Trading LLC"></div>
+      <div class="field"><label>Unit / Flat No.</label><input id="snr_tenantUnit" placeholder="e.g. Unit 201, Flat 3B"></div>
+    </div>
+    <div class="field"><label>Tenant Contact (optional)</label><input id="snr_tenantContact" placeholder="Phone or email"></div>
   </div>
   <div class="grid2">
     <div class="field"><label>Date</label><input type="date" id="snr_date" value="${new Date().toISOString().slice(0,10)}"></div>
@@ -1668,6 +1725,10 @@ function buildWcrPdf(wr) {
       <td style="padding:5px 8px;border:1px solid #ddd;font-family:monospace;">${wr.jobOrderNumber||'—'}</td>
       <td style="padding:5px 8px;border:1px solid #ddd;font-weight:700;background:#f5f5f5;">Location</td>
       <td style="padding:5px 8px;border:1px solid #ddd;">${wr.location||'—'}</td>
+    </tr>
+    <tr>
+      <td style="padding:5px 8px;border:1px solid #ddd;font-weight:700;background:#f5f5f5;">Work Area</td>
+      <td style="padding:5px 8px;border:1px solid #ddd;font-weight:700;color:${wr.areaType==='Tenant Unit'?'#E8520A':'#00627B'}">${wr.areaType||'Common Area'}${wr.areaType==='Tenant Unit'&&wr.tenantName?' — '+wr.tenantName+(wr.tenantUnit?' ('+wr.tenantUnit+')':''):''}</td>
     </tr>
     <tr>
       <td style="padding:5px 8px;border:1px solid #ddd;font-weight:700;background:#f5f5f5;">Technician</td>
@@ -4825,6 +4886,11 @@ function attachHandlers() {
     fd.append('jobOrderId',     joId);
     fd.append('date',           document.getElementById('wcr_date')?.value || '');
     fd.append('location',       document.getElementById('wcr_location')?.value || '');
+    const wcrAreaType = document.querySelector('input[name="wcr_areaType"]:checked')?.value || 'Common Area';
+    fd.append('areaType',       wcrAreaType);
+    fd.append('tenantName',     wcrAreaType==='Tenant Unit' ? (document.getElementById('wcr_tenantName')?.value||'') : '');
+    fd.append('tenantUnit',     wcrAreaType==='Tenant Unit' ? (document.getElementById('wcr_tenantUnit')?.value||'') : '');
+    fd.append('tenantContact',  wcrAreaType==='Tenant Unit' ? (document.getElementById('wcr_tenantContact')?.value||'') : '');
     fd.append('technicianName', document.getElementById('wcr_tech')?.value || '');
     fd.append('supervisorName', document.getElementById('wcr_supervisor')?.value || '');
     fd.append('notes',          document.getElementById('wcr_notes')?.value || '');
@@ -4860,6 +4926,11 @@ function attachHandlers() {
     fd.append('subject',        document.getElementById('snr_subject')?.value||'');
     fd.append('workType',       document.getElementById('snr_workType')?.value||'');
     fd.append('location',       document.getElementById('snr_location')?.value||'');
+    const snrAreaType = document.querySelector('input[name="snr_areaType"]:checked')?.value || 'Common Area';
+    fd.append('areaType',       snrAreaType);
+    fd.append('tenantName',     snrAreaType==='Tenant Unit' ? (document.getElementById('snr_tenantName')?.value||'') : '');
+    fd.append('tenantUnit',     snrAreaType==='Tenant Unit' ? (document.getElementById('snr_tenantUnit')?.value||'') : '');
+    fd.append('tenantContact',  snrAreaType==='Tenant Unit' ? (document.getElementById('snr_tenantContact')?.value||'') : '');
     fd.append('date',           document.getElementById('snr_date')?.value||'');
     fd.append('time',           document.getElementById('snr_time')?.value||'');
     fd.append('description',    document.getElementById('snr_desc')?.value||'');

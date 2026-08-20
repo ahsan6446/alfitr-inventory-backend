@@ -1,6 +1,8 @@
 const express = require('express');
 const db = require('../lib/db');
 const { requireAuth, requirePermission, resolveAttribution } = require('../lib/auth');
+const { can } = require('../lib/permissions');
+const { sendPushToUsers } = require('../lib/push');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -64,6 +66,12 @@ router.post('/', requirePermission('manageMaterialRequests'), async (req, res) =
   };
   state.purchaseRequests.push(pr);
   await db.persist();
+  const approverIds = state.users.filter(u => u.active !== false && can(state.roles, u.role, 'manageProcurement')).map(u => u.id);
+  sendPushToUsers(approverIds, {
+    title: 'Purchase Request needs approval',
+    body: `${pr.prNumber} — ${lineItems.length} item(s) — raised by ${requester.name}`,
+    url: '/',
+  }).catch(err => console.error('Push notification failed:', err.message));
   res.status(201).json({ purchaseRequest: pr });
 });
 

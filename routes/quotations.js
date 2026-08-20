@@ -4,6 +4,7 @@ const { requireAuth, requirePermission, resolveAttribution } = require('../lib/a
 const { can } = require('../lib/permissions');
 const { quotationTotals } = require('../lib/calc');
 const { generateQuotationPdf } = require('../lib/quotePdf');
+const { sendPushToUsers } = require('../lib/push');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -210,6 +211,11 @@ router.post('/:id/submit', requirePermission('manageQuotations'), async (req, re
   q.status = 'PendingApproval';
   q.updatedAt = Date.now();
   await db.persist();
+  sendPushToUsers(state.company.quotationApprovers, {
+    title: 'Quotation needs approval',
+    body: `${q.clientCompany || 'A client'} — ${q.quotationNumber || 'Draft quote'} was submitted by ${req.user.name}`,
+    url: '/',
+  }).catch(err => console.error('Push notification failed:', err.message));
   res.json({ quotation: withTotals(q) });
 });
 

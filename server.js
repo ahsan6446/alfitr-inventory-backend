@@ -32,6 +32,7 @@ app.use('/api/vendors', require('./routes/vendors'));
 app.use('/api/purchase-requests', require('./routes/purchaseRequests'));
 app.use('/api/purchase-orders', require('./routes/purchaseOrders'));
 app.use('/api/delay-reports', require('./routes/delayReports'));
+app.use('/api/push', require('./routes/push'));
 app.use("/api/exclusions", require("./routes/exclusions"));
 app.use("/api/fm-checklists", require("./routes/fmChecklists"));
 app.use("/api/work-reports", require("./routes/fmWorkReports").router);

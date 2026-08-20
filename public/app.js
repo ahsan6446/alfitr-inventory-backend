@@ -4128,6 +4128,13 @@ function renderSettings() {
       <div class="card-title" style="margin-bottom:12px;">Your Account</div>
       <p class="muted" style="margin-top:0;">Signed in as <strong>${state.user.name}</strong> (${state.user.role}).</p>
       <button class="btn btn-outline btn-sm" id="openChangePwdBtn">Change Password</button>
+      <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
+        <label style="margin-bottom:6px;">Push Notifications</label>
+        <p class="muted" style="margin-top:0;font-size:12px;">Get notified on this device when a quotation or purchase request needs your approval — even when the app isn't open.</p>
+        <div id="pushStatusArea">
+          <button class="btn btn-outline btn-sm" id="pushToggleBtn" disabled>Checking status…</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -6652,11 +6659,122 @@ function attachSettingsHandlers() {
   });
   const openExclusionsLibBtn = document.getElementById('openExclusionsLibBtn');
   if (openExclusionsLibBtn) openExclusionsLibBtn.addEventListener('click', () => openModal('exclusionsLib', {}));
+
+  const pushToggleBtn = document.getElementById('pushToggleBtn');
+  if (pushToggleBtn) {
+    refreshPushToggleUI();
+    pushToggleBtn.addEventListener('click', async () => {
+      pushToggleBtn.disabled = true;
+      const action = pushToggleBtn.dataset.action;
+      pushToggleBtn.textContent = action === 'unsubscribe' ? 'Turning off…' : 'Enabling…';
+      const ok = action === 'unsubscribe' ? await unsubscribeFromPush() : await subscribeToPush();
+      if (ok) showToast(action === 'unsubscribe' ? 'Push notifications turned off.' : 'Push notifications enabled.', 'ok');
+      await refreshPushToggleUI();
+    });
+  }
+}
+
+/* ================= PUSH NOTIFICATIONS ================= */
+// Converts the VAPID public key (base64url string from the server) into the raw byte
+// array format the browser's PushManager API requires — this is boilerplate every
+// Web Push implementation needs, not something specific to this app.
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(base64);
+  const arr = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+  return arr;
+}
+
+async function registerServiceWorker() {
+  if (!('serviceWorker' in navigator)) return null;
+  try {
+    return await navigator.serviceWorker.register('/sw.js');
+  } catch (e) {
+    console.error('Service worker registration failed:', e);
+    return null;
+  }
+}
+
+async function getPushSubscriptionStatus() {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return 'unsupported';
+  if (Notification.permission === 'denied') return 'blocked';
+  try {
+    const res = await api('GET', '/api/push/status');
+    return res.subscribed ? 'subscribed' : 'not-subscribed';
+  } catch (e) {
+    return 'not-subscribed';
+  }
+}
+
+async function subscribeToPush() {
+  const reg = await registerServiceWorker();
+  if (!reg) { showToast('Push notifications are not supported in this browser.', 'err'); return false; }
+
+  const permission = await Notification.requestPermission();
+  if (permission !== 'granted') {
+    showToast(permission === 'denied' ? 'Notifications are blocked — enable them in your browser settings to turn this on.' : 'Permission was not granted.', 'err');
+    return false;
+  }
+
+  try {
+    const { publicKey } = await api('GET', '/api/push/vapid-public-key');
+    const subscription = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(publicKey),
+    });
+    await api('POST', '/api/push/subscribe', { subscription: subscription.toJSON() });
+    return true;
+  } catch (e) {
+    console.error('Push subscribe failed:', e);
+    showToast('Could not enable push notifications: ' + e.message, 'err');
+    return false;
+  }
+}
+
+async function unsubscribeFromPush() {
+  if (!('serviceWorker' in navigator)) return true;
+  try {
+    const reg = await navigator.serviceWorker.getRegistration();
+    if (!reg) return true;
+    const sub = await reg.pushManager.getSubscription();
+    if (sub) {
+      await api('POST', '/api/push/unsubscribe', { endpoint: sub.endpoint });
+      await sub.unsubscribe();
+    }
+    return true;
+  } catch (e) {
+    console.error('Push unsubscribe failed:', e);
+    return false;
+  }
+}
+
+async function refreshPushToggleUI() {
+  const btn = document.getElementById('pushToggleBtn');
+  if (!btn) return;
+  const status = await getPushSubscriptionStatus();
+  if (status === 'unsupported') {
+    btn.textContent = 'Not supported in this browser';
+    btn.disabled = true;
+  } else if (status === 'blocked') {
+    btn.textContent = 'Blocked — enable in browser settings';
+    btn.disabled = true;
+  } else if (status === 'subscribed') {
+    btn.textContent = 'Turn Off Push Notifications';
+    btn.disabled = false;
+    btn.dataset.action = 'unsubscribe';
+  } else {
+    btn.textContent = 'Enable Push Notifications';
+    btn.disabled = false;
+    btn.dataset.action = 'subscribe';
+  }
 }
 
 /* ================= INIT ================= */
 (async function init() {
   render();
+  registerServiceWorker();
   if (authToken) {
     try { await loadAll(); } catch (e) { console.error(e); }
   } else {

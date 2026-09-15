@@ -154,4 +154,49 @@ router.post('/:id/cancel', requirePermission('manageProcurement'), async (req, r
   res.json({ purchaseOrder: withComputed(po) });
 });
 
+
+// Direct LPO — no PR or JO required
+router.post('/direct', requirePermission('manageProcurement'), async (req, res) => {
+  const state  = db.get();
+  const body   = req.body || {};
+  const vendor = state.vendors.find(v => v.id === body.vendorId);
+  if (!vendor) return res.status(400).json({ error: 'Select a valid vendor.' });
+  if (!Array.isArray(body.lineItems) || body.lineItems.length === 0) {
+    return res.status(400).json({ error: 'At least one line item is required.' });
+  }
+
+  const po = {
+    id:                  db.uuid(),
+    poNumber:            nextPoNumber(state),
+    direct:              true,
+    reference:           body.reference || '',
+    vendorId:            vendor.id,
+    vendorName:          vendor.companyName,
+    jobOrderId:          body.jobOrderId || null,
+    jobOrderNumber:      body.jobOrderId ? (state.jobOrders||[]).find(j=>j.id===body.jobOrderId)?.jobOrderNumber||'' : '',
+    purchaseRequestId:   null,
+    purchaseRequestNumber: null,
+    date:                body.date || new Date().toISOString().slice(0,10),
+    expectedDate:        body.expectedDate || '',
+    notes:               body.notes || '',
+    createdByName:       body.createdByName || req.user.name,
+    createdByDesignation:body.createdByDesignation || '',
+    lineItems: body.lineItems.map((l, i) => ({
+      id:           String(i + 1),
+      description:  l.description || '',
+      unit:         l.unit || 'pcs',
+      qtyOrdered:   Number(l.qty) || 1,
+      unitCost:     Number(l.unitCost) || 0,
+      qtyReceived:  0,
+    })),
+    status:   'Draft',
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  };
+
+  state.purchaseOrders.push(po);
+  await db.persist();
+  res.status(201).json({ purchaseOrder: withComputed(po) });
+});
+
 module.exports = router;

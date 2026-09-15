@@ -2721,14 +2721,23 @@ function renderVendors() {
 function renderVendorForm(vendor) {
   const isEdit = !!vendor.id;
   return `
-  <div class="field"><label>Company Name</label><input id="v_companyName" value="${vendor.companyName || ''}" placeholder="e.g. Gulf Fire Supplies LLC"></div>
+  <div class="field"><label>Company Name *</label><input id="v_companyName" value="${vendor.companyName || ''}" placeholder="e.g. Gulf Fire Supplies LLC"></div>
   <div class="grid2">
     <div class="field"><label>Contact Person</label><input id="v_contactPerson" value="${vendor.contactPerson || ''}"></div>
     <div class="field"><label>Phone</label><input id="v_phone" value="${vendor.phone || ''}" placeholder="+971 5xx xxx xxx"></div>
   </div>
   <div class="grid2">
     <div class="field"><label>Email</label><input id="v_email" type="email" value="${vendor.email || ''}"></div>
-    <div class="field"><label>Address</label><input id="v_address" value="${vendor.address || ''}"></div>
+    <div class="field"><label>PO Box</label><input id="v_pobox" value="${vendor.poBox || ''}" placeholder="e.g. PO Box 12345, Dubai"></div>
+  </div>
+  <div class="field"><label>Address</label><input id="v_address" value="${vendor.address || ''}"></div>
+  <div class="grid2">
+    <div class="field"><label>VAT / TRN No.</label><input id="v_trn" value="${vendor.trn || ''}" placeholder="e.g. 100123456700003"></div>
+    <div class="field"><label>Trade License No.</label><input id="v_tradeLicNo" value="${vendor.tradeLicNo || ''}" placeholder="e.g. 123456"></div>
+  </div>
+  <div class="grid2">
+    <div class="field"><label>Trade License Validity</label><input type="date" id="v_tradeLicExpiry" value="${vendor.tradeLicExpiry || ''}"></div>
+    <div class="field"><label>Category / Specialty</label><input id="v_category" value="${vendor.category || ''}" placeholder="e.g. Fire & Safety, Electrical"></div>
   </div>
   <div style="display:flex;justify-content:space-between;margin-top:8px;">
     <div>${isEdit ? `<button class="btn btn-danger" id="deleteVendorBtn">Delete Vendor</button>` : ''}</div>
@@ -3419,9 +3428,10 @@ function renderProcurement() {
   <div class="toolbar">
     <div style="display:flex;gap:8px;">
       <button class="btn ${view === 'requests' ? 'btn-primary' : 'btn-outline'} btn-sm" data-proc-view="requests">Purchase Requests</button>
-      <button class="btn ${view === 'orders' ? 'btn-primary' : 'btn-outline'} btn-sm" data-proc-view="orders">Purchase Orders</button>
+      <button class="btn ${view === 'orders' ? 'btn-primary' : 'btn-outline'} btn-sm" data-proc-view="orders">Purchase Orders / LPOs</button>
     </div>
     <div style="flex:1"></div>
+    ${view === 'orders' && can('manageProcurement') ? `<button class="btn btn-primary" id="newDirectPoBtn">+ Direct LPO</button>` : ''}
   </div>
   ${view === 'requests' ? renderPrList() : renderPoList()}
   `;
@@ -3456,22 +3466,103 @@ function renderPoList() {
   return `
   <div class="card">
     <div class="tbl-wrap"><table>
-      <thead><tr><th>PO #</th><th>Vendor</th><th>From PR</th><th>Date</th><th>Lines</th><th>Status</th><th></th></tr></thead>
+      <thead><tr><th>PO/LPO #</th><th>Type</th><th>Vendor</th><th>From PR / Ref</th><th>Date</th><th>Amount</th><th>Status</th><th></th></tr></thead>
       <tbody>
-      ${list.length === 0 ? `<tr><td colspan="7"><div class="empty"><div class="big">📦</div>No purchase orders yet — these get created from an approved Purchase Request.</div></td></tr>` :
-        list.map(po => `
-        <tr>
-          <td style="font-family:var(--mono);font-weight:700;">${po.poNumber}</td>
-          <td>${po.vendorName}</td>
-          <td style="font-family:var(--mono);font-size:12px;">${po.purchaseRequestNumber}</td>
-          <td>${fmtDate(po.date)}</td>
-          <td>${po.lineItems.length}</td>
-          <td>${poStatusBadge(po.status)}</td>
-          <td><button class="btn btn-outline btn-sm" data-view-po="${po.id}">Open</button></td>
-        </tr>`).join('')}
+      ${list.length === 0 ? `<tr><td colspan="8"><div class="empty"><div class="big">📦</div>No purchase orders yet.</div></td></tr>` :
+        list.map(po => {
+          const total = (po.lineItems||[]).reduce((s,l)=>s+(l.qty*(l.unitCost||0)),0);
+          const isDirect = po.direct === true;
+          return `
+          <tr>
+            <td style="font-family:var(--mono);font-weight:700;">${po.poNumber}</td>
+            <td><span class="badge ${isDirect?'badge-low':'badge-draft'}" style="font-size:10px;">${isDirect?'Direct LPO':'From PR'}</span></td>
+            <td>${po.vendorName}</td>
+            <td style="font-family:var(--mono);font-size:12px;">${isDirect?(po.reference||'—'):po.purchaseRequestNumber}</td>
+            <td>${fmtDate(po.date)}</td>
+            <td style="font-family:var(--mono);">AED ${fmtMoney(total)}</td>
+            <td>${poStatusBadge(po.status)}</td>
+            <td><button class="btn btn-outline btn-sm" data-view-po="${po.id}">Open</button></td>
+          </tr>`;
+        }).join('')}
       </tbody>
     </table></div>
   </div>`;
+}
+
+function renderDirectPoForm() {
+  const vendorOptions = [...state.vendors].sort((a,b)=>a.companyName.localeCompare(b.companyName))
+    .map(v=>`<option value="${v.id}">${v.companyName}${v.category?' ('+v.category+')':''}</option>`).join('');
+  return `
+  <div style="background:#f0faf5;border:1px solid #d1fae5;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:12px;color:#085041;">
+    💡 Direct LPO — no Job Order or Purchase Request needed. Use for general purchases, stock replenishment, or ad-hoc orders.
+  </div>
+  <div class="grid2">
+    <div class="field"><label>Vendor *</label>
+      <select id="dpo_vendor">
+        <option value="">— Select Vendor —</option>
+        ${vendorOptions}
+      </select>
+    </div>
+    <div class="field"><label>Date</label><input type="date" id="dpo_date" value="${new Date().toISOString().slice(0,10)}"></div>
+  </div>
+  <div class="grid2">
+    <div class="field"><label>Reference / Purpose</label><input id="dpo_ref" placeholder="e.g. Stock replenishment, General supplies"></div>
+    <div class="field"><label>Expected Delivery</label><input type="date" id="dpo_delivery"></div>
+  </div>
+  <div class="field"><label>Job Order (optional)</label>
+    <select id="dpo_jo">
+      <option value="">— No Job Order (General Purchase) —</option>
+      ${state.jobOrders.map(j=>`<option value="${j.id}">${j.jobOrderNumber} — ${j.clientCompany}</option>`).join('')}
+    </select>
+  </div>
+
+  <div style="border-top:1px solid var(--rule);margin:12px 0 10px;padding-top:10px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+      <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;">Line Items *</div>
+      <button class="btn btn-ghost btn-sm" type="button" id="addDpoLineBtn">+ Add Item</button>
+    </div>
+    <div class="tbl-wrap"><table id="dpoLinesTable">
+      <thead><tr><th>Description</th><th>Unit</th><th style="width:80px;text-align:right;">Qty</th><th style="width:100px;text-align:right;">Unit Cost</th><th style="width:80px;text-align:right;">Total</th><th style="width:30px;"></th></tr></thead>
+      <tbody id="dpoLinesBody">
+        <tr class="dpo-line-row">
+          <td><input class="dpo_desc" placeholder="Item description..." style="width:100%;font-size:12px;"></td>
+          <td><input class="dpo_unit" placeholder="pcs" style="width:60px;font-size:12px;"></td>
+          <td style="text-align:right;"><input class="dpo_qty" type="number" value="1" min="1" style="width:70px;text-align:right;font-size:12px;" oninput="updateDpoTotal(this)"></td>
+          <td style="text-align:right;"><input class="dpo_cost" type="number" placeholder="0.00" style="width:90px;text-align:right;font-size:12px;" oninput="updateDpoTotal(this)"></td>
+          <td style="text-align:right;font-family:var(--mono);font-size:12px;" class="dpo_line_total">0.00</td>
+          <td></td>
+        </tr>
+      </tbody>
+      <tfoot>
+        <tr><td colspan="4" style="text-align:right;font-weight:700;padding:8px 10px;font-size:13px;">Total:</td>
+        <td style="text-align:right;font-family:var(--mono);font-weight:700;font-size:13px;color:#E8520A;" id="dpoGrandTotal">AED 0.00</td>
+        <td></td></tr>
+      </tfoot>
+    </table></div>
+  </div>
+
+  ${userPickerHtml('dpo_createdBy', state.user?.name, state.user?.designation, 'Prepared By')}
+  <div class="field"><label>Notes / Remarks</label><textarea id="dpo_notes" rows="2" placeholder="Any special instructions or notes..."></textarea></div>
+  <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">
+    <button class="btn btn-ghost" id="modalCancel">Cancel</button>
+    <button class="btn btn-primary" id="saveDirectPoBtn">Create LPO</button>
+  </div>`;
+}
+
+function updateDpoTotal(el) {
+  const row  = el.closest('.dpo-line-row');
+  const qty  = parseFloat(row.querySelector('.dpo_qty')?.value) || 0;
+  const cost = parseFloat(row.querySelector('.dpo_cost')?.value) || 0;
+  row.querySelector('.dpo_line_total').textContent = fmtMoney(qty * cost);
+  // Update grand total
+  let grand = 0;
+  document.querySelectorAll('.dpo-line-row').forEach(r => {
+    const q = parseFloat(r.querySelector('.dpo_qty')?.value)||0;
+    const c = parseFloat(r.querySelector('.dpo_cost')?.value)||0;
+    grand += q*c;
+  });
+  const gt = document.getElementById('dpoGrandTotal');
+  if (gt) gt.textContent = 'AED ' + fmtMoney(grand);
 }
 
 function renderPrView(pr) {
@@ -4319,6 +4410,7 @@ function renderModal() {
   if (type === 'newPr') return modalWrap(renderPrForm(payload), 'Raise Purchase Request');
   if (type === 'viewPr') return modalWrap(renderPrView(payload), `Purchase Request ${payload.prNumber}`, true);
   if (type === 'newPo') return modalWrap(renderPoForm(payload), 'Create Purchase Order');
+  if (type === 'directPo') return modalWrap(renderDirectPoForm(), 'New Direct LPO', true);
   if (type === 'viewPo') return modalWrap(renderPoView(payload), `Purchase Order ${payload.poNumber}`, true);
   if (type === 'siteTeam') return modalWrap(renderSiteTeamForm(payload), 'Set Site Team');
   if (type === 'newJo') return modalWrap(renderJoForm(payload), payload.id ? 'Edit Job Order' : 'New Job Order');
@@ -5210,7 +5302,62 @@ function attachHandlers() {
     openModal('newMr', { jobOrderId: jo.id, lineItems: [] });
   });
 
-  const procViewBtns = document.querySelectorAll('[data-proc-view]');
+  const newDirectPoBtn = document.getElementById('newDirectPoBtn');
+  if (newDirectPoBtn) newDirectPoBtn.addEventListener('click', () => openModal('directPo', {}));
+
+  const addDpoLineBtn = document.getElementById('addDpoLineBtn');
+  if (addDpoLineBtn) addDpoLineBtn.addEventListener('click', () => {
+    const tbody = document.getElementById('dpoLinesBody');
+    if (!tbody) return;
+    const row = document.createElement('tr');
+    row.className = 'dpo-line-row';
+    row.innerHTML = `
+      <td><input class="dpo_desc" placeholder="Item description..." style="width:100%;font-size:12px;"></td>
+      <td><input class="dpo_unit" placeholder="pcs" style="width:60px;font-size:12px;"></td>
+      <td style="text-align:right;"><input class="dpo_qty" type="number" value="1" min="1" style="width:70px;text-align:right;font-size:12px;" oninput="updateDpoTotal(this)"></td>
+      <td style="text-align:right;"><input class="dpo_cost" type="number" placeholder="0.00" style="width:90px;text-align:right;font-size:12px;" oninput="updateDpoTotal(this)"></td>
+      <td style="text-align:right;font-family:var(--mono);font-size:12px;" class="dpo_line_total">0.00</td>
+      <td><button type="button" onclick="this.closest('.dpo-line-row').remove();updateDpoTotal(this);" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:16px;">✕</button></td>`;
+    tbody.appendChild(row);
+  });
+
+  const saveDirectPoBtn = document.getElementById('saveDirectPoBtn');
+  if (saveDirectPoBtn) saveDirectPoBtn.addEventListener('click', async () => {
+    const vendorId = document.getElementById('dpo_vendor')?.value;
+    if (!vendorId) { showToast('Please select a vendor.', 'err'); return; }
+    const lines = [];
+    document.querySelectorAll('.dpo-line-row').forEach(row => {
+      const desc = row.querySelector('.dpo_desc')?.value?.trim();
+      if (desc) lines.push({
+        description: desc,
+        unit:    row.querySelector('.dpo_unit')?.value?.trim() || 'pcs',
+        qty:     parseFloat(row.querySelector('.dpo_qty')?.value)||1,
+        unitCost:parseFloat(row.querySelector('.dpo_cost')?.value)||0,
+      });
+    });
+    if (lines.length === 0) { showToast('Add at least one line item.', 'err'); return; }
+    const prepVal = getUserPickerValue('dpo_createdBy');
+    const body = {
+      vendorId,
+      direct:      true,
+      reference:   document.getElementById('dpo_ref')?.value?.trim()||'',
+      date:        document.getElementById('dpo_date')?.value||'',
+      expectedDate:document.getElementById('dpo_delivery')?.value||'',
+      jobOrderId:  document.getElementById('dpo_jo')?.value||'',
+      notes:       document.getElementById('dpo_notes')?.value?.trim()||'',
+      createdByName: prepVal.name||state.user?.name||'',
+      createdByDesignation: prepVal.designation||'',
+      lineItems: lines,
+    };
+    try {
+      const res = await api('POST', '/api/purchase-orders/direct', body);
+      await loadAll();
+      showToast('Direct LPO created.', 'ok');
+      closeModal();
+      state.procView = 'orders';
+      render();
+    } catch(e) { showToast(e.message, 'err'); }
+  });
   procViewBtns.forEach(b => b.addEventListener('click', e => { state.procView = e.currentTarget.getAttribute('data-proc-view'); render(); }));
 
   document.querySelectorAll('[data-view-pr]').forEach(b => b.addEventListener('click', e => {
@@ -5532,7 +5679,7 @@ function attachVendorFormHandlers() {
     const companyName = val('v_companyName').trim();
     if (!companyName) { showToast('Company name is required.', 'err'); return; }
     const existing = state.modal.payload.id;
-    const body = { companyName, contactPerson: val('v_contactPerson').trim(), phone: val('v_phone').trim(), email: val('v_email').trim(), address: val('v_address').trim() };
+    const body = { companyName, contactPerson: val('v_contactPerson').trim(), phone: val('v_phone').trim(), email: val('v_email').trim(), address: val('v_address').trim(), poBox: val('v_pobox').trim(), trn: val('v_trn').trim(), tradeLicNo: val('v_tradeLicNo').trim(), tradeLicExpiry: val('v_tradeLicExpiry').trim(), category: val('v_category').trim() };
     try {
       if (existing) await api('PUT', '/api/vendors/' + existing, body);
       else await api('POST', '/api/vendors', body);

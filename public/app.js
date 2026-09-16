@@ -5529,57 +5529,7 @@ function attachHandlers() {
   });
 
   const saveDirectPoBtn = document.getElementById('saveDirectPoBtn');
-  if (saveDirectPoBtn) saveDirectPoBtn.addEventListener('click', async () => {
-    const vendorId = document.getElementById('dpo_vendor')?.value;
-    if (!vendorId) { showToast('Please select a vendor.', 'err'); return; }
-    const lines = [];
-    document.querySelectorAll('.dpo-line-row').forEach(row => {
-      const desc = row.querySelector('.dpo_desc')?.value?.trim();
-      if (desc) lines.push({
-        description: desc,
-        brand:    row.querySelector('.dpo_brand')?.value?.trim()||'',
-        unit:     row.querySelector('.dpo_unit')?.value?.trim()||'pcs',
-        qty:      parseFloat(row.querySelector('.dpo_qty')?.value)||1,
-        unitCost: parseFloat(row.querySelector('.dpo_cost')?.value)||0,
-      });
-    });
-    if (lines.length===0) { showToast('Add at least one line item.', 'err'); return; }
-    const prepVal = getUserPickerValue('dpo_preparedBy');
-    const chkVal  = getUserPickerValue('dpo_checkedBy');
-    const apprVal = getUserPickerValue('dpo_approvedBy');
-    const existingId = saveDirectPoBtn.getAttribute('data-id');
-    const body = {
-      vendorId,
-      direct:          true,
-      reference:       document.getElementById('dpo_ref')?.value?.trim()||'',
-      date:            document.getElementById('dpo_date')?.value||'',
-      expectedDate:    document.getElementById('dpo_delivery')?.value||'',
-      deliveryAddress: document.getElementById('dpo_delivery_addr')?.value?.trim()||'',
-      jobOrderId:      document.getElementById('dpo_jo')?.value||'',
-      paymentTerms:    document.getElementById('dpo_payterms')?.value||'30 Days Credit',
-      notes:           document.getElementById('dpo_notes')?.value?.trim()||'',
-      preparedByName:  prepVal.name||state.user?.name||'',
-      preparedByDesig: prepVal.designation||'',
-      checkedByName:   chkVal.name||'',
-      checkedByDesig:  chkVal.designation||'Procurement Engineer',
-      approvedByName:  apprVal.name||'',
-      approvedByDesig: apprVal.designation||'Procurement Manager',
-      lineItems: lines,
-    };
-    try {
-      let res;
-      if (existingId) {
-        res = await api('PUT', '/api/purchase-orders/'+existingId+'/direct', body);
-      } else {
-        res = await api('POST', '/api/purchase-orders/direct', body);
-      }
-      await loadAll();
-      showToast(existingId?'LPO updated.':'Direct LPO created.', 'ok');
-      closeModal();
-      state.procView = 'orders';
-      render();
-    } catch(e) { showToast(e.message, 'err'); }
-  });
+  
   const procViewBtns = document.querySelectorAll('[data-proc-view]');
   procViewBtns.forEach(b => b.addEventListener('click', e => { state.procView = e.currentTarget.getAttribute('data-proc-view'); render(); }));
 

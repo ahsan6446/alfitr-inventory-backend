@@ -3489,6 +3489,3721 @@ function renderPoList() {
   </div>`;
 }
 
+function renderPrView(pr) {
+  const canProcure = can('manageProcurement');
+  return `
+  <div class="grid3">
+    <div><div class="k muted">Material Request</div><div style="font-weight:600;font-family:var(--mono);font-size:12px;">${pr.materialRequestNumber}</div></div>
+    <div><div class="k muted">Job Order</div><div style="font-weight:600;font-family:var(--mono);font-size:12px;">${pr.jobOrderNumber}</div></div>
+    <div><div class="k muted">Requested By</div><div style="font-weight:600;">${pr.requestedByName}${pr.requestedByDesignation ? ' <span class="muted" style="font-weight:400;">— ' + pr.requestedByDesignation + '</span>' : ''}</div></div>
+  </div>
+  <div class="grid2" style="margin-top:10px;">
+    <div><div class="k muted">Date</div><div>${fmtDate(pr.date)}</div></div>
+    <div><div class="k muted">Status</div><div>${prStatusBadge(pr.status)}</div></div>
+  </div>
+  ${pr.status === 'Rejected' ? `<div class="banner-warn" style="margin-top:10px;">Rejected: ${pr.rejectionReason || 'No reason given'}</div>` : ''}
+  ${pr.notes ? `<div style="margin-top:12px;"><strong>Notes:</strong> ${pr.notes}</div>` : ''}
+  <div class="tbl-wrap" style="margin-top:16px;"><table>
+    <thead><tr><th>Description</th><th>Brand</th><th>Unit</th><th style="text-align:right;">Qty</th></tr></thead>
+    <tbody>
+    ${pr.lineItems.map(l => `<tr><td>${l.description}</td><td>${l.brand || '—'}</td><td>${l.unit}</td><td style="text-align:right;font-family:var(--mono);">${l.qty}</td></tr>`).join('')}
+    </tbody>
+  </table></div>
+  <div style="display:flex;justify-content:space-between;margin-top:18px;">
+    <div style="display:flex;gap:8px;">
+      ${pr.status === 'Requested' && canProcure ? `<button class="btn btn-primary btn-sm" id="approvePrBtn">Approve</button><button class="btn btn-danger btn-sm" id="rejectPrBtn">Reject</button>` : ''}
+      ${pr.status === 'Approved' && canProcure ? `<button class="btn btn-primary btn-sm" id="convertPrToPoBtn">Create Purchase Order</button>` : ''}
+      ${pr.status === 'Converted' && pr.purchaseOrderId ? `<button class="btn btn-outline btn-sm" data-view-po="${pr.purchaseOrderId}">View Purchase Order</button>` : ''}
+    </div>
+    <button class="btn btn-ghost" id="modalCancel">Close</button>
+  </div>
+  `;
+}
+
+function renderPrForm(payload) {
+  const mr = findMaterialRequest(payload.materialRequestId);
+  const lines = payload.lineItems || [];
+  return `
+  <div class="muted" style="margin-bottom:10px;font-size:12px;">Raising against <strong>${mr.mrNumber}</strong> (${mr.jobOrderNumber})</div>
+  <label>Shortfall Line Items <span class="muted" style="font-weight:500;text-transform:none;">(pre-filled with what's short — adjust if you want to order more)</span></label>
+  <div class="tbl-wrap" style="margin-bottom:14px;"><table>
+    <thead><tr><th>Description</th><th>Unit</th><th style="text-align:right;">Qty to Order</th></tr></thead>
+    <tbody>
+    ${lines.map((l, idx) => `
+      <tr>
+        <td>${l.description}</td><td>${l.unit}</td>
+        <td style="text-align:right;"><input class="prLineQty" data-idx="${idx}" type="number" style="width:100px;text-align:right;" value="${l.qty}"></td>
+      </tr>`).join('')}
+    </tbody>
+  </table></div>
+  ${userPickerHtml('pr_requestedBy', payload.requestedByName || state.user?.name, payload.requestedByDesignation || state.user?.designation, 'Requested By', 'requestedBy')}
+  <div class="field"><label>Notes</label><textarea id="prNotes" rows="2">${payload.notes || ''}</textarea></div>
+  <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">
+    <button class="btn btn-ghost" id="modalCancel">Cancel</button>
+    <button class="btn btn-primary" id="savePrBtn">Raise Purchase Request</button>
+  </div>
+  `;
+}
+
+function renderPoForm(payload) {
+  // payload.purchaseRequestId is the approved PR being converted
+  const pr = findPurchaseRequest(payload.purchaseRequestId);
+  const vendorOptions = state.vendors.map(v => `<option value="${v.id}" ${payload.vendorId === v.id ? 'selected' : ''}>${v.companyName}</option>`).join('');
+  return `
+  <div class="muted" style="margin-bottom:10px;font-size:12px;">Converting <strong>${pr.prNumber}</strong> (from ${pr.materialRequestNumber}, ${pr.jobOrderNumber})</div>
+  <div class="field"><label>Vendor</label>
+    <select id="poVendorPick">
+      <option value="">— Select vendor —</option>
+      ${vendorOptions}
+    </select>
+  </div>
+  <div class="field"><label>Expected Delivery Date <span class="muted" style="font-weight:500;text-transform:none;">(optional)</span></label><input type="date" id="poExpectedDate" value="${payload.expectedDate || ''}"></div>
+  <label>Line Items &amp; Unit Cost</label>
+  <div class="tbl-wrap" style="margin-bottom:14px;"><table>
+    <thead><tr><th>Description</th><th>Unit</th><th style="text-align:right;">Qty</th><th style="text-align:right;">Unit Cost</th></tr></thead>
+    <tbody>
+    ${pr.lineItems.map(l => `
+      <tr>
+        <td>${l.description}</td><td>${l.unit}</td><td style="text-align:right;font-family:var(--mono);">${l.qty}</td>
+        <td style="text-align:right;"><input class="poUnitCost" data-prlineid="${l.id}" type="number" style="width:100px;text-align:right;" value="${(payload.unitCosts && payload.unitCosts[l.id]) || ''}"></td>
+      </tr>`).join('')}
+    </tbody>
+  </table></div>
+  ${userPickerHtml('po_createdBy', payload.createdByName || state.user?.name, payload.createdByDesignation || state.user?.designation, 'Created By', 'createdBy')}
+  <div class="field"><label>Notes</label><textarea id="poNotes" rows="2">${payload.notes || ''}</textarea></div>
+  <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">
+    <button class="btn btn-ghost" id="modalCancel">Cancel</button>
+    <button class="btn btn-primary" id="createPoBtn">Create Purchase Order</button>
+  </div>
+  `;
+}
+
+function renderPoView(po) {
+  const canProcure = can('manageProcurement');
+  const canReceive = can('manageStock');
+  const isDirect   = po.direct === true;
+  const sub  = (po.lineItems||[]).reduce((s,l)=>s+(l.qtyOrdered||l.qty||0)*(l.unitCost||0),0);
+  const vat  = sub * 0.05;
+  const total= sub + vat;
+  const vendor = state.vendors.find(v=>v.id===po.vendorId)||{};
+
+  return `
+  <!-- LPO Header bar -->
+  <div class="fm-cl-title-bar" style="border-left:5px solid #00627B;margin-bottom:12px;">
+    <div style="flex:1;">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#00627B;">${isDirect?'Direct LPO':'Purchase Order'}</div>
+      <div style="font-size:20px;font-weight:700;color:var(--ink);">${po.poNumber}</div>
+      <div style="font-size:12px;color:var(--ink-soft);margin-top:3px;">${po.vendorName} · ${fmtDate(po.date)}</div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      ${poStatusBadge(po.status)}
+      ${canProcure&&isDirect?`<button class="btn btn-outline btn-sm" id="editDirectPoBtn" data-id="${po.id}">✏ Edit</button>`:''}
+      <button class="btn btn-teal btn-sm" id="printLpoBtn" data-id="${po.id}">🖨 Download PDF</button>
+      ${po.status === 'Draft' && canProcure ? `<button class="btn btn-primary btn-sm" id="sendPoBtn">Send to Vendor</button><button class="btn btn-danger btn-sm" id="cancelPoBtn">Cancel</button>` : ''}
+    </div>
+  </div>
+
+  <!-- Info -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+    <div class="card">
+      <div class="card-head"><div class="card-title">Vendor Details</div></div>
+      <div class="card-body" style="font-size:12px;line-height:2;">
+        <div><strong>${po.vendorName}</strong></div>
+        ${vendor.address?`<div style="color:var(--ink-soft);">${vendor.address}</div>`:''}
+        ${vendor.poBox?`<div style="color:var(--ink-soft);">${vendor.poBox}</div>`:''}
+        ${vendor.phone?`<div>📞 ${vendor.phone}</div>`:''}
+        ${vendor.email?`<div>✉️ ${vendor.email}</div>`:''}
+        ${vendor.trn?`<div style="color:#00627B;font-weight:600;">TRN: ${vendor.trn}</div>`:''}
+        ${vendor.tradeLicNo?`<div style="font-size:11px;color:var(--ink-soft);">Trade Lic: ${vendor.tradeLicNo}${vendor.tradeLicExpiry?' (Exp: '+fmtDate(vendor.tradeLicExpiry)+')':''}</div>`:''}
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-head"><div class="card-title">Order Details</div></div>
+      <div class="card-body" style="font-size:12px;line-height:2;">
+        <div><span style="color:var(--ink-soft);">LPO No.:</span> <strong style="font-family:var(--mono);">${po.poNumber}</strong></div>
+        <div><span style="color:var(--ink-soft);">Date:</span> ${fmtDate(po.date)}</div>
+        ${po.expectedDate?`<div><span style="color:var(--ink-soft);">Delivery By:</span> ${fmtDate(po.expectedDate)}</div>`:''}
+        ${po.deliveryAddress?`<div><span style="color:var(--ink-soft);">Deliver To:</span> ${po.deliveryAddress}</div>`:''}
+        ${isDirect&&po.reference?`<div><span style="color:var(--ink-soft);">Purpose:</span> ${po.reference}</div>`:''}
+        ${po.jobOrderNumber?`<div><span style="color:var(--ink-soft);">Job Order:</span> <span style="font-family:var(--mono);">${po.jobOrderNumber}</span></div>`:''}
+        ${po.paymentTerms?`<div><span style="color:var(--ink-soft);">Payment:</span> ${po.paymentTerms}</div>`:''}
+        ${!isDirect?`<div><span style="color:var(--ink-soft);">From PR:</span> <span style="font-family:var(--mono);">${po.purchaseRequestNumber||'—'}</span></div>`:''}
+      </div>
+    </div>
+  </div>
+
+  <!-- Line Items -->
+  <div class="card" style="margin-bottom:12px;">
+    <div class="card-head"><div class="card-title">Line Items</div></div>
+    <div class="tbl-wrap"><table>
+      <thead><tr>
+        <th>#</th><th>Description</th>
+        ${isDirect?'<th>Brand</th>':''}
+        <th>Unit</th>
+        <th style="text-align:right;">Qty</th>
+        <th style="text-align:right;">Unit Cost</th>
+        <th style="text-align:right;">Total</th>
+        ${canReceive?'<th></th>':''}
+      </tr></thead>
+      <tbody>
+      ${(po.lineItems||[]).map((l,i) => {
+        const qty = l.qtyOrdered||l.qty||0;
+        const remaining = qty - (l.qtyReceived||0);
+        const lineDone  = remaining <= 0;
+        const lineTotal = qty*(l.unitCost||0);
+        return `<tr>
+          <td style="font-size:12px;color:#888;">${i+1}</td>
+          <td style="font-size:12px;">${l.description}</td>
+          ${isDirect?`<td style="font-size:12px;color:#555;">${l.brand||'—'}</td>`:''}
+          <td style="font-size:12px;">${l.unit}</td>
+          <td style="text-align:right;font-family:var(--mono);">${qty}</td>
+          <td style="text-align:right;font-family:var(--mono);">${fmtMoney(l.unitCost||0)}</td>
+          <td style="text-align:right;font-family:var(--mono);font-weight:600;">AED ${fmtMoney(lineTotal)}</td>
+          ${canReceive?`<td>${po.status==='Draft'?'':lineDone?'<span style="color:#1D9E75;font-size:11px;font-weight:700;">✓</span>':(po.status==='Cancelled'?'':
+            `<button class="btn btn-outline btn-sm" data-receive-line="${po.id}|${l.id}|${remaining}">Receive ${remaining}</button>`)}</td>`:''}
+        </tr>`;
+      }).join('')}
+      </tbody>
+      <tfoot>
+        <tr><td colspan="${isDirect?(canReceive?7:6):(canReceive?6:5)}" style="text-align:right;padding:8px 10px;font-size:12px;color:#555;">Sub Total</td><td style="text-align:right;font-family:var(--mono);padding:8px 10px;">AED ${fmtMoney(sub)}</td>${canReceive?'<td></td>':''}</tr>
+        <tr><td colspan="${isDirect?(canReceive?7:6):(canReceive?6:5)}" style="text-align:right;padding:4px 10px;font-size:12px;color:#555;">VAT 5%</td><td style="text-align:right;font-family:var(--mono);padding:4px 10px;">AED ${fmtMoney(vat)}</td>${canReceive?'<td></td>':''}</tr>
+        <tr><td colspan="${isDirect?(canReceive?7:6):(canReceive?6:5)}" style="text-align:right;padding:8px 10px;font-size:13px;font-weight:700;">Total (incl. VAT)</td><td style="text-align:right;font-family:var(--mono);font-weight:700;font-size:13px;color:#E8520A;padding:8px 10px;">AED ${fmtMoney(total)}</td>${canReceive?'<td></td>':''}</tr>
+      </tfoot>
+    </table></div>
+  </div>
+
+  <!-- Signatures -->
+  <div class="card" style="margin-bottom:12px;">
+    <div class="card-head"><div class="card-title">Signatures</div></div>
+    <div class="card-body">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;">
+        <div style="text-align:center;">
+          <div style="border-bottom:1px solid #555;height:28px;margin-bottom:5px;"></div>
+          <div style="font-size:12px;font-weight:700;">${po.preparedByName||po.createdByName||'—'}</div>
+          <div style="font-size:10px;color:#1D9E75;">${po.preparedByDesig||po.createdByDesignation||'Prepared By'}</div>
+        </div>
+        <div style="text-align:center;">
+          <div style="border-bottom:1px solid #555;height:28px;margin-bottom:5px;"></div>
+          <div style="font-size:12px;font-weight:700;">${po.checkedByName||'—'}</div>
+          <div style="font-size:10px;color:#1D9E75;">${po.checkedByDesig||'Checked By — Procurement Engineer'}</div>
+        </div>
+        <div style="text-align:center;">
+          <div style="border-bottom:1px solid #555;height:28px;margin-bottom:5px;"></div>
+          <div style="font-size:12px;font-weight:700;">${po.approvedByName||'—'}</div>
+          <div style="font-size:10px;color:#1D9E75;">${po.approvedByDesig||'Approved By — Procurement Manager'}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  ${po.notes?`<div class="card"><div class="card-body"><strong>Notes:</strong> ${po.notes}</div></div>`:''}
+  <div style="display:flex;justify-content:flex-end;margin-top:8px;">
+    <button class="btn btn-ghost" id="modalCancel">Close</button>
+  </div>
+  `;
+}
+
+function buildLpoPdf(po) {
+  const co     = state.company || {};
+  const vendor = state.vendors.find(v=>v.id===po.vendorId)||{};
+  const isDirect = po.direct===true;
+  const sub    = (po.lineItems||[]).reduce((s,l)=>s+(l.qtyOrdered||l.qty||0)*(l.unitCost||0),0);
+  const vat    = sub*0.05;
+  const total  = sub+vat;
+  const logo   = co.logoPath?`<img src="${co.logoPath}" style="height:52px;object-fit:contain;" alt="logo">`:`<div style="width:52px;height:52px;background:#f0faf5;border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:700;color:#1D9E75;font-size:16px;">AF</div>`;
+
+  const rows = (po.lineItems||[]).map((l,i) => {
+    const qty = l.qtyOrdered||l.qty||0;
+    const t   = qty*(l.unitCost||0);
+    return `<tr style="background:${i%2===0?'#fff':'#fafafa'}">
+      <td style="padding:7px 8px;border:1px solid #e5e7eb;text-align:center;font-size:11px;color:#888;">${i+1}</td>
+      <td style="padding:7px 8px;border:1px solid #e5e7eb;font-size:11px;">${l.description}</td>
+      ${isDirect?`<td style="padding:7px 8px;border:1px solid #e5e7eb;font-size:11px;color:#555;">${l.brand||'—'}</td>`:''}
+      <td style="padding:7px 8px;border:1px solid #e5e7eb;font-size:11px;text-align:center;">${l.unit}</td>
+      <td style="padding:7px 8px;border:1px solid #e5e7eb;font-size:11px;text-align:right;font-family:monospace;">${qty}</td>
+      <td style="padding:7px 8px;border:1px solid #e5e7eb;font-size:11px;text-align:right;font-family:monospace;">${fmtMoney(l.unitCost||0)}</td>
+      <td style="padding:7px 8px;border:1px solid #e5e7eb;font-size:11px;text-align:right;font-family:monospace;font-weight:600;">${fmtMoney(t)}</td>
+    </tr>`;
+  }).join('');
+
+  // Amount in words (simple)
+  function numToWords(n) {
+    const ones=['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten','Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen'];
+    const tens=['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];
+    if(n===0) return 'Zero';
+    if(n<20) return ones[n];
+    if(n<100) return tens[Math.floor(n/10)]+(n%10?' '+ones[n%10]:'');
+    if(n<1000) return ones[Math.floor(n/100)]+' Hundred'+(n%100?' '+numToWords(n%100):'');
+    if(n<100000) return numToWords(Math.floor(n/1000))+' Thousand'+(n%1000?' '+numToWords(n%1000):'');
+    return numToWords(Math.floor(n/100000))+' Lakh'+(n%100000?' '+numToWords(n%100000):'');
+  }
+  const fils = Math.round((total%1)*100);
+  const words = `UAE Dirhams ${numToWords(Math.floor(total))}${fils>0?' and Fils '+numToWords(fils):''} Only`;
+
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${po.poNumber}</title>
+  <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:Arial,sans-serif;font-size:11px;color:#1a1a1a;}@page{size:A4 portrait;margin:12mm;}table{border-collapse:collapse;}</style>
+  </head><body>
+
+  <!-- Header -->
+  <div style="border-bottom:3px solid #E8520A;display:flex;align-items:flex-start;justify-content:space-between;padding-bottom:12px;margin-bottom:16px;">
+    <div style="display:flex;align-items:center;gap:12px;">
+      ${logo}
+      <div>
+        <div style="font-size:15px;font-weight:700;color:#E8520A;">${co.name||'Al Fitr Electromechanical Works LLC'}</div>
+        <div style="font-size:10px;color:#555;margin-top:2px;">Makateb Building, Office 604, Port Saeed, Deira, Dubai UAE</div>
+        <div style="font-size:10px;color:#555;">Tel: +971 4 328 1442 · sales@alfitr.ae</div>
+        <div style="font-size:10px;color:#1D9E75;font-weight:600;">TRN: ${co.trn||'XXXXXXXXXXXXXXX'}</div>
+      </div>
+    </div>
+    <div style="text-align:right;">
+      <div style="background:#00627B;color:#fff;font-size:13px;font-weight:700;padding:5px 14px;border-radius:4px;letter-spacing:.5px;display:inline-block;">LOCAL PURCHASE ORDER</div>
+      <div style="font-size:20px;font-weight:700;color:#E8520A;margin-top:6px;font-family:monospace;">${po.poNumber}</div>
+      <div style="font-size:10px;color:#888;margin-top:2px;">Date: ${fmtDate(po.date)}</div>
+      ${po.expectedDate?`<div style="font-size:10px;color:#888;">Deliver By: ${fmtDate(po.expectedDate)}</div>`:''}
+    </div>
+  </div>
+
+  <!-- Vendor + Order Details -->
+  <table style="width:100%;margin-bottom:14px;">
+    <tr>
+      <td style="width:50%;vertical-align:top;padding-right:8px;">
+        <div style="background:#2c2c2c;color:#fff;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:5px 8px;margin-bottom:1px;">Vendor / Supplier</div>
+        <table style="width:100%;border:1px solid #e5e7eb;font-size:11px;">
+          <tr><td style="padding:5px 8px;font-weight:700;background:#f5f5f5;width:35%;">Company</td><td style="padding:5px 8px;font-weight:700;">${po.vendorName}</td></tr>
+          ${vendor.address?`<tr><td style="padding:4px 8px;background:#f5f5f5;font-weight:700;">Address</td><td style="padding:4px 8px;">${vendor.address}</td></tr>`:''}
+          ${vendor.poBox?`<tr><td style="padding:4px 8px;background:#f5f5f5;font-weight:700;">PO Box</td><td style="padding:4px 8px;">${vendor.poBox}</td></tr>`:''}
+          ${vendor.phone?`<tr><td style="padding:4px 8px;background:#f5f5f5;font-weight:700;">Tel</td><td style="padding:4px 8px;">${vendor.phone}</td></tr>`:''}
+          ${vendor.email?`<tr><td style="padding:4px 8px;background:#f5f5f5;font-weight:700;">Email</td><td style="padding:4px 8px;">${vendor.email}</td></tr>`:''}
+          ${vendor.trn?`<tr><td style="padding:4px 8px;background:#f5f5f5;font-weight:700;color:#00627B;">TRN</td><td style="padding:4px 8px;font-weight:700;color:#00627B;">${vendor.trn}</td></tr>`:''}
+        </table>
+      </td>
+      <td style="width:50%;vertical-align:top;padding-left:8px;">
+        <div style="background:#2c2c2c;color:#fff;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:5px 8px;margin-bottom:1px;">Order Details</div>
+        <table style="width:100%;border:1px solid #e5e7eb;font-size:11px;">
+          <tr><td style="padding:5px 8px;font-weight:700;background:#f5f5f5;width:40%;">LPO No.</td><td style="padding:5px 8px;font-family:monospace;font-weight:700;color:#E8520A;">${po.poNumber}</td></tr>
+          <tr><td style="padding:4px 8px;background:#f5f5f5;font-weight:700;">Date</td><td style="padding:4px 8px;">${fmtDate(po.date)}</td></tr>
+          ${po.expectedDate?`<tr><td style="padding:4px 8px;background:#f5f5f5;font-weight:700;">Deliver By</td><td style="padding:4px 8px;">${fmtDate(po.expectedDate)}</td></tr>`:''}
+          <tr><td style="padding:4px 8px;background:#f5f5f5;font-weight:700;">Deliver To</td><td style="padding:4px 8px;">${po.deliveryAddress||'Al Fitr Store, Sharjah UAE'}</td></tr>
+          ${po.reference?`<tr><td style="padding:4px 8px;background:#f5f5f5;font-weight:700;">Purpose</td><td style="padding:4px 8px;">${po.reference}</td></tr>`:''}
+          ${po.jobOrderNumber?`<tr><td style="padding:4px 8px;background:#f5f5f5;font-weight:700;">Job Order</td><td style="padding:4px 8px;font-family:monospace;">${po.jobOrderNumber}</td></tr>`:''}
+          <tr><td style="padding:4px 8px;background:#f5f5f5;font-weight:700;">Payment</td><td style="padding:4px 8px;">${po.paymentTerms||'As agreed'}</td></tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+
+  <!-- Items Table -->
+  <table style="width:100%;border-collapse:collapse;margin-bottom:6px;">
+    <thead>
+      <tr style="background:#2c2c2c;">
+        <th style="padding:7px 8px;color:#fff;font-size:10px;text-align:center;border:1px solid #444;width:4%;">#</th>
+        <th style="padding:7px 8px;color:#fff;font-size:10px;text-align:left;border:1px solid #444;">Description</th>
+        ${isDirect?'<th style="padding:7px 8px;color:#fff;font-size:10px;text-align:left;border:1px solid #444;width:12%;">Brand</th>':''}
+        <th style="padding:7px 8px;color:#fff;font-size:10px;text-align:center;border:1px solid #444;width:8%;">Unit</th>
+        <th style="padding:7px 8px;color:#fff;font-size:10px;text-align:right;border:1px solid #444;width:8%;">Qty</th>
+        <th style="padding:7px 8px;color:#fff;font-size:10px;text-align:right;border:1px solid #444;width:14%;">Unit Price (AED)</th>
+        <th style="padding:7px 8px;color:#fff;font-size:10px;text-align:right;border:1px solid #444;width:14%;">Total (AED)</th>
+      </tr>
+    </thead>
+    <tbody>${rows}</tbody>
+  </table>
+
+  <!-- Totals -->
+  <div style="display:flex;justify-content:flex-end;margin-bottom:12px;">
+    <table style="width:260px;border:1px solid #e5e7eb;border-radius:4px;overflow:hidden;">
+      <tr><td style="padding:6px 12px;font-size:12px;color:#555;border-bottom:1px solid #f0f0f0;">Sub Total</td><td style="padding:6px 12px;text-align:right;font-family:monospace;font-size:12px;border-bottom:1px solid #f0f0f0;">AED ${fmtMoney(sub)}</td></tr>
+      <tr><td style="padding:6px 12px;font-size:12px;color:#555;border-bottom:1px solid #f0f0f0;">VAT 5%</td><td style="padding:6px 12px;text-align:right;font-family:monospace;font-size:12px;border-bottom:1px solid #f0f0f0;">AED ${fmtMoney(vat)}</td></tr>
+      <tr style="background:#f0faf5;"><td style="padding:8px 12px;font-size:13px;font-weight:700;">Total (incl. VAT)</td><td style="padding:8px 12px;text-align:right;font-family:monospace;font-size:13px;font-weight:700;color:#E8520A;">AED ${fmtMoney(total)}</td></tr>
+    </table>
+  </div>
+
+  <!-- Amount in Words -->
+  <div style="border-left:3px solid #E8520A;background:#fff8f0;padding:6px 12px;font-size:11px;margin-bottom:14px;border-radius:0 4px 4px 0;">
+    <strong>Amount in Words:</strong> ${words}
+  </div>
+
+  <!-- Terms -->
+  <div style="background:#f8f9fa;border:1px solid #e5e7eb;border-radius:4px;padding:10px 12px;margin-bottom:14px;">
+    <div style="font-size:10px;font-weight:700;color:#0B2B36;text-transform:uppercase;letter-spacing:.4px;margin-bottom:5px;">Terms & Conditions</div>
+    <div style="font-size:10px;color:#555;line-height:1.7;">
+      1. This LPO is valid for 30 days from the date of issue.<br>
+      2. Please quote this LPO number on all invoices, delivery notes and correspondence.<br>
+      3. Goods must be delivered as per specifications and within the delivery date mentioned above.<br>
+      4. Al Fitr Electromechanical Works LLC reserves the right to return goods that do not meet specifications.<br>
+      5. Payment will be made within the agreed terms upon receipt of tax invoice and delivery note.
+    </div>
+  </div>
+
+  <!-- Signatures -->
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-top:10px;">
+    <div style="text-align:center;">
+      <div style="border-bottom:1px solid #555;height:28px;margin-bottom:5px;"></div>
+      <div style="font-size:11px;font-weight:700;">${po.preparedByName||po.createdByName||'Prepared By'}</div>
+      <div style="font-size:9px;color:#1D9E75;">${po.preparedByDesig||po.createdByDesignation||'Prepared By'}</div>
+      <div style="font-size:9px;color:#888;">Signature & Date</div>
+    </div>
+    <div style="text-align:center;">
+      <div style="border-bottom:1px solid #555;height:28px;margin-bottom:5px;"></div>
+      <div style="font-size:11px;font-weight:700;">${po.checkedByName||'Checked By'}</div>
+      <div style="font-size:9px;color:#1D9E75;">${po.checkedByDesig||'Procurement Engineer'}</div>
+      <div style="font-size:9px;color:#888;">Signature & Date</div>
+    </div>
+    <div style="text-align:center;">
+      <div style="border-bottom:1px solid #555;height:28px;margin-bottom:5px;"></div>
+      <div style="font-size:11px;font-weight:700;">${po.approvedByName||'Approved By'}</div>
+      <div style="font-size:9px;color:#1D9E75;">${po.approvedByDesig||'Procurement Manager'}</div>
+      <div style="font-size:9px;color:#888;">Signature & Date</div>
+    </div>
+  </div>
+
+  <div style="margin-top:14px;border-top:1px solid #e5e7eb;padding-top:6px;display:flex;justify-content:space-between;font-size:9px;color:#aaa;">
+    <span>${co.name||'Al Fitr Electromechanical Works LLC'} · Makateb Building, Office 604, Port Saeed, Deira, Dubai UAE</span>
+    <span>${po.poNumber} · Page 1</span>
+  </div>
+  </body></html>`;
+}
+
+
+/* ---------------- Quotation view / print ---------------- */
+function renderQuoteView(q) {
+  const doc = q.type === 'AMC' ? renderAmcQuoteDoc(q) : renderStandardQuoteDoc(q);
+  return `
+  <div id="printArea" class="dn-doc">${doc}</div>
+  ${renderQuoteActionBar(q)}
+  `;
+}
+
+function quoteDocHeader(q) {
+  const co = state.company;
+  return `
+  <div class="dn-head">
+    <div style="display:flex;gap:14px;align-items:center;">
+      ${co.logoPath ? `<img src="${co.logoPath}" class="dn-logo" style="height:${logoSizePx(co.logoSize)}px;max-width:220px;object-fit:contain;" alt="${co.name} logo">` : ''}
+      <div>
+        <div class="dn-company">${co.name}</div>
+        <div class="dn-company-sub">${[co.address, co.phone, co.email].filter(Boolean).join(' · ')}</div>
+      </div>
+    </div>
+    <div class="dn-title-block">
+      <div class="dn-title">QUOTATION</div>
+      <div class="dn-num">${q.quotationNumber || '(not yet sent)'}</div>
+      <div class="muted">${q.status === 'PendingApproval' ? 'PENDING APPROVAL' : q.status.toUpperCase()}${q.revisionOf ? ` · REV ${q.revisionNumber}` : ''}</div>
+    </div>
+  </div>
+  ${q.supersededByQuotationId ? `<div class="banner-warn">⚠ This quotation has been superseded by a later revision. It's kept here for reference only.</div>` : ''}
+  <div class="dn-meta">
+    <div><div class="k">Ref No</div><div class="v">${q.quotationNumber || '—'}</div></div>
+    <div><div class="k">Date</div><div class="v">${fmtDate(q.date)}</div></div>
+    <div><div class="k">Client</div><div class="v">${q.clientCompany}</div></div>
+    <div><div class="k">Attn</div><div class="v">${q.clientAttn || '—'}</div></div>
+    <div><div class="k">Contact</div><div class="v">${q.clientContact || '—'}</div></div>
+    <div><div class="k">Email</div><div class="v">${q.clientEmail || '—'}</div></div>
+  </div>
+  ${q.subject ? `<div style="margin:10px 0;"><strong>Subject:</strong> ${q.subject}</div>` : ''}
+  ${q.siteDetail ? `<div style="margin-bottom:14px;"><strong>Site Detail:</strong> ${q.siteDetail}</div>` : ''}
+  ${q.sitesCovered && q.sitesCovered.length ? `
+  <div style="margin-bottom:14px;">
+    <strong>Sites Covered:</strong>
+    <table class="dn-table" style="margin-top:6px;"><thead><tr><th>#</th><th>Site</th><th>Reference</th><th>Notes</th></tr></thead>
+    <tbody>${q.sitesCovered.map((s,i)=>`<tr><td>${i+1}</td><td>${s.name}</td><td>${s.reference||'—'}</td><td>${s.notes||'—'}</td></tr>`).join('')}</tbody></table>
+  </div>` : ''}
+  <p>Dear Sir,</p>
+  <p>We thank you for your enquiry. We have pleasure to submit our quotation as follows.</p>
+  `;
+}
+
+function quoteDocFooter(q) {
+  const t = calcQuoteTotals(q.type === 'AMC' ? { ...q, lineItems: q.amc.services } : q);
+  const cur = state.company.currency;
+  return `
+  <table class="dn-table" style="margin-top:10px;">
+    <tr><td style="text-align:right;width:80%;">Subtotal</td><td style="text-align:right;">${cur} ${fmtMoney(t.subtotal)}</td></tr>
+    ${t.discount > 0 ? `<tr><td style="text-align:right;">Discount</td><td style="text-align:right;">- ${cur} ${fmtMoney(t.discount)}</td></tr>` : ''}
+    <tr><td style="text-align:right;">VAT (5%)</td><td style="text-align:right;">${cur} ${fmtMoney(t.vat)}</td></tr>
+    <tr style="font-weight:700;"><td style="text-align:right;">Total</td><td style="text-align:right;">${cur} ${fmtMoney(t.total)}</td></tr>
+  </table>
+  <div class="grid2" style="margin-top:16px;">
+    <div><strong>Payment Terms:</strong> ${q.paymentTerms || 'TBD'}</div>
+    <div><strong>Validity:</strong> ${q.validityDays || 15} Days</div>
+  </div>
+  ${q.exclusions && q.exclusions.length ? `
+  <div style="margin-top:14px;">
+    <strong>Exclusions:</strong>
+    <ul style="margin:6px 0 0;padding-left:20px;font-size:13px;">${q.exclusions.map(e => `<li style="margin-bottom:4px;">${e}</li>`).join('')}</ul>
+  </div>` : ''}
+  ${q.notes ? `<div style="margin-top:14px;"><strong>Notes:</strong> ${q.notes}</div>` : ''}
+  <p style="margin-top:20px;">Regards,</p>
+  <div class="dn-sign" style="margin-top:36px;">
+    <div class="sign-line"><strong>${q.preparedByName || '—'}</strong><br><span style="font-size:11px;">${q.preparedByDesignation || 'Prepared By'}</span></div>
+    <div class="sign-line"><strong>${q.approvedByName || 'Pending'}</strong><br><span style="font-size:11px;">${q.approvedByDesignation || (q.approvedByName ? 'Approved By' : 'Approval Pending')}</span></div>
+  </div>
+  <div class="dn-footer-note">This is a system-generated quotation. Signature is not required unless specifically requested by the client.</div>
+  ${companyFooterNote()}
+  `;
+}
+
+function renderStandardQuoteDoc(q) {
+  const showGrouped = q.type === 'PR' || q.type === 'FO';
+  const groups = groupLinesByCategory(q.lineItems);
+  const cur = state.company.currency;
+  return `
+  ${quoteDocHeader(q)}
+  ${showGrouped && groups.length > 1 ? `
+    <div style="text-align:center;font-weight:700;margin:14px 0 6px;">ARTICLE 1: SUMMARY</div>
+    <table class="dn-table">
+      <thead><tr><th>Description</th><th style="text-align:right;">Total (${cur})</th></tr></thead>
+      <tbody>${groups.map(g => `<tr><td>${g.category}</td><td style="text-align:right;">${fmtMoney(g.subtotal)}</td></tr>`).join('')}</tbody>
+    </table>
+    <div style="text-align:center;font-weight:700;margin:18px 0 6px;">ARTICLE 2: BILL OF QUANTITY</div>
+  ` : ''}
+  ${groups.map(g => `
+    ${showGrouped && groups.length > 1 ? `<div style="background:#F3F5F6;font-weight:700;padding:6px 10px;margin-top:10px;">${g.category}</div>` : ''}
+    <table class="dn-table">
+      <thead><tr><th>Description</th><th>Brand</th><th>Unit</th><th style="text-align:right;">Qty</th><th style="text-align:right;">Unit Price</th><th style="text-align:right;">Total</th></tr></thead>
+      <tbody>${g.lines.map(l => `<tr><td>${l.description}</td><td>${l.brand||'—'}</td><td>${l.unit}</td><td style="text-align:right;">${l.qty}</td><td style="text-align:right;">${fmtMoney(l.unitPrice)}</td><td style="text-align:right;">${fmtMoney(lineTotal(l))}</td></tr>`).join('')}</tbody>
+    </table>
+  `).join('')}
+  ${quoteDocFooter(q)}
+  `;
+}
+
+function renderAmcQuoteDoc(q) {
+  const amc = q.amc || {};
+  const cur = state.company.currency;
+  return `
+  ${quoteDocHeader(q)}
+  ${amc.scopeOfAgreement ? `<div style="margin-bottom:14px;"><strong>Scope of Agreement:</strong> ${amc.scopeOfAgreement}</div>` : ''}
+  <div class="grid3" style="margin-bottom:14px;">
+    <div><strong>Contract Period:</strong> ${fmtDate(amc.contractStart)} to ${fmtDate(amc.contractEnd)}</div>
+    <div><strong>Maintenance Visits:</strong> ${amc.maintenanceSchedule || 'Quarterly'}</div>
+  </div>
+  <table class="dn-table">
+    <thead><tr><th>Description</th><th style="text-align:right;">Qty</th><th style="text-align:right;">Unit Price</th><th style="text-align:right;">Total</th></tr></thead>
+    <tbody>${(amc.services || []).map(s => `<tr><td>${s.description}</td><td style="text-align:right;">${s.qty}</td><td style="text-align:right;">${fmtMoney(s.unitPrice)}</td><td style="text-align:right;">${fmtMoney(lineTotal(s))}</td></tr>`).join('')}</tbody>
+  </table>
+  ${amc.manpower && amc.manpower.length ? `
+  <div style="margin-top:14px;"><strong>Manpower Details:</strong>
+  <table class="dn-table"><thead><tr><th>Role</th><th style="text-align:right;">Qty</th></tr></thead>
+  <tbody>${amc.manpower.map(m => `<tr><td>${m.role}</td><td style="text-align:right;">${m.qty}</td></tr>`).join('')}</tbody></table>
+  </div>` : ''}
+  ${quoteDocFooter(q)}
+  `;
+}
+
+function renderQuoteActionBar(q) {
+  const buttons = [];
+  const canManage = can('manageQuotations');
+  buttons.push(`<button class="btn btn-teal" id="downloadQuotePdfBtn">Download PDF</button>`);
+
+  if (q.status === 'Draft' && canManage) {
+    buttons.unshift(`<button class="btn btn-outline" id="editQuoteBtn">Edit</button>`);
+    buttons.unshift(`<button class="btn btn-primary" id="submitQuoteBtn">Submit for Approval</button>`);
+  }
+  if (q.status === 'Rejected') {
+    buttons.unshift(`<span class="muted" style="align-self:center;font-size:12px;">Rejected: ${q.rejectionReason || 'No reason given'}</span>`);
+    if (canManage) buttons.unshift(`<button class="btn btn-outline" id="editQuoteBtn">Edit & Resubmit</button>`);
+  }
+  if (q.status === 'PendingApproval' && isQuotationApprover()) {
+    buttons.unshift(`<button class="btn btn-danger" id="rejectQuoteBtn">Reject</button>`);
+    buttons.unshift(`<button class="btn btn-primary" id="approveQuoteBtn">Approve</button>`);
+  }
+  if (q.status === 'Approved' && canManage) {
+    buttons.unshift(`<button class="btn btn-primary" id="sendQuoteBtn">Send to Client</button>`);
+  }
+  if (q.status === 'Sent' && canManage) {
+    buttons.unshift(`<button class="btn btn-danger" id="declineQuoteBtn">Client Declined</button>`);
+    buttons.unshift(`<button class="btn btn-primary" id="acceptQuoteBtn">Client Accepted</button>`);
+  }
+  if (q.status === 'Accepted' && canManage) {
+    if (q.jobOrderId) {
+      const jo = state.jobOrders.find(j => j.id === q.jobOrderId);
+      buttons.unshift(`<span class="badge badge-in" style="align-self:center;">Job Order ${jo ? jo.jobOrderNumber : ''} created</span>`);
+    } else {
+      buttons.unshift(`<button class="btn btn-primary" id="convertQuoteBtn">Convert to Job Order</button>`);
+    }
+  }
+  if (q.status === 'Declined') {
+    buttons.unshift(`<span class="muted" style="align-self:center;font-size:12px;">${q.clientDecisionNote || 'Client declined this quotation.'}</span>`);
+  }
+  if (['Sent', 'Accepted', 'Declined'].includes(q.status) && canManage) {
+    if (q.supersededByQuotationId) {
+      const rev = findQuote(q.supersededByQuotationId);
+      buttons.unshift(`<button class="btn btn-outline btn-sm" data-view-quote="${q.supersededByQuotationId}">View ${rev ? (rev.quotationNumber || 'Revision') : 'Revision'}</button>`);
+      buttons.unshift(`<span class="badge badge-low" style="align-self:center;">Superseded${rev && rev.quotationNumber ? ' by ' + rev.quotationNumber : ''}</span>`);
+    } else {
+      buttons.unshift(`<button class="btn btn-outline" id="reviseQuoteBtn">Revise (Discount / BOQ Change)</button>`);
+    }
+  }
+
+  return `<div class="no-print" style="display:flex;justify-content:flex-end;gap:8px;margin-top:20px;flex-wrap:wrap;">
+    <button class="btn btn-ghost" id="modalCancel">Close</button>
+    ${buttons.join('')}
+  </div>`;
+}
+
+function renderExclusionsLibrary() {
+  return `
+  <div class="tbl-wrap"><table>
+    <thead><tr><th>Text</th><th>Category</th><th></th></tr></thead>
+    <tbody>
+    ${state.exclusionsLibrary.length === 0 ? `<tr><td colspan="3"><div class="empty">No saved exclusions yet.</div></td></tr>` :
+      state.exclusionsLibrary.map(e => `<tr><td style="font-size:13px;">${e.text}</td><td>${e.category}</td><td><button class="btn btn-ghost btn-sm removeLibExclBtn" data-id="${e.id}">Remove</button></td></tr>`).join('')}
+    </tbody>
+  </table></div>
+  <div class="field" style="margin-top:14px;"><label>Add New Exclusion / Term</label>
+    <div style="display:flex;gap:8px;"><input id="newLibExclText" style="flex:1;" placeholder="Type a reusable exclusion or term..."><button class="btn btn-primary btn-sm" id="addLibExclBtn">Add</button></div>
+  </div>
+  <div style="display:flex;justify-content:flex-end;margin-top:14px;"><button class="btn btn-ghost" id="modalCancel">Close</button></div>
+  `;
+}
+
+/* ---------------- Quotation form ---------------- */
+// Helper — dropdown of all active users (for Super Admin name override)
+function applyUserPick(fieldId, val, payloadPrefix) {
+  var parts = (val||'').split('|');
+  var n = document.getElementById(fieldId+'_name');
+  var d = document.getElementById(fieldId+'_desig');
+  if (n) n.value = parts[0]||'';
+  if (d) d.value = parts[1]||'';
+  // Also store in payload so re-renders don't lose it
+  if (state.modal && state.modal.payload) {
+    if (fieldId === 'quotePreparedBy') {
+      state.modal.payload.preparedByName        = parts[0]||'';
+      state.modal.payload.preparedByDesignation = parts[1]||'';
+    }
+    if (fieldId === 'quoteApprovedBy') {
+      state.modal.payload.approvedByName        = parts[0]||'';
+      state.modal.payload.approvedByDesignation = parts[1]||'';
+    }
+    if (fieldId === 'dnIssuedBy') {
+      state.modal.payload.issuedBy = parts[0]||'';
+    }
+    // Generic path for any newer field — pass payloadPrefix and it just works,
+    // no need to hardcode a new branch here every time.
+    if (payloadPrefix) {
+      state.modal.payload[payloadPrefix + 'Name']        = parts[0]||'';
+      state.modal.payload[payloadPrefix + 'Designation'] = parts[1]||'';
+    }
+  }
+}
+
+function userPickerHtml(fieldId, currentName, currentDesig, label, payloadPrefix) {
+  const isSA  = state.user?.role === 'Super Admin';
+  const name  = currentName  || state.user?.name        || '';
+  const desig = currentDesig || state.user?.designation  || '';
+  if (!isSA) {
+    return `<div class="field"><label>${label}</label>
+      <input value="${name}" disabled style="background:#f5f5f5;margin-bottom:4px;">
+      <input value="${desig}" disabled style="background:#f5f5f5;font-size:12px;">
+    </div>`;
+  }
+  const opts = (state.users||[]).filter(u=>u.active!==false)
+    .map(u=>`<option value="${u.name}|${u.designation||''}" ${name===u.name?'selected':''}>${u.name}${u.designation?' — '+u.designation:''}</option>`).join('');
+  return `<div class="field"><label>${label}</label>
+    <select onchange="applyUserPick('${fieldId}',this.value,'${payloadPrefix||''}')" style="margin-bottom:6px;">
+      <option value="|">— Select from team —</option>
+      ${opts}
+    </select>
+    <input id="${fieldId}_name" value="${name}" placeholder="Name" style="margin-bottom:4px;">
+    <input id="${fieldId}_desig" value="${desig}" placeholder="Designation" style="font-size:12px;">
+  </div>`;
+}
+
+function getUserPickerValue(fieldId) {
+  return {
+    name:        (document.getElementById(fieldId+'_name')?.value||'').trim(),
+    designation: (document.getElementById(fieldId+'_desig')?.value||'').trim(),
+  };
+}
+
+function renderQuoteForm(payload) {
+  if (!payload.type) return renderQuoteTypeChooser();
+  if (payload.type === 'AMC') return renderAmcQuoteForm(payload);
+  return renderStandardQuoteForm(payload);
+}
+
+function renderQuoteTypeChooser() {
+  const opts = [
+    ['PR', 'Project', 'Multi-system installs — grouped BOQ by category (Fire Alarm, PAVA, EML...)'],
+    ['SUP', 'Supply Only', 'Simple flat quote for material supply'],
+    ['FO', 'Fit-Out', 'Fit-out jobs — same grouped BOQ structure as Project'],
+    ['AMC', 'AMC Contract', 'Annual maintenance contract with clauses, manpower & maintenance schedule'],
+  ];
+  return `
+  <div class="grid2">
+    ${opts.map(([type, label, desc]) => `
+      <div class="type-choice-card" data-choose-quote-type="${type}">
+        <div style="font-weight:700;font-size:15px;margin-bottom:6px;">${label}</div>
+        <div class="muted" style="font-size:12px;">${desc}</div>
+        <div class="muted" style="font-size:11px;font-family:var(--mono);margin-top:8px;">AF/${type}/xxxxx/yy</div>
+      </div>`).join('')}
+  </div>
+  <div style="display:flex;justify-content:flex-end;margin-top:16px;">
+    <button class="btn btn-ghost" id="modalCancel">Cancel</button>
+  </div>
+  `;
+}
+
+function renderSitesCoveredEditor(payload) {
+  const sites = payload.sitesCovered || [];
+  return `
+  <label>Sites Covered <span class="muted" style="font-weight:500;text-transform:none;">(optional — add every building/site this quote covers)</span></label>
+  <div id="sitesCoveredList">
+    ${sites.map((s, idx) => `
+      <div class="grid3" style="margin-bottom:6px;align-items:end;" data-site-row="${idx}">
+        <div class="field" style="margin-bottom:0;"><input class="siteNameInput" data-idx="${idx}" placeholder="Site / building name" value="${s.name || ''}"></div>
+        <div class="field" style="margin-bottom:0;"><input class="siteRefInput" data-idx="${idx}" placeholder="Reference / ID (optional)" value="${s.reference || ''}"></div>
+        <div style="display:flex;gap:6px;"><input class="siteNotesInput" data-idx="${idx}" placeholder="Notes (optional)" value="${s.notes || ''}" style="flex:1;"><button class="btn btn-ghost btn-sm removeSiteBtn" data-idx="${idx}" style="padding:6px 9px;">✕</button></div>
+      </div>`).join('')}
+  </div>
+  <button class="btn btn-ghost btn-sm" id="addSiteBtn" type="button" style="margin-bottom:14px;">+ Add Site</button>
+  `;
+}
+
+function renderExclusionsPicker(payload) {
+  const selected = payload.exclusions || [];
+  return `
+  <label>Exclusions & Terms</label>
+  <div id="exclusionsSelected" style="margin-bottom:8px;">
+    ${selected.length === 0 ? `<span class="muted" style="font-size:12px;">None added yet.</span>` :
+      selected.map((text, idx) => `<span class="excl-pill">${text}<button type="button" class="removeExclBtn" data-idx="${idx}">✕</button></span>`).join('')}
+  </div>
+  <div style="display:flex;gap:8px;margin-bottom:14px;">
+    <select id="exclusionLibraryPick" style="flex:1;">
+      <option value="">— Add from saved library —</option>
+      ${state.exclusionsLibrary.filter(e => !selected.includes(e.text)).map(e => `<option value="${e.id}">${e.text.slice(0, 80)}${e.text.length > 80 ? '…' : ''}</option>`).join('')}
+    </select>
+    <button class="btn btn-ghost btn-sm" id="addExclFromLibBtn" type="button">Add</button>
+  </div>
+  <div style="display:flex;gap:8px;margin-bottom:14px;">
+    <input id="customExclusionInput" placeholder="Or type a one-off exclusion / term and press Add" style="flex:1;">
+    <button class="btn btn-ghost btn-sm" id="addCustomExclBtn" type="button">Add</button>
+  </div>
+  `;
+}
+
+function renderQuoteTotalsBox(payload) {
+  const t = calcQuoteTotals(payload);
+  const cur = state.company.currency;
+  return `
+  <div class="card" id="quoteTotalsBox" style="background:#FAFCFC;">
+    <div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0;"><span class="muted">Subtotal</span><span id="totSubtotal">${cur} ${fmtMoney(t.subtotal)}</span></div>
+    <div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0;align-items:center;">
+      <span class="muted">Discount</span>
+      <input type="number" id="quoteDiscount" value="${payload.discount || 0}" style="width:120px;text-align:right;">
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0;"><span class="muted">Taxable</span><span id="totTaxable">${cur} ${fmtMoney(t.taxable)}</span></div>
+    <div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0;"><span class="muted">VAT (5%)</span><span id="totVat">${cur} ${fmtMoney(t.vat)}</span></div>
+    <div style="display:flex;justify-content:space-between;font-size:15px;font-weight:700;padding:6px 0 0;border-top:1px solid var(--border);margin-top:4px;"><span>Total</span><span id="totTotal">${cur} ${fmtMoney(t.total)}</span></div>
+  </div>`;
+}
+
+function renderStandardQuoteForm(payload) {
+  const isEdit = !!payload.id;
+  const lines = payload.lineItems || [];
+  return `
+  <div class="muted" style="margin-bottom:10px;font-size:12px;">Type: <strong>${QUOTE_TYPE_LABEL[payload.type]}</strong> &nbsp;·&nbsp; Number assigned when sent: <span style="font-family:var(--mono)">AF/${QUOTE_TYPE_PREFIX[payload.type]}/${state.nextQuotationCounter || '…'}/${String(new Date().getFullYear()).slice(-2)}</span></div>
+  <div class="grid2">
+    <div class="field">
+      <label>Client</label>
+      <select id="quoteClientPick">
+        <option value="">— Select saved client (optional) —</option>
+        ${[...state.clients].sort((a,b)=>a.companyName.localeCompare(b.companyName)).map(c => `<option value="${c.id}" ${payload.clientId === c.id ? 'selected' : ''}>${c.companyName}</option>`).join('')}
+      </select>
+    </div>
+    <div class="field"><label>Client Company Name</label><input id="quoteClientCompany" value="${payload.clientCompany || ''}" placeholder="M/S. Client Name"></div>
+  </div>
+  <div class="grid3">
+    <div class="field"><label>Attn</label><input id="quoteClientAttn" value="${payload.clientAttn || ''}"></div>
+    <div class="field"><label>Contact</label><input id="quoteClientContact" value="${payload.clientContact || ''}"></div>
+    <div class="field"><label>Email</label><input id="quoteClientEmail" type="email" value="${payload.clientEmail || ''}"></div>
+  </div>
+  <div class="grid3">
+    <div class="field"><label>PO Box</label><input id="quoteClientPoBox" value="${payload.clientPoBox || ''}"></div>
+    <div class="field"><label>Date</label><input id="quoteDate" type="date" value="${payload.date || new Date().toISOString().slice(0,10)}"></div>
+    <div class="field"><label>Validity (days)</label><input id="quoteValidityDays" type="number" value="${payload.validityDays ?? 15}"></div>
+  </div>
+  <div class="field"><label>Subject</label><input id="quoteSubject" value="${payload.subject || ''}" placeholder="QUOTATION FOR ..."></div>
+  <div class="field"><label>Site Detail</label><input id="quoteSiteDetail" value="${payload.siteDetail || ''}"></div>
+
+  ${renderSitesCoveredEditor(payload)}
+
+  <label>Line Items</label>
+  <div id="quoteLinesList">
+    ${lines.length === 0 ? `<p class="muted" style="font-size:12px;">No items yet — add one below.</p>` : ''}
+    ${lines.map((l, idx) => renderQuoteLineCard(l, idx)).join('')}
+  </div>
+  <button class="btn btn-ghost btn-sm" id="addQuoteLineBtn" type="button" style="margin-bottom:16px;">+ Add Line Item</button>
+
+  <div class="field"><label>Payment Terms</label><input id="quotePaymentTerms" value="${payload.paymentTerms || ''}" placeholder="e.g. 50% Advance, 50% Before Delivery"></div>
+  ${renderExclusionsPicker(payload)}
+  <div class="field"><label>Notes</label><textarea id="quoteNotes" rows="2">${payload.notes || ''}</textarea></div>
+
+  ${renderQuoteTotalsBox(payload)}
+
+  <div style="border-top:1px solid var(--rule);margin:14px 0 12px;padding-top:14px;">
+    <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">Signatures</div>
+    <div class="grid2">
+      ${userPickerHtml('quotePreparedBy', payload.preparedByName || state.user?.name, payload.preparedByDesignation || state.user?.designation, 'Prepared By')}
+      ${userPickerHtml('quoteApprovedBy', payload.approvedByName, payload.approvedByDesignation, 'Approved By')}
+    </div>
+  </div>
+
+  <div style="display:flex;justify-content:space-between;margin-top:14px;">
+    <div>${isEdit ? `<button class="btn btn-danger" id="deleteQuoteBtn" type="button">Delete Draft</button>` : ''}</div>
+    <div style="display:flex;gap:8px;"><button class="btn btn-ghost" id="modalCancel">Cancel</button><button class="btn btn-primary" id="saveQuoteDraftBtn">Save Draft</button></div>
+  </div>
+  `;
+}
+
+function renderQuoteLineCard(l, idx) {
+  return `
+  <div class="quote-line-card" data-quote-line="${idx}">
+    <div class="quote-line-top">
+      <div><label>Description</label><input class="qlDescription" data-idx="${idx}" value="${l.description || ''}" placeholder="Item description"></div>
+      <div><label>Category</label>
+        <select class="qlCategory" data-idx="${idx}">
+          ${state.quotationCategories.map(c => `<option ${l.category === c ? 'selected' : ''}>${c}</option>`).join('')}
+        </select>
+      </div>
+      <div style="display:flex;align-items:flex-end;"><button class="btn btn-ghost btn-sm removeQuoteLineBtn" data-idx="${idx}" style="padding:6px 9px;">✕</button></div>
+    </div>
+    <div class="quote-line-bottom">
+      <div><label>From Inventory</label>
+        <select class="qlInventoryPick" data-idx="${idx}">
+          <option value="">— custom line —</option>
+          ${state.items.map(it => `<option value="${it.id}" ${l.itemId === it.id ? 'selected' : ''}>${itemLabel(it)}</option>`).join('')}
+        </select>
+      </div>
+      <div><label>Brand</label><input class="qlBrand" data-idx="${idx}" value="${l.brand || ''}"></div>
+      <div><label>Unit</label>
+        <select class="qlUnit" data-idx="${idx}">${state.units.map(u => `<option ${l.unit === u ? 'selected' : ''}>${u}</option>`).join('')}</select>
+      </div>
+      <div><label>Qty</label><input class="qlQty" data-idx="${idx}" type="number" value="${l.qty ?? ''}"></div>
+      <div><label>Unit Price</label><input class="qlPrice" data-idx="${idx}" type="number" value="${l.unitPrice ?? ''}"></div>
+      <div><label>Line Total</label><input class="qlLineTotal" value="${state.company.currency} ${fmtMoney(lineTotal(l))}" disabled></div>
+    </div>
+  </div>`;
+}
+
+function renderAmcQuoteForm(payload) {
+  const isEdit = !!payload.id;
+  const amc = payload.amc || { services: [], manpower: [], scopeOfAgreement: '', contractStart: '', contractEnd: '', maintenanceSchedule: 'Quarterly' };
+  return `
+  <div class="muted" style="margin-bottom:10px;font-size:12px;">Type: <strong>AMC Contract</strong> &nbsp;·&nbsp; Number assigned when sent: <span style="font-family:var(--mono)">AF/AMC/${state.nextQuotationCounter || '…'}/${String(new Date().getFullYear()).slice(-2)}</span></div>
+  <div class="grid2">
+    <div class="field">
+      <label>Client</label>
+      <select id="quoteClientPick">
+        <option value="">— Select saved client (optional) —</option>
+        ${[...state.clients].sort((a,b)=>a.companyName.localeCompare(b.companyName)).map(c => `<option value="${c.id}" ${payload.clientId === c.id ? 'selected' : ''}>${c.companyName}</option>`).join('')}
+      </select>
+    </div>
+    <div class="field"><label>Client Company Name</label><input id="quoteClientCompany" value="${payload.clientCompany || ''}"></div>
+  </div>
+  <div class="grid3">
+    <div class="field"><label>Attn</label><input id="quoteClientAttn" value="${payload.clientAttn || ''}"></div>
+    <div class="field"><label>Contact</label><input id="quoteClientContact" value="${payload.clientContact || ''}"></div>
+    <div class="field"><label>Email</label><input id="quoteClientEmail" type="email" value="${payload.clientEmail || ''}"></div>
+  </div>
+  <div class="field"><label>Subject</label><input id="quoteSubject" value="${payload.subject || ''}" placeholder="QUOTATION FOR ANNUAL MAINTENANCE CONTRACT..."></div>
+  <div class="field"><label>Site Detail</label><input id="quoteSiteDetail" value="${payload.siteDetail || ''}"></div>
+
+  ${renderSitesCoveredEditor(payload)}
+
+  <div class="field"><label>Scope of Agreement</label><textarea id="amcScope" rows="3">${amc.scopeOfAgreement}</textarea></div>
+  <div class="grid3">
+    <div class="field"><label>Contract Start</label><input id="amcStart" type="date" value="${amc.contractStart}"></div>
+    <div class="field"><label>Contract End</label><input id="amcEnd" type="date" value="${amc.contractEnd}"></div>
+    <div class="field"><label>Maintenance Visits</label>
+      <select id="amcSchedule">
+        ${['Quarterly','Semi-Annual','Annual','Monthly'].map(o => `<option ${amc.maintenanceSchedule === o ? 'selected' : ''}>${o}</option>`).join('')}
+      </select>
+    </div>
+  </div>
+
+  <label>Services / Pricing</label>
+  <div id="amcServicesList">
+    ${(amc.services || []).map((s, idx) => `
+      <div class="grid4" style="margin-bottom:6px;align-items:end;">
+        <div class="field" style="margin-bottom:0;grid-column:span 2;"><input class="amcSvcDesc" data-idx="${idx}" value="${s.description || ''}" placeholder="Service description"></div>
+        <div class="field" style="margin-bottom:0;"><input class="amcSvcQty" data-idx="${idx}" type="number" value="${s.qty ?? ''}" placeholder="Qty"></div>
+        <div style="display:flex;gap:6px;"><input class="amcSvcPrice" data-idx="${idx}" type="number" value="${s.unitPrice ?? ''}" placeholder="Unit Price" style="flex:1;"><button class="btn btn-ghost btn-sm removeAmcSvcBtn" data-idx="${idx}" style="padding:6px 9px;">✕</button></div>
+      </div>`).join('')}
+  </div>
+  <button class="btn btn-ghost btn-sm" id="addAmcSvcBtn" type="button" style="margin-bottom:14px;">+ Add Service Line</button>
+
+  <label>Manpower</label>
+  <div id="amcManpowerList">
+    ${(amc.manpower || []).map((m, idx) => `
+      <div class="grid3" style="margin-bottom:6px;align-items:end;">
+        <div class="field" style="margin-bottom:0;grid-column:span 2;"><input class="amcMpRole" data-idx="${idx}" value="${m.role || ''}" placeholder="e.g. Supervisor, Technician"></div>
+        <div style="display:flex;gap:6px;"><input class="amcMpQty" data-idx="${idx}" type="number" value="${m.qty ?? ''}" placeholder="Qty" style="flex:1;"><button class="btn btn-ghost btn-sm removeAmcMpBtn" data-idx="${idx}" style="padding:6px 9px;">✕</button></div>
+      </div>`).join('')}
+  </div>
+  <button class="btn btn-ghost btn-sm" id="addAmcMpBtn" type="button" style="margin-bottom:16px;">+ Add Manpower Line</button>
+
+  <div class="field"><label>Payment Terms</label><input id="quotePaymentTerms" value="${payload.paymentTerms || ''}" placeholder="e.g. Client will pay advance on quarterly basis"></div>
+  ${renderExclusionsPicker(payload)}
+  <div class="field"><label>Notes</label><textarea id="quoteNotes" rows="2">${payload.notes || ''}</textarea></div>
+
+  ${renderQuoteTotalsBox({ ...payload, lineItems: amc.services })}
+
+  <div style="display:flex;justify-content:space-between;margin-top:14px;">
+    <div>${isEdit ? `<button class="btn btn-danger" id="deleteQuoteBtn" type="button">Delete Draft</button>` : ''}</div>
+    <div style="display:flex;gap:8px;"><button class="btn btn-ghost" id="modalCancel">Cancel</button><button class="btn btn-primary" id="saveQuoteDraftBtn">Save Draft</button></div>
+  </div>
+  `;
+}
+
+/* ---------------- Settings ---------------- */
+function renderSettings() {
+  const co = state.company;
+  return `
+  <div class="grid2" style="align-items:start;">
+    <div class="card">
+      <div class="card-title" style="margin-bottom:12px;">Company Branding</div>
+      <div class="field">
+        <label>Company Logo</label>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <div style="width:70px;height:70px;border:1px dashed var(--border);border-radius:8px;display:flex;align-items:center;justify-content:center;background:#FAFCFC;overflow:hidden;">
+            ${co.logoPath ? `<img src="${co.logoPath}" style="max-width:100%;max-height:100%;object-fit:contain;">` : `<span class="muted" style="font-size:11px;text-align:center;">No logo</span>`}
+          </div>
+          <div>
+            <input type="file" id="logoUpload" accept="image/png,image/jpeg,image/svg+xml,image/webp" style="max-width:220px;" ${can('manageInventory') ? '' : 'disabled'}>
+            ${co.logoPath && can('manageInventory') ? `<button class="btn btn-ghost btn-sm" id="removeLogoBtn" style="margin-top:6px;">Remove Logo</button>` : ''}
+          </div>
+        </div>
+        <p class="muted" style="margin-top:6px;">PNG, JPG, SVG or WEBP. Resized automatically wherever it appears.</p>
+      </div>
+      <div class="field"><label>Logo Display Size</label>
+        <select id="setLogoSize" ${can('manageInventory') ? '' : 'disabled'}>
+          <option value="small" ${co.logoSize === 'small' ? 'selected' : ''}>Small</option>
+          <option value="medium" ${co.logoSize === 'medium' ? 'selected' : ''}>Medium</option>
+          <option value="large" ${co.logoSize === 'large' ? 'selected' : ''}>Large</option>
+        </select>
+      </div>
+      <div class="field"><label>Company Name</label><input id="setCompanyName" value="${co.name || ''}" ${can('manageInventory') ? '' : 'disabled'}></div>
+      <div class="field"><label>Address</label><input id="setCompanyAddress" value="${co.address || ''}" ${can('manageInventory') ? '' : 'disabled'}></div>
+      <div class="grid2">
+        <div class="field"><label>Phone</label><input id="setCompanyPhone" value="${co.phone || ''}" ${can('manageInventory') ? '' : 'disabled'}></div>
+        <div class="field"><label>Email</label><input id="setCompanyEmail" value="${co.email || ''}" ${can('manageInventory') ? '' : 'disabled'}></div>
+      </div>
+      <div class="grid2">
+        <div class="field"><label>Website</label><input id="setCompanyWebsite" value="${co.website || ''}" placeholder="www.example.com" ${can('manageInventory') ? '' : 'disabled'}></div>
+        <div class="field"><label>VAT / TRN Number</label><input id="setCompanyVat" value="${co.vatNumber || ''}" ${can('manageInventory') ? '' : 'disabled'}></div>
+      </div>
+      ${can('manageInventory') ? `<button class="btn btn-teal" id="saveCompanyBtn">Save Company Details</button>` : `<p class="muted">Only Admins can edit company details.</p>`}
+    </div>
+
+    <div class="card">
+      <div class="card-title" style="margin-bottom:12px;">Delivery Note &amp; Reports</div>
+      <div class="grid2">
+        <div class="field"><label>Delivery Note Prefix</label><input id="setDnPrefix" value="${co.dnPrefix || 'DN-'}" ${can('manageInventory') ? '' : 'disabled'}></div>
+        <div class="field"><label>Default Currency</label>
+          <select id="setCurrency" ${can('manageInventory') ? '' : 'disabled'}>
+            ${['AED', 'USD', 'SAR', 'QAR', 'EUR', 'GBP'].map(c => `<option ${co.currency === c ? 'selected' : ''}>${c}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <p class="muted" style="margin-top:-6px;">Next delivery note will be numbered <strong>${state.nextDnPreview || ''}</strong>.</p>
+      <div class="field"><label>Paper Size (PDF / Print)</label>
+        <select id="setPaperSize" ${can('manageInventory') ? '' : 'disabled'}>
+          <option value="A4" ${co.paperSize === 'A4' ? 'selected' : ''}>A4</option>
+          <option value="Letter" ${co.paperSize === 'Letter' ? 'selected' : ''}>Letter</option>
+        </select>
+      </div>
+      <div class="field"><label>Delivery Note Footer Text</label><textarea id="setReportFooter" rows="2" placeholder="e.g. The undersigned hereby acknowledges receipt of the materials in good condition..." ${can('manageInventory') ? '' : 'disabled'}>${co.reportFooter || ''}</textarea>
+      <p class="muted" style="margin-top:4px;">Only appears on Delivery Notes — not on Inventory Reports or Quotations, which have their own appropriate wording.</p></div>
+      ${can('manageInventory') ? `<button class="btn btn-teal" id="saveDnSettingsBtn">Save Delivery Note &amp; Report Settings</button>` : ''}
+    </div>
+  </div>
+
+  <div class="grid2" style="align-items:start;">
+    <div class="card">
+      <div class="card-title" style="margin-bottom:12px;">Branches</div>
+      <div id="branchList">${state.branches.map(b => `<span class="tag">${b} ${can('manageInventory') ? `<span data-del-branch="${b}" style="cursor:pointer;color:var(--red);">✕</span>` : ''}</span>`).join(' ')}</div>
+      ${can('manageInventory') ? `<div class="field" style="margin-top:12px;"><label>Add Branch</label>
+        <div style="display:flex;gap:8px;"><input id="newBranchInput" placeholder="e.g. Store D"><button class="btn btn-ghost btn-sm" id="addBranchBtn">Add</button></div>
+      </div>` : ''}
+    </div>
+    <div class="card">
+      <div class="card-title" style="margin-bottom:12px;">Brands</div>
+      <div id="brandList">${state.brands.map(b => `<span class="tag">${b} ${can('manageInventory') ? `<span data-del-brand="${b}" style="cursor:pointer;color:var(--red);">✕</span>` : ''}</span>`).join(' ')}</div>
+      ${can('manageInventory') ? `<div class="field" style="margin-top:12px;"><label>Add Brand</label>
+        <div style="display:flex;gap:8px;"><input id="newBrandInput" placeholder="e.g. Notifier"><button class="btn btn-ghost btn-sm" id="addBrandBtn">Add</button></div>
+      </div>` : ''}
+    </div>
+  </div>
+  <div class="grid2" style="align-items:start;">
+    <div class="card">
+      <div class="card-title" style="margin-bottom:12px;">Units</div>
+      <div id="unitList">${state.units.map(u => `<span class="tag">${u} ${can('manageInventory') ? `<span data-del-unit="${u}" style="cursor:pointer;color:var(--red);">✕</span>` : ''}</span>`).join(' ')}</div>
+      ${can('manageInventory') ? `<div class="field" style="margin-top:12px;"><label>Add Unit</label>
+        <div style="display:flex;gap:8px;"><input id="newUnitInput" placeholder="e.g. Drum"><button class="btn btn-ghost btn-sm" id="addUnitBtn">Add</button></div>
+      </div>` : ''}
+    </div>
+    <div class="card">
+      <div class="card-title" style="margin-bottom:12px;">Your Account</div>
+      <p class="muted" style="margin-top:0;">Signed in as <strong>${state.user.name}</strong> (${state.user.role}).</p>
+      <button class="btn btn-outline btn-sm" id="openChangePwdBtn">Change Password</button>
+      <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
+        <label style="margin-bottom:6px;">Push Notifications</label>
+        <p class="muted" style="margin-top:0;font-size:12px;">Get notified on this device when a quotation or purchase request needs your approval — even when the app isn't open.</p>
+        <div id="pushStatusArea">
+          <button class="btn btn-outline btn-sm" id="pushToggleBtn" disabled>Checking status…</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  ${can('manageQuotations') ? renderQuotationSettings() : ''}
+
+  ${can('manageUsers') ? renderUsersRolesSettings() : `<div class="card"><div class="card-title" style="margin-bottom:6px;">Users &amp; Roles</div><p class="muted" style="margin:0;">Only Super Admin can manage users, roles and permissions.</p></div>`}
+
+  <div class="shared-note">Pricing visibility, negative-stock rules and user permissions here are enforced by the server on every request — not just hidden in this screen.</div>
+  `;
+}
+
+function renderQuotationSettings() {
+  const approverIds = new Set((state.company.quotationApprovers || []));
+  return `
+  <div class="grid2" style="align-items:start;">
+    <div class="card">
+      <div class="card-title" style="margin-bottom:12px;">Quotation Numbering</div>
+      <div class="field"><label>Continue From Number</label><input id="setQuoteCounter" type="number" value="${state.nextQuotationCounter ? state.nextQuotationCounter - 1 : 20409}"></div>
+      <p class="muted" style="margin-top:-6px;">Next quotation will be numbered like <strong>AF/PR/${state.nextQuotationCounter || ''}/${String(new Date().getFullYear()).slice(-2)}</strong> (prefix depends on type: PR / SUP / AMC / FO).</p>
+      <button class="btn btn-teal btn-sm" id="saveQuoteCounterBtn">Save</button>
+    </div>
+    <div class="card">
+      <div class="card-title" style="margin-bottom:12px;">Quotation Categories</div>
+      <div id="quoteCategoryList">${state.quotationCategories.map(c => `<span class="tag">${c} <span data-del-quotecat="${c}" style="cursor:pointer;color:var(--red);">✕</span></span>`).join(' ')}</div>
+      <div class="field" style="margin-top:12px;"><label>Add Category</label>
+        <div style="display:flex;gap:8px;"><input id="newQuoteCatInput" placeholder="e.g. CCTV System"><button class="btn btn-ghost btn-sm" id="addQuoteCatBtn">Add</button></div>
+      </div>
+    </div>
+  </div>
+  <div class="grid2" style="align-items:start;">
+    <div class="card">
+      <div class="card-title" style="margin-bottom:12px;">Quotation Approvers</div>
+      <p class="muted" style="margin-top:0;">Only these people (and Super Admin, always) can approve a quotation before it's sent.</p>
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        ${state.users.filter(u => u.active !== false).map(u => `
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500;color:var(--ink);text-transform:none;letter-spacing:0;">
+            <input type="checkbox" class="approverCheck" data-uid="${u.id}" ${approverIds.has(u.id) ? 'checked' : ''} style="width:auto;"> ${u.name} <span class="muted">(${u.role})</span>
+          </label>`).join('')}
+      </div>
+      <button class="btn btn-teal btn-sm" id="saveApproversBtn" style="margin-top:12px;">Save Approvers</button>
+    </div>
+    <div class="card">
+      <div class="card-title" style="margin-bottom:12px;">Exclusions &amp; Terms Library</div>
+      <p class="muted" style="margin-top:0;">${state.exclusionsLibrary.length} saved exclusion/term snippets, reusable across every quotation instead of retyping.</p>
+      <button class="btn btn-outline btn-sm" id="openExclusionsLibBtn">Manage Library</button>
+    </div>
+  </div>
+  `;
+}
+
+
+function renderUsersRolesSettings() {
+  return `
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title">Users <span>${state.users.length} user(s)</span></div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-ghost btn-sm" id="seedRolesBtn">+ Add Default Roles</button>
+        <button class="btn btn-primary btn-sm" id="addUserBtn">+ Add User</button>
+      </div>
+    </div>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Name</th><th>Designation</th><th>Username</th><th>Role</th><th>Active</th><th></th></tr></thead>
+      <tbody>
+      ${state.users.map(u => `
+        <tr>
+          <td><strong>${u.name}</strong></td>
+          <td class="muted">${u.designation || '—'}</td>
+          <td style="font-family:var(--mono);font-size:12px;">${u.username}</td>
+          <td>${u.role}</td>
+          <td>${u.active !== false ? '✅' : '—'}</td>
+          <td><button class="btn btn-outline btn-sm" data-edit-user="${u.id}">Edit</button></td>
+        </tr>`).join('')}
+      </tbody>
+    </table></div>
+  </div>
+  <div class="card">
+    <div class="card-title" style="margin-bottom:10px;">Role Permissions</div>
+    <p class="muted" style="margin-top:0;">Enforced by the server on every request — not just this screen.</p>
+    <div class="tbl-wrap"><table class="perm-grid">
+      <thead><tr><th>Permission</th>${Object.keys(state.roles).map(r => `<th>${r}</th>`).join('')}</tr></thead>
+      <tbody>
+      ${state.permLabels.map(([key, label]) => `
+        <tr><td>${label}</td>${Object.keys(state.roles).map(r => `
+          <td><input type="checkbox" class="permCheck" data-role="${r}" data-perm="${key}" ${state.roles[r][key] ? 'checked' : ''} ${r === 'Super Admin' ? 'disabled' : ''}></td>
+        `).join('')}</tr>`).join('')}
+      </tbody>
+    </table></div>
+    <p class="muted" style="margin-top:8px;">Super Admin always has full access and can't be restricted.</p>
+  </div>
+  `;
+}
+
+/* ================= MODALS ================= */
+function openModal(type, payload) { state.modal = { type, payload: payload || {} }; render(); }
+function closeModal() { state.modal = null; render(); }
+
+function renderModal() {
+  const { type, payload } = state.modal;
+  if (type === 'item') return modalWrap(renderItemForm(payload), 'Item Details');
+  if (type === 'movement') return modalWrap(renderMovementForm(payload), payload.id ? 'Edit Stock Movement' : 'Log Stock Movement');
+  if (type === 'fmChecklist')      return modalWrap(renderFmChecklistForm(), 'New Daily Checklist', false);
+  if (type === 'addAbnormality')   return modalWrap(renderAddAbnormalityForm(payload.clId), 'Add Abnormality Entry', false);
+  if (type === 'newWcr')           return modalWrap(renderWcrForm(), 'New Work Completion Report', true);
+  if (type === 'newSnr')           return modalWrap(renderSnrForm(), 'New Service Notification Report', false);
+  if (type === 'newIncident')      return modalWrap(renderIncidentForm(), 'New Incident Report', true);
+  if (type === 'vendor') return modalWrap(renderVendorForm(payload), 'Vendor Details');
+  if (type === 'client') return modalWrap(renderClientForm(payload), payload.id ? 'Edit Client' : 'New Client');
+  if (type === 'userEdit') return modalWrap(renderUserForm(payload), 'User Details');
+  if (type === 'forcePwd') return modalWrap(renderForcePwdForm(payload), 'Change Your Password');
+  if (type === 'changePwd') return modalWrap(renderChangePwdForm(payload), 'Change Password');
+  if (type === 'newDn') return modalWrap(renderDnForm(payload), 'New Delivery Note', true);
+  if (type === 'viewDn') return modalWrap(renderDnView(payload), '', true);
+  if (type === 'invReport') return modalWrap(renderInventoryReportView(), '', true);
+  if (type === 'newQuote') return modalWrap(renderQuoteForm(payload), payload.id ? 'Edit Quotation' : 'New Quotation', true);
+  if (type === 'viewQuote') return modalWrap(renderQuoteView(payload), '', true);
+  if (type === 'exclusionsLib') return modalWrap(renderExclusionsLibrary(payload), 'Exclusions & Terms Library');
+  if (type === 'viewJobOrder') return modalWrap(renderJobOrderView(payload), `Job Order ${payload.jobOrderNumber}`, true);
+  if (type === 'newMr') return modalWrap(renderMaterialRequestForm(payload), payload.id ? 'Edit Material Request' : 'New Material Request');
+  if (type === 'viewMr') return modalWrap(renderMaterialRequestView(payload), `Material Request ${payload.mrNumber}`, true);
+  if (type === 'newPr') return modalWrap(renderPrForm(payload), 'Raise Purchase Request');
+  if (type === 'viewPr') return modalWrap(renderPrView(payload), `Purchase Request ${payload.prNumber}`, true);
+  if (type === 'newPo') return modalWrap(renderPoForm(payload), 'Create Purchase Order');
+  if (type === 'directPo') return modalWrap(renderDirectPoForm(), 'New Direct LPO', true);
+  if (type === 'viewPo') return modalWrap(renderPoView(payload), `Purchase Order ${payload.poNumber}`, true);
+  if (type === 'siteTeam') return modalWrap(renderSiteTeamForm(payload), 'Set Site Team');
+  if (type === 'newJo') return modalWrap(renderJoForm(payload), payload.id ? 'Edit Job Order' : 'New Job Order');
+  if (type === 'newDr')  return modalWrap(renderDelayReportForm(payload), 'New Delay Report', true);
+  if (type === 'editDr') return modalWrap(renderDelayReportForm(payload), `Edit Report — ${payload.refNumber || ''}`, true);
+  if (type === 'viewDr') return modalWrap(renderDelayReportView(payload), `Delay Report ${payload.refNumber}`, true);
+  return '';
+}
+function modalWrap(inner, title, wide) {
+  return `<div class="overlay" id="modalOverlay">
+    <div class="modal ${wide ? 'wide' : ''}">
+      ${title ? `<div class="modal-head"><div class="modal-title">${title}</div><button class="close-x" id="modalClose">✕</button></div>` : `<div style="text-align:right;"><button class="close-x no-print" id="modalClose">✕</button></div>`}
+      ${inner}
+    </div>
+  </div>`;
+}
+
+function renderItemForm(item) {
+  const isEdit = !!item.id;
+  const showPricing = can('viewPricing');
+  const canEditPricing = can('editPricing');
+  return `
+  <div class="grid2">
+    <div class="field"><label>Brand</label>
+      <select id="f_brand">${state.brands.map(b => `<option ${item.brand === b ? 'selected' : ''}>${b}</option>`).join('')}</select>
+    </div>
+    <div class="field"><label>Part No. / Model No.</label><input id="f_partNo" value="${item.partNo || ''}"></div>
+  </div>
+  <div class="field"><label>Item Description</label><input id="f_description" value="${item.description || ''}"></div>
+  <div class="grid3">
+    <div class="field"><label>Branch / Location</label>
+      <select id="f_location">${state.branches.map(b => `<option ${item.location === b ? 'selected' : ''}>${b}</option>`).join('')}</select>
+    </div>
+    <div class="field"><label>Unit</label>
+      <select id="f_unit">${state.units.map(u => `<option ${item.unit === u ? 'selected' : ''}>${u}</option>`).join('')}</select>
+    </div>
+    <div class="field"><label>Min Level</label><input type="number" id="f_minLevel" value="${item.minLevel ?? 0}"></div>
+  </div>
+  ${showPricing ? `
+  <div class="grid3">
+    <div class="field"><label>Material Cost (${state.company.currency})</label><input type="number" id="f_cost" value="${item.cost ?? 0}" ${canEditPricing ? '' : 'disabled'}></div>
+    <div class="field"><label>Selling Price (${state.company.currency})</label><input type="number" id="f_price" value="${item.price ?? 0}" ${canEditPricing ? '' : 'disabled'}></div>
+    <div class="field"><label>Opening Qty</label><input type="number" id="f_openingQty" value="${item.openingQty ?? 0}"></div>
+  </div>` : `
+  <div class="grid3"><div class="field"><label>Opening Qty</label><input type="number" id="f_openingQty" value="${item.openingQty ?? 0}"></div></div>
+  <p class="muted">Pricing fields are hidden for your role.</p>`}
+  ${isEdit ? `<div class="muted" style="margin-bottom:10px;">Current Qty On Hand: <strong>${item.qty}</strong> (${statusBadge(item.status)})</div>` : ''}
+  <div style="display:flex;justify-content:space-between;margin-top:8px;">
+    <div>${isEdit && can('manageInventory') ? `<button class="btn btn-danger" id="deleteItemBtn">Delete Item</button>` : ''}</div>
+    <div style="display:flex;gap:8px;"><button class="btn btn-ghost" id="modalCancel">Cancel</button>${can('manageInventory') ? `<button class="btn btn-primary" id="saveItemBtn">${isEdit ? 'Save Changes' : 'Add Item'}</button>` : ''}</div>
+  </div>
+  `;
+}
+
+function renderClientForm(client) {
+  const isEdit = !!client.id;
+  return `
+  ${isEdit && client.customerNumber ? `<div style="background:#f0faf5;border-radius:6px;padding:8px 12px;margin-bottom:12px;font-size:12px;color:#085041;font-weight:600;">Customer No: ${client.customerNumber}</div>` : ''}
+  <div class="field"><label>Company Name *</label><input id="c_companyName" value="${client.companyName || ''}" placeholder="e.g. Edge Technical Solutions LLC"></div>
+  <div class="grid2">
+    <div class="field"><label>Contact Person</label><input id="c_contactPerson" value="${client.contactPerson || ''}"></div>
+    <div class="field"><label>Phone</label><input id="c_phone" value="${client.phone || ''}" placeholder="+971 5xx xxx xxx"></div>
+  </div>
+  <div class="grid2">
+    <div class="field"><label>Email</label><input id="c_email" type="email" value="${client.email || ''}"></div>
+    <div class="field"><label>TRN / VAT Number</label><input id="c_trn" value="${client.trn || ''}" placeholder="Optional"></div>
+  </div>
+  <div class="field"><label>Address</label><input id="c_address" value="${client.address || ''}"></div>
+  <div class="field"><label>Notes</label><textarea id="c_notes" rows="2" placeholder="Internal notes about this client...">${client.notes || ''}</textarea></div>
+  <div style="display:flex;justify-content:space-between;margin-top:8px;">
+    <div>${isEdit ? `<button class="btn btn-danger" id="deleteClientBtn">Delete Client</button>` : ''}</div>
+    <div style="display:flex;gap:8px;"><button class="btn btn-ghost" id="modalCancel">Cancel</button><button class="btn btn-primary" id="saveClientBtn">${isEdit ? 'Save Changes' : 'Add Client'}</button></div>
+  </div>
+  `;
+}
+
+function renderUserForm(user) {
+  const isEdit = !!user.id;
+  return `
+  <div class="field"><label>Name <span class="muted" style="font-weight:500;text-transform:none;">(the person's real name — this appears on quotations, not their role)</span></label><input id="u_name" value="${user.name || ''}" placeholder="e.g. Ahsan Aslam"></div>
+  <div class="field"><label>Designation <span class="muted" style="font-weight:500;text-transform:none;">(job title — appears on quotations they prepare or approve)</span></label><input id="u_designation" value="${user.designation || ''}" placeholder="e.g. Sales Engineer, General Manager"></div>
+  ${isEdit ? '' : `
+  <div class="grid2">
+    <div class="field"><label>Username</label><input id="u_username" placeholder="e.g. faisal"></div>
+    <div class="field"><label>Temporary Password</label><input id="u_password" type="text" placeholder="min. 6 characters"></div>
+  </div>`}
+  <div class="grid2">
+    <div class="field"><label>Role</label>
+      <select id="u_role">${Object.keys(state.roles).map(r => `<option ${user.role === r ? 'selected' : ''}>${r}</option>`).join('')}</select>
+    </div>
+    <div class="field"><label>Active</label>
+      <select id="u_active"><option value="true" ${user.active !== false ? 'selected' : ''}>Active</option><option value="false" ${user.active === false ? 'selected' : ''}>Inactive</option></select>
+    </div>
+  </div>
+  ${isEdit ? `<div class="field"><label>Reset Password (optional)</label><input id="u_newPassword" type="text" placeholder="Leave blank to keep current password"></div>` : ''}
+  <div style="display:flex;justify-content:space-between;margin-top:8px;">
+    <div>${isEdit ? `<button class="btn btn-danger" id="deleteUserBtn">Delete User</button>` : ''}</div>
+    <div style="display:flex;gap:8px;"><button class="btn btn-ghost" id="modalCancel">Cancel</button><button class="btn btn-primary" id="saveUserBtn">${isEdit ? 'Save Changes' : 'Add User'}</button></div>
+  </div>
+  `;
+}
+
+function renderForcePwdForm() {
+  return `
+  <p class="muted" style="margin-top:0;">You're using a temporary password. Please set a new one to continue.</p>
+  <div class="field"><label>Current Password</label><input id="pwd_current" type="password"></div>
+  <div class="field"><label>New Password</label><input id="pwd_new" type="password" placeholder="min. 6 characters"></div>
+  <div class="field"><label>Confirm New Password</label><input id="pwd_confirm" type="password"></div>
+  <div id="pwdErr"></div>
+  <div style="display:flex;justify-content:flex-end;margin-top:8px;">
+    <button class="btn btn-primary" id="savePwdBtn">Set New Password</button>
+  </div>
+  <div class="muted" style="text-align:center;margin-top:18px;font-size:10.5px;">Powered by Nexora Technologies</div>
+  `;
+}
+function renderChangePwdForm() { return renderForcePwdForm(); }
+
+function renderMovementForm(payload) {
+  const isEdit = !!payload.id;
+  const items = [...state.items].sort((a, b) => a.description.localeCompare(b.description));
+  return `
+  <div class="field"><label>Item</label>
+    <select id="mv_item">
+      <option value="">— Select item —</option>
+      ${items.map(i => `<option value="${i.id}" ${payload.itemId === i.id ? 'selected' : ''}>${itemLabel(i)} (Qty: ${i.qty})</option>`).join('')}
+    </select>
+  </div>
+  <div class="grid3">
+    <div class="field"><label>Action</label>
+      <select id="mv_action">
+        <option value="IN" ${payload.action === 'IN' ? 'selected' : ''}>IN (Received)</option>
+        <option value="OUT" ${payload.action === 'OUT' ? 'selected' : ''}>OUT (Issued)</option>
+        <option value="ADJUSTMENT" ${payload.action === 'ADJUSTMENT' ? 'selected' : ''}>ADJUSTMENT (Correction)</option>
+      </select>
+    </div>
+    <div class="field"><label>Quantity</label><input type="number" id="mv_qty" placeholder="e.g. 10" value="${payload.qty ?? ''}"></div>
+    <div class="field"><label>Date</label><input type="date" id="mv_date" value="${payload.date || new Date().toISOString().slice(0, 10)}"></div>
+  </div>
+  <div class="grid2">
+    <div class="field"><label>Reference / Project</label><input id="mv_ref" placeholder="PO number, project name…" value="${payload.reference || ''}"></div>
+    <div class="field"><label>Issued / Received By</label><input id="mv_by" value="${payload.by || state.user.name}"></div>
+  </div>
+  <div class="muted" style="margin-bottom:10px;">IN/OUT must be a positive quantity. ADJUSTMENT can be negative (e.g. -3) to reduce stock.</div>
+  ${isEdit && payload.dnId ? `<div class="banner-warn">⚠ This entry was created automatically by issuing Delivery Note ${state.dns.find(d => d.id === payload.dnId)?.dnNumber || ''}. Editing it here only changes the stock ledger — it will not update the Delivery Note document itself.</div>` : ''}
+  <div style="display:flex;justify-content:${isEdit ? 'space-between' : 'flex-end'};gap:8px;">
+    ${isEdit ? `<button class="btn btn-danger" id="deleteMvBtn" type="button">Delete Entry</button>` : ''}
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-ghost" id="modalCancel">Cancel</button>
+      <button class="btn btn-primary" id="saveMvBtn">${isEdit ? 'Save Changes' : 'Log Movement'}</button>
+    </div>
+  </div>
+  `;
+}
+
+/* ---------------- Delivery note form / view ---------------- */
+function renderDnForm(payload) {
+  const lines = payload.lines || [{ itemId: '', qty: '' }];
+  const location = payload.location || (state.branch !== 'All' ? state.branch : state.branches[0]);
+  const sortedClients = [...state.clients].sort((a, b) => a.companyName.localeCompare(b.companyName));
+  return `
+  <div class="grid3">
+    <div class="field"><label>Branch (issuing from)</label>
+      <select id="dn_location">${state.branches.map(b => `<option ${location === b ? 'selected' : ''}>${b}</option>`).join('')}</select>
+    </div>
+    <div class="field"><label>Date</label><input type="date" id="dn_date" value="${payload.date || new Date().toISOString().slice(0, 10)}"></div>
+    ${userPickerHtml('dnIssuedBy', payload.issuedBy||state.user?.name, '', 'Issued By')}
+  </div>
+  <div class="field"><label>Received By (optional, printed name)</label><input id="dn_receivedBy" value="${payload.receivedBy || ''}" placeholder="Name of person receiving goods"></div>
+
+  <div class="field">
+    <label>Quick-fill from Saved Client</label>
+    <div style="display:flex;gap:8px;">
+      <select id="dn_clientPick" style="flex:1;">
+        <option value="">— Select a saved client (optional) —</option>
+        ${sortedClients.map(c => `<option value="${c.id}" ${payload.clientId === c.id ? 'selected' : ''}>${c.companyName}</option>`).join('')}
+      </select>
+      <button class="btn btn-ghost btn-sm" id="quickAddClientBtn" type="button">+ New Client</button>
+    </div>
+  </div>
+  <div class="grid2">
+    <div class="field"><label>Client Company Name</label><input id="dn_clientCompany" value="${payload.clientCompany || ''}" placeholder="Client / company name"></div>
+    <div class="field"><label>Contact Person</label><input id="dn_clientContact" value="${payload.clientContact || ''}"></div>
+  </div>
+  <div class="grid2">
+    <div class="field"><label>Client Phone</label><input id="dn_clientPhone" value="${payload.clientPhone || ''}"></div>
+    <div class="field"><label>Client Email</label><input id="dn_clientEmail" type="email" value="${payload.clientEmail || ''}"></div>
+  </div>
+  <div class="field"><label>Client Address</label><input id="dn_clientAddress" value="${payload.clientAddress || ''}"></div>
+
+  <div class="grid3">
+    <div class="field"><label>Project / Site</label><input id="dn_project" value="${payload.project || ''}" placeholder="Project reference"></div>
+    <div class="field"><label>LPO #</label><input id="dn_lpoNumber" value="${payload.lpoNumber || ''}" placeholder="Client's LPO number"></div>
+    <div class="field"><label>Invoice #</label><input id="dn_invoiceNumber" value="${payload.invoiceNumber || ''}" placeholder="Invoice number"></div>
+  </div>
+
+  <label>Items</label>
+  <div id="dnLines">
+    ${lines.map((ln, idx) => renderDnLine(ln, idx, location)).join('')}
+  </div>
+  <button class="btn btn-ghost btn-sm" id="addDnLineBtn" style="margin-bottom:14px;">+ Add Line</button>
+
+  <div class="field"><label>Remarks</label><textarea id="dn_remarks" rows="2">${payload.remarks || ''}</textarea></div>
+
+  <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:6px;">
+    <button class="btn btn-ghost" id="modalCancel">Cancel</button>
+    <button class="btn btn-outline" id="saveDraftBtn">Save as Draft</button>
+    <button class="btn btn-primary" id="issueDnBtn">Issue Delivery Note</button>
+  </div>
+  `;
+}
+function renderDnLine(ln, idx, location) {
+  const items = state.items.filter(i => i.location === location);
+  const it = findItem(ln.itemId);
+  const avail = it ? it.qty : null;
+  const warn = it && Number(ln.qty) > avail;
+  return `
+  <div class="line-item-row" data-line="${idx}">
+    <div><select class="dnLineItem" data-idx="${idx}">
+      <option value="">— Select item —</option>
+      ${items.map(i => `<option value="${i.id}" ${ln.itemId === i.id ? 'selected' : ''}>${itemLabel(i)} (Avail: ${i.qty})</option>`).join('')}
+    </select></div>
+    <div><input class="dnLineUnit" value="${it ? it.unit : ''}" disabled placeholder="Unit"></div>
+    <div><input type="number" class="dnLineQty" data-idx="${idx}" value="${ln.qty}" min="0.01" step="0.01"></div>
+    <div class="muted" style="font-size:11px;">${it ? `Avail:<br><strong style="color:${warn ? 'var(--red)' : 'var(--green)'}">${avail}</strong>` : ''}</div>
+    <div><button class="btn btn-ghost btn-sm removeDnLine" data-idx="${idx}" style="padding:6px 9px;">✕</button></div>
+  </div>
+  ${warn ? `<div class="stock-hint" style="color:var(--red);margin-top:-4px;">⚠ Only ${avail} in stock at ${location} — issuing will take this item negative.</div>` : ''}
+  `;
+}
+
+function renderDnView(dn) {
+  const rows = dn.items.map((ln, idx) => {
+    const it = findItem(ln.itemId);
+    return `<tr><td>${idx + 1}</td><td>${it ? it.description : '(item removed)'}</td><td>${it ? it.brand : ''}</td><td style="font-family:var(--mono)">${it ? it.partNo || '—' : ''}</td><td style="text-align:right;">${ln.qty}</td><td>${it ? it.unit : ''}</td></tr>`;
+  }).join('');
+  const co = state.company;
+  return `
+  <div id="printArea" class="dn-doc">
+    <div class="dn-head">
+      <div style="display:flex;gap:14px;align-items:center;justify-content:flex-start;">
+        ${co.logoPath ? `<img src="${co.logoPath}" class="dn-logo" style="height:${logoSizePx(co.logoSize)}px;max-width:220px;object-fit:contain;" alt="${co.name} logo">` : ''}
+        <div style="text-align:center;">
+          <div class="dn-company">${co.name}</div>
+        </div>
+      </div>
+      <div class="dn-title-block">
+        <div class="dn-title">DELIVERY NOTE</div>
+        <div class="dn-num">${dn.dnNumber}</div>
+        <div class="muted">${dn.status === 'Issued' ? 'ISSUED' : 'DRAFT — NOT YET ISSUED'}</div>
+      </div>
+    </div>
+    <div class="dn-meta">
+      <div><div class="k">Date</div><div class="v">${fmtDate(dn.date)}</div></div>
+      <div><div class="k">Issuing Branch</div><div class="v">${dn.location}</div></div>
+      <div><div class="k">LPO #</div><div class="v">${dn.lpoNumber || '—'}</div></div>
+      <div><div class="k">Invoice #</div><div class="v">${dn.invoiceNumber || '—'}</div></div>
+      <div><div class="k">Project / Site</div><div class="v">${dn.project || '—'}</div></div>
+      <div><div class="k">Issued By</div><div class="v">${dn.issuedBy || '—'}</div></div>
+    </div>
+    <div class="dn-meta" style="border-top:1px dashed var(--border);padding-top:14px;">
+      <div>
+        <div class="k">Deliver To</div>
+        <div class="v">${dn.clientCompany || '—'}</div>
+        ${dn.clientContact ? `<div class="muted" style="margin-top:2px;">Attn: ${dn.clientContact}</div>` : ''}
+      </div>
+      <div>
+        <div class="k">Client Contact</div>
+        <div class="v" style="font-weight:500;">${dn.clientPhone || ''}${dn.clientPhone && dn.clientEmail ? ' · ' : ''}${dn.clientEmail || ''}</div>
+        ${dn.clientAddress ? `<div class="muted" style="margin-top:2px;">${dn.clientAddress}</div>` : ''}
+      </div>
+    </div>
+    <table class="dn-table">
+      <thead><tr><th>#</th><th>Description</th><th>Brand</th><th>Part No.</th><th style="text-align:right;">Qty</th><th>Unit</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    ${dn.remarks ? `<div style="margin-top:14px;font-size:13px;"><strong>Remarks:</strong> ${dn.remarks}</div>` : ''}
+    <div class="dn-sign">
+      <div class="sign-line">Issued By — ${dn.issuedBy || ''}</div>
+      <div class="sign-line">Received By${dn.receivedBy ? ' — ' + dn.receivedBy : ''} (Signature &amp; Stamp)</div>
+    </div>
+    <div class="dn-terms">The undersigned hereby acknowledges receipt of the materials described herein in good condition, free from any apparent defects or damages. This confirmation serves as conclusive evidence that the materials have been delivered and accepted in satisfactory condition.</div>
+    <div class="dn-footer-bar">
+      <span>${co.address || ''}</span>
+      <span>${co.phone || ''}</span>
+      <span>${co.email || ''}</span>
+    </div>
+  </div>
+  <div class="no-print" style="display:flex;justify-content:flex-end;gap:8px;margin-top:20px;">
+    <button class="btn btn-ghost" id="modalCancel">Close</button>
+    ${dn.status !== 'Issued' && can('createDN') ? `<button class="btn btn-outline" id="editDraftBtn">Edit Draft</button><button class="btn btn-primary" id="issueFromViewBtn">Issue Now</button>` : ''}
+    <button class="btn btn-teal" id="printDnBtn">Print / Save PDF</button>
+  </div>
+  `;
+}
+
+/* ---------------- Inventory print report ---------------- */
+function printInventory() { openModal('invReport', {}); }
+function renderInventoryReportView() {
+  const items = visibleItems();
+  const showPricing = shouldExportPricing();
+  const co = state.company;
+  const colspan = showPricing ? 11 : 8;
+  const rows = items.map(it => `<tr>
+    <td>${it.description}</td><td>${it.brand}</td><td style="font-family:var(--mono);font-size:11px;">${it.partNo || '—'}</td>
+    <td>${it.location}</td><td>${it.unit}</td><td style="text-align:right;">${it.qty}</td><td style="text-align:right;">${it.minLevel}</td>
+    ${showPricing ? `<td style="text-align:right;">${fmtMoney(it.cost)}</td><td style="text-align:right;">${fmtMoney(it.price)}</td><td style="text-align:right;">${fmtMoney(it.stockValue)}</td>` : ''}
+    <td>${statusBadge(it.status)}</td>
+  </tr>`).join('');
+  return `
+  <div id="printArea" class="dn-doc">
+    <div class="dn-head">
+      <div style="display:flex;gap:14px;align-items:center;">
+        ${co.logoPath ? `<img src="${co.logoPath}" class="dn-logo" style="height:${logoSizePx(co.logoSize)}px;max-width:220px;object-fit:contain;" alt="logo">` : ''}
+        <div>
+          <div class="dn-company">${co.name}</div>
+          <div class="dn-company-sub">${[co.address, co.phone, co.email].filter(Boolean).join(' · ')}</div>
+        </div>
+      </div>
+      <div class="dn-title-block">
+        <div class="dn-title">INVENTORY REPORT</div>
+        <div class="muted">Exported ${new Date().toLocaleString('en-GB')}</div>
+      </div>
+    </div>
+    <div class="muted" style="margin-bottom:12px;font-size:12px;">Filters applied: ${currentFilterSummary()} &nbsp;·&nbsp; ${items.length} item(s)</div>
+    <table class="dn-table">
+      <thead><tr><th>Description</th><th>Brand</th><th>Part No.</th><th>Branch</th><th>Unit</th><th style="text-align:right;">Qty</th><th style="text-align:right;">Min</th>
+      ${showPricing ? `<th style="text-align:right;">Cost</th><th style="text-align:right;">Price</th><th style="text-align:right;">Stock Value</th>` : ''}
+      <th>Status</th></tr></thead>
+      <tbody>${rows || `<tr><td colspan="${colspan}">No items match the current filters.</td></tr>`}</tbody>
+    </table>
+    ${companyFooterNote()}
+  </div>
+  <div class="no-print" style="display:flex;justify-content:flex-end;gap:8px;margin-top:20px;">
+    <button class="btn btn-ghost" id="modalCancel">Close</button>
+    <button class="btn btn-teal" id="printReportBtn">Print</button>
+  </div>
+  `;
+}
+
+/* ================= EVENT HANDLING ================= */
+function val(id) { const el = document.getElementById(id); return el ? el.value : ''; }
+
+// Printing content that lives inside a deeply-nested modal (overlay > modal > printArea) is
+// fragile with CSS visibility/position tricks alone — the overlay's own scroll/positioning
+// can clip or truncate content, especially on documents long enough to span multiple pages.
+// Instead, we clone the current #printArea into a fresh, top-level element with zero
+// inherited styling, print that in isolation, then remove it.
+function printDocument() {
+  const source = document.getElementById('printArea');
+  if (!source) { window.print(); return; }
+  document.getElementById('printMount')?.remove();
+  const mount = document.createElement('div');
+  mount.id = 'printMount';
+  mount.innerHTML = source.outerHTML;
+
+  // Inject print-specific styles for delivery note fixes
+  const style = document.createElement('style');
+  style.textContent = `
+    @media print {
+      body > *:not(#printMount) { display: none !important; }
+      #printMount { display: block !important; }
+      @page { margin: 14mm 12mm; size: A4 portrait; }
+    }
+    #printMount .dn-doc {
+      font-family: Arial, sans-serif;
+      font-size: 13px;
+      color: #0B2B36;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+    #printMount .dn-footer-bar {
+      margin-top: auto;
+      padding-top: 10px;
+      border-top: 1px solid #E1E6E8;
+      display: flex;
+      justify-content: space-between;
+      font-size: 8px;
+      color: #5B6B70;
+    }
+    #printMount .dn-footer-bar span { flex: 1; }
+    #printMount .dn-footer-bar span:nth-child(2) { text-align: center; }
+    #printMount .dn-footer-bar span:nth-child(3) { text-align: right; }
+    #printMount .dn-footer-note { display: none !important; }
+    #printMount .dn-terms {
+      font-size: 11px;
+      color: #5B6B70;
+      margin-top: 14px;
+      line-height: 1.5;
+    }
+    #printMount .dn-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 2px solid #00627B;
+      padding-bottom: 12px;
+      margin-bottom: 16px;
+    }
+    #printMount .dn-company {
+      font-size: 15px;
+      font-weight: 700;
+      color: #00627B;
+    }
+    #printMount .dn-title-block { text-align: right; }
+    #printMount .dn-title { font-size: 20px; font-weight: 700; color: #0B2B36; }
+    #printMount .dn-num { font-size: 12px; font-weight: 700; color: #D96F24; }
+  `;
+  document.head.appendChild(style);
+  document.body.appendChild(mount);
+  window.print();
+  const cleanup = () => {
+    document.getElementById('printMount')?.remove();
+    style.remove();
+    window.removeEventListener('afterprint', cleanup);
+  };
+  window.addEventListener('afterprint', cleanup);
+  setTimeout(cleanup, 8000);
+}
+
+function attachHandlers() {
+  document.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', e => {
+    setTab(e.currentTarget.getAttribute('data-tab'));
+  }));
+
+  // Sidebar group toggle
+  document.querySelectorAll('[data-group]').forEach(b => b.addEventListener('click', e => {
+    const g = e.currentTarget.getAttribute('data-group');
+    state.sidebarOpen = state.sidebarOpen === g ? null : g;
+    render();
+  }));
+
+  const mobileNavToggle = document.getElementById('mobileNavToggle');
+  if (mobileNavToggle) mobileNavToggle.addEventListener('click', () => { state.mobileNavOpen = true; render(); });
+  const mobileNavClose = document.getElementById('mobileNavClose');
+  if (mobileNavClose) mobileNavClose.addEventListener('click', () => { state.mobileNavOpen = false; render(); });
+  const mobileNavBackdrop = document.getElementById('mobileNavBackdrop');
+  if (mobileNavBackdrop) mobileNavBackdrop.addEventListener('click', () => { state.mobileNavOpen = false; render(); });
+
+  const bp = document.getElementById('branchPicker');
+  if (bp) bp.addEventListener('change', e => { state.branch = e.target.value; render(); });
+
+  const headerSettingsBtn = document.getElementById('headerSettingsBtn');
+  if (headerSettingsBtn) headerSettingsBtn.addEventListener('click', () => setTab('settings'));
+  const logoutBtn = document.getElementById('logoutBtn');
+  if (logoutBtn) logoutBtn.addEventListener('click', async () => {
+    try { await api('POST', '/api/auth/logout'); } catch (e) {}
+    authToken = null; localStorage.removeItem('af_token');
+    state.user = null; state.loaded = false; state.tab = 'dashboard';
+    render();
+  });
+
+  const newDnBtn = document.getElementById('newDnBtn');
+  if (newDnBtn) newDnBtn.addEventListener('click', () => openModal('newDn', {}));
+  const newDnBtn2 = document.getElementById('newDnBtn2');
+  if (newDnBtn2) newDnBtn2.addEventListener('click', () => openModal('newDn', {}));
+
+  const invSearch = document.getElementById('invSearch');
+  if (invSearch) {
+    invSearch.addEventListener('input', e => { state.search = e.target.value; renderInventoryOnly(); });
+    invSearch.focus(); invSearch.setSelectionRange(invSearch.value.length, invSearch.value.length);
+  }
+  const invStatusFilter = document.getElementById('invStatusFilter');
+  if (invStatusFilter) invStatusFilter.addEventListener('change', e => { state.invFilter = e.target.value; render(); });
+  const addItemBtn = document.getElementById('addItemBtn');
+  if (addItemBtn) addItemBtn.addEventListener('click', () => openModal('item', { location: state.branch !== 'All' ? state.branch : state.branches[0], unit: state.units[0], brand: state.brands[0] }));
+  document.querySelectorAll('[data-edit-item]').forEach(b => b.addEventListener('click', e => {
+    openModal('item', { ...findItem(e.currentTarget.getAttribute('data-edit-item')) });
+  }));
+
+  const exportPricingToggle = document.getElementById('exportPricingToggle');
+  if (exportPricingToggle) exportPricingToggle.addEventListener('change', e => { state.exportIncludePricing = e.target.checked; render(); });
+  const printInvBtn = document.getElementById('printInvBtn');
+  if (printInvBtn) printInvBtn.addEventListener('click', printInventory);
+  const exportExcelBtn = document.getElementById('exportExcelBtn');
+  if (exportExcelBtn) exportExcelBtn.addEventListener('click', () => {
+    const qs = new URLSearchParams({ branch: state.branch, status: state.invFilter, search: state.search, pricing: shouldExportPricing() ? '1' : '0' });
+    apiDownload('/api/export/excel?' + qs.toString()).then(() => showToast('Excel file downloaded.', 'ok')).catch(err => showToast(err.message, 'err'));
+  });
+  const exportPdfBtn = document.getElementById('exportPdfBtn');
+  if (exportPdfBtn) exportPdfBtn.addEventListener('click', () => {
+    const qs = new URLSearchParams({ branch: state.branch, status: state.invFilter, search: state.search, pricing: shouldExportPricing() ? '1' : '0' });
+    apiDownload('/api/export/pdf?' + qs.toString()).then(() => showToast('PDF downloaded.', 'ok')).catch(err => showToast(err.message, 'err'));
+  });
+  const printReportBtn = document.getElementById('printReportBtn');
+  if (printReportBtn) printReportBtn.addEventListener('click', printDocument);
+
+  const addMvBtn = document.getElementById('addMvBtn');
+  if (addMvBtn) addMvBtn.addEventListener('click', () => openModal('movement', {}));
+  document.querySelectorAll('[data-edit-mv]').forEach(b => b.addEventListener('click', e => {
+    const mv = state.movements.find(m => m.id === e.currentTarget.getAttribute('data-edit-mv'));
+    openModal('movement', { ...mv });
+  }));
+
+  document.querySelectorAll('[data-view-dn]').forEach(b => b.addEventListener('click', e => {
+    openModal('viewDn', state.dns.find(d => d.id === e.currentTarget.getAttribute('data-view-dn')));
+  }));
+
+  // Work Reports
+  const newWcrBtn = document.getElementById('newWcrBtn');
+  if (newWcrBtn) newWcrBtn.addEventListener('click', () => openModal('newWcr', { tasks:[{workType:'',area:'',description:'',materials:'',status:'Completed'}] }));
+
+  const newSnrBtn = document.getElementById('newSnrBtn');
+  if (newSnrBtn) newSnrBtn.addEventListener('click', () => openModal('newSnr', {}));
+
+  document.querySelectorAll('[data-view-wr]').forEach(b => b.addEventListener('click', e => {
+    state.workReportView = e.currentTarget.getAttribute('data-view-wr');
+    render();
+  }));
+
+  const printWrBtn = document.getElementById('printWrBtn');
+  if (printWrBtn) printWrBtn.addEventListener('click', () => {
+    const id = printWrBtn.getAttribute('data-id');
+    const wr = state.workReports.find(r => r.id === id);
+    if (!wr) return;
+    const win = window.open('', '_blank');
+    win.document.write(buildWcrPdf(wr));
+    win.document.close();
+    setTimeout(() => win.print(), 800);
+  });
+
+  document.querySelectorAll('[data-delete-wr]').forEach(b => b.addEventListener('click', async e => {
+    const id = e.currentTarget.getAttribute('data-delete-wr');
+    const wr = state.workReports.find(r => r.id === id);
+    if (!wr || !confirm(`Delete ${wr.refNumber}? This cannot be undone.`)) return;
+    try {
+      await api('DELETE', '/api/work-reports/' + id);
+      await loadAll();
+      showToast('Report deleted.', 'ok');
+      state.workReportView = null;
+      render();
+    } catch(e) { showToast(e.message, 'err'); }
+  }));
+
+  // WCR form handlers
+  const addWcrTaskBtn = document.getElementById('addWcrTaskBtn');
+  if (addWcrTaskBtn) addWcrTaskBtn.addEventListener('click', () => {
+    const p = state.modal.payload;
+    if (!p.tasks) p.tasks = [];
+    p.tasks.push({workType:'',area:'',description:'',materials:'',status:'Completed'});
+    render();
+  });
+  document.querySelectorAll('.removeWcrTaskBtn').forEach(b => b.addEventListener('click', e => {
+    const idx = Number(e.currentTarget.getAttribute('data-idx'));
+    const p = state.modal.payload;
+    p.tasks.splice(idx, 1);
+    render();
+  }));
+
+  const saveWcrBtn = document.getElementById('saveWcrBtn');
+  if (saveWcrBtn) saveWcrBtn.addEventListener('click', async () => {
+    const joId = document.getElementById('wcr_joId')?.value;
+    if (!joId) { showToast('Please select a Job Order.', 'err'); return; }
+    const tasks = [];
+    document.querySelectorAll('[data-wcr-task]').forEach((row, i) => {
+      tasks.push({
+        workType:    row.querySelector('.wcr_task_type')?.value   || '',
+        area:        row.querySelector('.wcr_task_area')?.value   || '',
+        description: row.querySelector('.wcr_task_desc')?.value   || '',
+        materials:   row.querySelector('.wcr_task_materials')?.value || '',
+        status:      'Completed',
+      });
+    });
+    const fd = new FormData();
+    fd.append('jobOrderId',     joId);
+    fd.append('date',           document.getElementById('wcr_date')?.value || '');
+    fd.append('location',       document.getElementById('wcr_location')?.value || '');
+    const wcrAreaType = document.querySelector('input[name="wcr_areaType"]:checked')?.value || 'Common Area';
+    fd.append('areaType',       wcrAreaType);
+    fd.append('tenantName',     wcrAreaType==='Tenant Unit' ? (document.getElementById('wcr_tenantName')?.value||'') : '');
+    fd.append('tenantUnit',     wcrAreaType==='Tenant Unit' ? (document.getElementById('wcr_tenantUnit')?.value||'') : '');
+    fd.append('tenantContact',  wcrAreaType==='Tenant Unit' ? (document.getElementById('wcr_tenantContact')?.value||'') : '');
+    fd.append('technicianName', document.getElementById('wcr_tech')?.value || '');
+    fd.append('supervisorName', document.getElementById('wcr_supervisor')?.value || '');
+    fd.append('notes',          document.getElementById('wcr_notes')?.value || '');
+    fd.append('status',         document.getElementById('wcr_status')?.value || 'Completed');
+    fd.append('forClient',      document.getElementById('wcr_forClient')?.value || 'false');
+    fd.append('tasks',          JSON.stringify(tasks));
+    document.querySelectorAll('[data-wcr-task]').forEach((row, i) => {
+      const bf = row.querySelector('.wcr_task_before')?.files[0];
+      const af = row.querySelector('.wcr_task_after')?.files[0];
+      if (bf) fd.append(`beforePhoto_${i}`, bf);
+      if (af) fd.append(`afterPhoto_${i}`,  af);
+    });
+    try {
+      const r   = await fetch('/api/work-reports/wcr', { method:'POST', headers:{'Authorization':`Bearer ${authToken}`}, body:fd });
+      const d   = await r.json();
+      if (!r.ok) throw new Error(d.error);
+      await loadAll();
+      showToast('Work Completion Report submitted.', 'ok');
+      closeModal();
+      state.workReportView = d.workReport.id;
+      render();
+    } catch(e) { showToast(e.message, 'err'); }
+  });
+
+  const saveSnrBtn = document.getElementById('saveSnrBtn');
+  if (saveSnrBtn) saveSnrBtn.addEventListener('click', async () => {
+    const joId = document.getElementById('snr_joId')?.value;
+    if (!joId) { showToast('Please select a Job Order.', 'err'); return; }
+    if (!document.getElementById('snr_subject')?.value?.trim()) { showToast('Subject is required.', 'err'); return; }
+    const prepVal = getUserPickerValue('snrPreparedBy');
+    const fd = new FormData();
+    fd.append('jobOrderId',     joId);
+    fd.append('subject',        document.getElementById('snr_subject')?.value||'');
+    fd.append('workType',       document.getElementById('snr_workType')?.value||'');
+    fd.append('location',       document.getElementById('snr_location')?.value||'');
+    const snrAreaType = document.querySelector('input[name="snr_areaType"]:checked')?.value || 'Common Area';
+    fd.append('areaType',       snrAreaType);
+    fd.append('tenantName',     snrAreaType==='Tenant Unit' ? (document.getElementById('snr_tenantName')?.value||'') : '');
+    fd.append('tenantUnit',     snrAreaType==='Tenant Unit' ? (document.getElementById('snr_tenantUnit')?.value||'') : '');
+    fd.append('tenantContact',  snrAreaType==='Tenant Unit' ? (document.getElementById('snr_tenantContact')?.value||'') : '');
+    fd.append('date',           document.getElementById('snr_date')?.value||'');
+    fd.append('time',           document.getElementById('snr_time')?.value||'');
+    fd.append('description',    document.getElementById('snr_desc')?.value||'');
+    fd.append('immediateAction',document.getElementById('snr_action')?.value||'');
+    fd.append('status',         document.getElementById('snr_status')?.value||'Completed');
+    fd.append('forClient',      document.getElementById('snr_forClient')?.value||'false');
+    fd.append('preparedByName', prepVal.name||state.user?.name||'');
+    fd.append('preparedByDesig',prepVal.designation||'');
+    fd.append('receivedBy',     document.getElementById('snr_receivedBy')?.value||'');
+    // Before photos
+    for (let i=0; i<3; i++) {
+      const f = document.getElementById(`snr_before_${i}`)?.files[0];
+      if (f) fd.append(`beforePhoto_${i}`, f);
+    }
+    // After photos
+    for (let i=0; i<3; i++) {
+      const f = document.getElementById(`snr_after_${i}`)?.files[0];
+      if (f) fd.append(`afterPhoto_${i}`, f);
+    }
+    // General photos
+    for (let i=0; i<5; i++) {
+      const f = document.getElementById(`snr_general_${i}`)?.files[0];
+      if (f) fd.append(`generalPhoto_${i}`, f);
+    }
+    try {
+      const r = await fetch('/api/work-reports/snr', { method:'POST', headers:{'Authorization':`Bearer ${authToken}`}, body:fd });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error);
+      await loadAll();
+      showToast('Service Notification submitted.', 'ok');
+      closeModal();
+      state.workReportView = d.workReport.id;
+      state.tab = 'fmSnr';
+      render();
+    } catch(e) { showToast(e.message, 'err'); }
+  });
+
+  // Incident Reports
+  const newIncidentBtn = document.getElementById('newIncidentBtn');
+  if (newIncidentBtn) newIncidentBtn.addEventListener('click', () => openModal('newIncident', {}));
+
+  document.querySelectorAll('[data-view-ir]').forEach(b => b.addEventListener('click', e => {
+    state.incidentView = e.currentTarget.getAttribute('data-view-ir');
+    render();
+  }));
+
+  const printIrBtn = document.getElementById('printIrBtn');
+  if (printIrBtn) printIrBtn.addEventListener('click', () => {
+    const id = printIrBtn.getAttribute('data-id');
+    const ir = state.fmIncidents.find(r => r.id === id);
+    if (!ir) return;
+    const win = window.open('', '_blank');
+    win.document.write(buildIrPdf(ir));
+    win.document.close();
+    setTimeout(() => win.print(), 800);
+  });
+
+  document.querySelectorAll('[data-delete-ir]').forEach(b => b.addEventListener('click', async e => {
+    const id = e.currentTarget.getAttribute('data-delete-ir');
+    const ir = state.fmIncidents.find(r => r.id === id);
+    if (!ir || !confirm(`Delete ${ir.refNumber}? This cannot be undone.`)) return;
+    try {
+      await api('DELETE', '/api/incidents/' + id);
+      await loadAll();
+      showToast('Incident report deleted.', 'ok');
+      state.incidentView = null;
+      render();
+    } catch(e) { showToast(e.message, 'err'); }
+  }));
+
+  const addRcBtn = document.getElementById('addRcBtn');
+  if (addRcBtn) addRcBtn.addEventListener('click', () => {
+    const div = document.createElement('div');
+    div.className = 'rc-row';
+    div.style.cssText = 'display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:6px;margin-bottom:6px;';
+    div.innerHTML = `
+      <input placeholder="Risk control measure..." style="font-size:12px;">
+      <input type="date" style="font-size:12px;">
+      <input type="date" style="font-size:12px;">
+      <input placeholder="Responsible person..." style="font-size:12px;">
+      <button type="button" onclick="this.closest('.rc-row').remove()" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:16px;">✕</button>`;
+    document.getElementById('rcRows')?.appendChild(div);
+  });
+
+  const saveIrBtn = document.getElementById('saveIrBtn');
+  if (saveIrBtn) saveIrBtn.addEventListener('click', async () => {
+    const joId = document.getElementById('ir_joId')?.value;
+    if (!joId) { showToast('Please select a Job Order.', 'err'); return; }
+    const desc = document.getElementById('ir_desc')?.value?.trim();
+    if (!desc) { showToast('Description is required.', 'err'); return; }
+
+    // Collect risk controls
+    const riskControls = [];
+    document.querySelectorAll('.rc-row').forEach(row => {
+      const inputs = row.querySelectorAll('input');
+      if (inputs[0]?.value?.trim()) {
+        riskControls.push({ control: inputs[0].value.trim(), plannedDate: inputs[1]?.value||'', actualDate: inputs[2]?.value||'', responsibility: inputs[3]?.value?.trim()||'' });
+      }
+    });
+
+    const prepVal = getUserPickerValue('irPreparedBy');
+    const apprVal = getUserPickerValue('irApprovedBy');
+
+    const fd = new FormData();
+    fd.append('jobOrderId',         joId);
+    fd.append('incidentType',       document.getElementById('ir_type')?.value||'Other');
+    fd.append('severity',           document.getElementById('ir_severity')?.value||'Minor');
+    fd.append('date',               document.getElementById('ir_date')?.value||'');
+    fd.append('time',               document.getElementById('ir_time')?.value||'');
+    fd.append('location',           document.getElementById('ir_location')?.value||'');
+    fd.append('classification',     document.getElementById('ir_class')?.value||'');
+    fd.append('typeDetails',        document.getElementById('ir_typeDetails')?.value||'');
+    fd.append('material',           document.getElementById('ir_material')?.value||'');
+    fd.append('extinguishingMedia', document.getElementById('ir_extMedia')?.value||'');
+    fd.append('estimatedCost',      document.getElementById('ir_cost')?.value||'');
+    fd.append('civilDefenseInformed', document.getElementById('ir_cdInformed')?.value||'false');
+    fd.append('affectedPerson',     document.getElementById('ir_affectedPerson')?.value||'');
+    fd.append('affectedDesignation',document.getElementById('ir_affectedDesig')?.value||'');
+    fd.append('injuryType',         document.getElementById('ir_injuryType')?.value||'');
+    fd.append('description',        desc);
+    fd.append('immediateAction',    document.getElementById('ir_immediate')?.value||'');
+    fd.append('correctiveAction',   document.getElementById('ir_corrective')?.value||'');
+    fd.append('immediateCause',     document.getElementById('ir_immCause')?.value||'');
+    fd.append('underlyingCause',    document.getElementById('ir_undCause')?.value||'');
+    fd.append('rootCause',          document.getElementById('ir_rootCause')?.value||'');
+    fd.append('supervisorName',     document.getElementById('ir_supervisor')?.value||'');
+    fd.append('preparedByName',     prepVal.name||state.user?.name||'');
+    fd.append('preparedByDesig',    prepVal.designation||'');
+    fd.append('approvedByName',     apprVal.name||'');
+    fd.append('approvedByDesig',    apprVal.designation||'');
+    fd.append('riskControls',       JSON.stringify(riskControls));
+
+    for (let i=0; i<5; i++) {
+      const f = document.getElementById(`ir_photo_${i}`)?.files[0];
+      if (f) fd.append(`photo_${i}`, f);
+    }
+
+    try {
+      const r = await fetch('/api/incidents', { method:'POST', headers:{'Authorization':`Bearer ${authToken}`}, body:fd });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error);
+      await loadAll();
+      showToast('Incident report submitted.', 'ok');
+      closeModal();
+      state.incidentView = d.incident.id;
+      render();
+    } catch(e) { showToast(e.message, 'err'); }
+  });
+  const newFmClBtn = document.getElementById('newFmChecklistBtn');
+  if (newFmClBtn) newFmClBtn.addEventListener('click', () => openModal('fmChecklist', {}));
+
+  document.querySelectorAll('[data-view-fm-cl]').forEach(b => b.addEventListener('click', e => {
+    state.fmChecklistView = e.currentTarget.getAttribute('data-view-fm-cl');
+    render();
+  }));
+
+  const submitFmClBtn = document.getElementById('submitFmClBtn');
+  if (submitFmClBtn) submitFmClBtn.addEventListener('click', async () => {
+    const id = submitFmClBtn.getAttribute('data-id');
+    if (!confirm('Submit this checklist? It will be marked as Submitted and locked.')) return;
+    try {
+      await api('PUT', '/api/fm-checklists/' + id, { submit: true });
+      await loadAll();
+      showToast('Checklist submitted.', 'ok');
+      render();
+    } catch(e) { showToast(e.message, 'err'); }
+  });
+
+  const printFmClBtn = document.getElementById('printFmClBtn');
+  if (printFmClBtn) printFmClBtn.addEventListener('click', () => {
+    const id = printFmClBtn.getAttribute('data-id');
+    const cl = state.fmChecklists.find(c => c.id === id);
+    if (!cl) return;
+    const win = window.open('', '_blank');
+    win.document.write(buildFmChecklistPdf(cl));
+    win.document.close();
+    setTimeout(() => win.print(), 600);
+  });
+
+  const addAbnBtn = document.getElementById('addAbnBtn');
+  if (addAbnBtn) addAbnBtn.addEventListener('click', () => {
+    const clId = addAbnBtn.getAttribute('data-id');
+    openModal('addAbnormality', { clId });
+  });
+
+  const saveAbnBtn = document.getElementById('saveAbnBtn');
+  if (saveAbnBtn) saveAbnBtn.addEventListener('click', async () => {
+    const clId = saveAbnBtn.getAttribute('data-cl-id');
+    const desc = document.getElementById('abn_desc')?.value?.trim();
+    if (!desc) { showToast('Please describe the abnormality.', 'err'); return; }
+    const cl = state.fmChecklists.find(c => c.id === clId);
+    if (!cl) return;
+    const entry = {
+      date:         document.getElementById('abn_date')?.value || new Date().toISOString().slice(0,10),
+      abnormality:  desc,
+      actionTaken:  document.getElementById('abn_action')?.value?.trim() || '',
+      status:       document.getElementById('abn_status')?.value || 'Open',
+      doneBy:       document.getElementById('abn_doneBy')?.value?.trim() || state.user?.name || '',
+    };
+    cl.abnormalities = [...(cl.abnormalities||[]), entry];
+    try {
+      await api('PUT', '/api/fm-checklists/' + clId, { abnormalities: cl.abnormalities });
+      await loadAll();
+      showToast('Abnormality entry added.', 'ok');
+      closeModal();
+      state.fmChecklistView = clId;
+      render();
+    } catch(e) { showToast(e.message, 'err'); }
+  });
+
+  const saveFmClBtn = document.getElementById('saveFmClBtn');
+  if (saveFmClBtn) saveFmClBtn.addEventListener('click', async () => {
+    const joId  = document.getElementById('fm_joId')?.value;
+    const tplId = document.getElementById('fm_tplId')?.value;
+    if (!joId)  { showToast('Please select a Job Order.', 'err'); return; }
+    if (!tplId) { showToast('Please select a checklist template.', 'err'); return; }
+    try {
+      const res = await api('POST', '/api/fm-checklists', {
+        jobOrderId:     joId,
+        templateId:     tplId,
+        month:          document.getElementById('fm_month')?.value,
+        location:       document.getElementById('fm_location')?.value,
+        floor:          document.getElementById('fm_floor')?.value,
+        technicianName: document.getElementById('fm_tech')?.value,
+        supervisorName: document.getElementById('fm_supervisor')?.value,
+      });
+      await loadAll();
+      showToast('Checklist created.', 'ok');
+      closeModal();
+      state.fmChecklistView = res.checklist.id;
+      render();
+    } catch(e) { showToast(e.message, 'err'); }
+  });
+
+  const addClientBtn = document.getElementById('addClientBtn');
+  if (addClientBtn) addClientBtn.addEventListener('click', () => openModal('client', {}));
+  document.querySelectorAll('[data-view-client]').forEach(b => b.addEventListener('click', e => {
+    state.clientView = e.currentTarget.getAttribute('data-view-client');
+    render();
+  }));
+  document.querySelectorAll('[data-edit-client]').forEach(b => b.addEventListener('click', e => {
+    openModal('client', { ...state.clients.find(c => c.id === e.currentTarget.getAttribute('data-edit-client')) });
+  }));
+
+  const addVendorBtn = document.getElementById('addVendorBtn');
+  if (addVendorBtn) addVendorBtn.addEventListener('click', () => openModal('vendor', {}));
+  document.querySelectorAll('[data-edit-vendor]').forEach(b => b.addEventListener('click', e => {
+    openModal('vendor', { ...findVendor(e.currentTarget.getAttribute('data-edit-vendor')) });
+  }));
+
+  const newQuoteBtn = document.getElementById('newQuoteBtn');
+  if (newQuoteBtn) newQuoteBtn.addEventListener('click', () => openModal('newQuote', {}));
+  const quoteStatusFilter = document.getElementById('quoteStatusFilter');
+  if (quoteStatusFilter) quoteStatusFilter.addEventListener('change', e => { state.quoteFilter = e.target.value; render(); });
+  const joStatusFilter = document.getElementById('joStatusFilter');
+  if (joStatusFilter) joStatusFilter.addEventListener('change', e => { state.joFilter = e.target.value; render(); });
+  const dnStatusFilter = document.getElementById('dnStatusFilter');
+  if (dnStatusFilter) dnStatusFilter.addEventListener('change', e => { state.dnFilter = e.target.value; render(); });
+  document.querySelectorAll('[data-view-quote]').forEach(b => b.addEventListener('click', e => {
+    openModal('viewQuote', findQuote(e.currentTarget.getAttribute('data-view-quote')));
+  }));
+  document.querySelectorAll('[data-choose-quote-type]').forEach(b => b.addEventListener('click', e => {
+    openModal('newQuote', { type: e.currentTarget.getAttribute('data-choose-quote-type'), lineItems: [], sitesCovered: [], exclusions: [] });
+  }));
+
+  document.querySelectorAll('[data-view-jo]').forEach(b => b.addEventListener('click', e => {
+    openModal('viewJobOrder', findJobOrder(e.currentTarget.getAttribute('data-view-jo')));
+  }));
+  document.querySelectorAll('[data-view-mr]').forEach(b => b.addEventListener('click', e => {
+    openModal('viewMr', findMaterialRequest(e.currentTarget.getAttribute('data-view-mr')));
+  }));
+  const newMrBtn = document.getElementById('newMrBtn');
+  if (newMrBtn) newMrBtn.addEventListener('click', () => openModal('newMr', { lineItems: [] }));
+  const newMrFromJoBtn = document.getElementById('newMrFromJoBtn');
+  if (newMrFromJoBtn) newMrFromJoBtn.addEventListener('click', () => {
+    const jo = state.modal.payload; // currently-open Job Order
+    openModal('newMr', { jobOrderId: jo.id, lineItems: [] });
+  });
+
+  const newDirectPoBtn = document.getElementById('newDirectPoBtn');
+  if (newDirectPoBtn) newDirectPoBtn.addEventListener('click', () => openModal('directPo', {}));
+
+  const editDirectPoBtn = document.getElementById('editDirectPoBtn');
+  if (editDirectPoBtn) editDirectPoBtn.addEventListener('click', () => {
+    const id = editDirectPoBtn.getAttribute('data-id');
+    const po = state.purchaseOrders.find(p=>p.id===id);
+    if (!po) return;
+    closeModal();
+    setTimeout(() => openModal('directPo', po), 100);
+  });
+
+  const printLpoBtn = document.getElementById('printLpoBtn');
+  if (printLpoBtn) printLpoBtn.addEventListener('click', () => {
+    const id = printLpoBtn.getAttribute('data-id');
+    const po = state.purchaseOrders.find(p=>p.id===id);
+    if (!po) return;
+    const win = window.open('', '_blank');
+    win.document.write(buildLpoPdf(po));
+    win.document.close();
+    setTimeout(() => win.print(), 800);
+  });
+
+  const addDpoLineBtn = document.getElementById('addDpoLineBtn');
+  if (addDpoLineBtn) addDpoLineBtn.addEventListener('click', () => {
+    const tbody = document.getElementById('dpoLinesBody');
+    if (!tbody) return;
+    const row = document.createElement('tr');
+    row.className = 'dpo-line-row';
+    row.innerHTML = `
+      <td><input class="dpo_desc" placeholder="Item description..." style="width:100%;font-size:12px;"></td>
+      <td><input class="dpo_unit" placeholder="pcs" style="width:60px;font-size:12px;"></td>
+      <td style="text-align:right;"><input class="dpo_qty" type="number" value="1" min="1" style="width:70px;text-align:right;font-size:12px;" oninput="updateDpoTotal(this)"></td>
+      <td style="text-align:right;"><input class="dpo_cost" type="number" placeholder="0.00" style="width:90px;text-align:right;font-size:12px;" oninput="updateDpoTotal(this)"></td>
+      <td style="text-align:right;font-family:var(--mono);font-size:12px;" class="dpo_line_total">0.00</td>
+      <td><button type="button" onclick="this.closest('.dpo-line-row').remove();updateDpoTotal(this);" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:16px;">✕</button></td>`;
+    tbody.appendChild(row);
+  });
+
+  const saveDirectPoBtn = document.getElementById('saveDirectPoBtn');
+  if (saveDirectPoBtn) saveDirectPoBtn.addEventListener('click', async () => {
+    const vendorId = document.getElementById('dpo_vendor')?.value;
+    if (!vendorId) { showToast('Please select a vendor.', 'err'); return; }
+    const lines = [];
+    document.querySelectorAll('.dpo-line-row').forEach(row => {
+      const desc = row.querySelector('.dpo_desc')?.value?.trim();
+      if (desc) lines.push({
+        description: desc,
+        brand:    row.querySelector('.dpo_brand')?.value?.trim()||'',
+        unit:     row.querySelector('.dpo_unit')?.value?.trim()||'pcs',
+        qty:      parseFloat(row.querySelector('.dpo_qty')?.value)||1,
+        unitCost: parseFloat(row.querySelector('.dpo_cost')?.value)||0,
+      });
+    });
+    if (lines.length===0) { showToast('Add at least one line item.', 'err'); return; }
+    const prepVal = getUserPickerValue('dpo_preparedBy');
+    const chkVal  = getUserPickerValue('dpo_checkedBy');
+    const apprVal = getUserPickerValue('dpo_approvedBy');
+    const existingId = saveDirectPoBtn.getAttribute('data-id');
+    const body = {
+      vendorId,
+      direct:          true,
+      reference:       document.getElementById('dpo_ref')?.value?.trim()||'',
+      date:            document.getElementById('dpo_date')?.value||'',
+      expectedDate:    document.getElementById('dpo_delivery')?.value||'',
+      deliveryAddress: document.getElementById('dpo_delivery_addr')?.value?.trim()||'',
+      jobOrderId:      document.getElementById('dpo_jo')?.value||'',
+      paymentTerms:    document.getElementById('dpo_payterms')?.value||'30 Days Credit',
+      notes:           document.getElementById('dpo_notes')?.value?.trim()||'',
+      preparedByName:  prepVal.name||state.user?.name||'',
+      preparedByDesig: prepVal.designation||'',
+      checkedByName:   chkVal.name||'',
+      checkedByDesig:  chkVal.designation||'Procurement Engineer',
+      approvedByName:  apprVal.name||'',
+      approvedByDesig: apprVal.designation||'Procurement Manager',
+      lineItems: lines,
+    };
+    try {
+      let res;
+      if (existingId) {
+        res = await api('PUT', '/api/purchase-orders/'+existingId+'/direct', body);
+      } else {
+        res = await api('POST', '/api/purchase-orders/direct', body);
+      }
+      await loadAll();
+      showToast(existingId?'LPO updated.':'Direct LPO created.', 'ok');
+      closeModal();
+      state.procView = 'orders';
+      render();
+    } catch(e) { showToast(e.message, 'err'); }
+  });
+  const procViewBtns = document.querySelectorAll('[data-proc-view]');
+  procViewBtns.forEach(b => b.addEventListener('click', e => { state.procView = e.currentTarget.getAttribute('data-proc-view'); render(); }));
+
+  document.querySelectorAll('[data-view-pr]').forEach(b => b.addEventListener('click', e => {
+    openModal('viewPr', findPurchaseRequest(e.currentTarget.getAttribute('data-view-pr')));
+  }));
+  document.querySelectorAll('[data-view-po]').forEach(b => b.addEventListener('click', e => {
+    openModal('viewPo', findPurchaseOrder(e.currentTarget.getAttribute('data-view-po')));
+  }));
+  const raisePrBtn = document.getElementById('raisePrBtn');
+  if (raisePrBtn) raisePrBtn.addEventListener('click', () => {
+    const mr = state.modal.payload; // currently-open Material Request
+    const shortfallLines = mr.lineItems.map(l => {
+      const it = findItem(l.itemId);
+      const remaining = l.qtyRequested - l.qtyFulfilled;
+      const avail = it ? it.qty : 0;
+      const shortfall = remaining - avail;
+      return shortfall > 0 ? { mrLineId: l.id, itemId: l.itemId, description: l.description, unit: l.unit, qty: shortfall } : null;
+    }).filter(Boolean);
+    openModal('newPr', { materialRequestId: mr.id, lineItems: shortfallLines });
+  });
+
+  const editSiteTeamBtn = document.getElementById('editSiteTeamBtn');
+  if (editSiteTeamBtn) editSiteTeamBtn.addEventListener('click', () => {
+    openModal('siteTeam', state.modal.payload); // currently-open Job Order
+  });
+  const newDrFromJoBtn = document.getElementById('newDrFromJoBtn');
+  if (newDrFromJoBtn) newDrFromJoBtn.addEventListener('click', () => {
+    const jo = state.modal.payload; // currently-open Job Order
+    openModal('newDr', { jobOrderId: jo.id, delayItems: [] });
+  });
+  const drStatusFilter = document.getElementById('drStatusFilter');
+  if (drStatusFilter) drStatusFilter.addEventListener('change', e => { state.drFilter = e.target.value; render(); });
+
+  document.querySelectorAll('[data-view-dr]').forEach(b => b.addEventListener('click', e => {
+    openModal('viewDr', findDelayReport(e.currentTarget.getAttribute('data-view-dr')));
+  }));
+
+  // PDF export — open print-ready view
+  document.querySelectorAll('[data-pdf-dr]').forEach(b => b.addEventListener('click', e => {
+    const dr = findDelayReport(e.currentTarget.getAttribute('data-pdf-dr'));
+    if (!dr) return;
+    const win = window.open('', '_blank');
+    win.document.write(buildDrPdfHtml(dr));
+    win.document.close();
+    setTimeout(() => win.print(), 600);
+  }));
+
+  // Edit — open the new-report form pre-filled
+  document.querySelectorAll('[data-edit-dr]').forEach(b => b.addEventListener('click', e => {
+    const dr = findDelayReport(e.currentTarget.getAttribute('data-edit-dr'));
+    if (!dr) return;
+    closeModal();
+    openModal('editDr', dr);
+  }));
+
+  // Delete — Super Admin only, confirm before deleting
+  document.querySelectorAll('[data-delete-dr]').forEach(b => b.addEventListener('click', async e => {
+    const id  = e.currentTarget.getAttribute('data-delete-dr');
+    const dr  = findDelayReport(id);
+    if (!dr) return;
+    if (!confirm(`Delete delay report ${dr.refNumber}?\n\nThis cannot be undone.`)) return;
+    try {
+      await api('DELETE', '/api/delay-reports/' + id);
+      await loadAll();
+      showToast('Delay report deleted.', 'ok');
+      closeModal();
+    } catch(err) { showToast(err.message || 'Delete failed.', 'err'); }
+  }));
+
+  const newJoBtn = document.getElementById('newJoBtn');
+  if (newJoBtn) newJoBtn.addEventListener('click', () => openModal('newJo', { type: 'SUP', status: 'Open' }));
+  const editJoBtn = document.getElementById('editJoBtn');
+  if (editJoBtn) editJoBtn.addEventListener('click', () => openModal('newJo', { ...state.modal.payload }));
+
+  const openChangePwdBtn = document.getElementById('openChangePwdBtn');
+  if (openChangePwdBtn) openChangePwdBtn.addEventListener('click', () => openModal('changePwd', {}));
+
+  attachSettingsHandlers();
+
+  const overlay = document.getElementById('modalOverlay');
+  if (overlay) overlay.addEventListener('mousedown', e => { if (e.target.id === 'modalOverlay' && state.modal?.type !== 'forcePwd') closeModal(); });
+  const modalClose = document.getElementById('modalClose');
+  if (modalClose && state.modal?.type !== 'forcePwd') modalClose.addEventListener('click', closeModal);
+  const modalCancel = document.getElementById('modalCancel');
+  if (modalCancel) modalCancel.addEventListener('click', closeModal);
+
+  attachItemFormHandlers();
+  attachMovementFormHandlers();
+  attachDnFormHandlers();
+  attachDnViewHandlers();
+  attachClientFormHandlers();
+  attachVendorFormHandlers();
+  attachUserFormHandlers();
+  attachPwdFormHandlers();
+  attachQuoteFormHandlers();
+  attachQuoteViewHandlers();
+  attachExclusionsLibraryHandlers();
+  attachMrFormHandlers();
+  attachMrViewHandlers();
+  attachPrFormHandlers();
+  attachPrViewHandlers();
+  attachPoFormHandlers();
+  attachPoViewHandlers();
+  attachSiteTeamFormHandlers();
+  attachJoFormHandlers();
+  attachDrFormHandlers();
+}
+
+function renderInventoryOnly() {
+  const mainInner = document.querySelector('.main');
+  mainInner.querySelector('.topbar').outerHTML = renderTopbar();
+  mainInner.querySelectorAll('.toolbar, .card').forEach(el => el.remove());
+  mainInner.insertAdjacentHTML('beforeend', renderInventory());
+  attachHandlers();
+  const invSearch = document.getElementById('invSearch');
+  if (invSearch) { invSearch.focus(); invSearch.setSelectionRange(invSearch.value.length, invSearch.value.length); }
+}
+
+/* ---- Item form ---- */
+function attachItemFormHandlers() {
+  const saveBtn = document.getElementById('saveItemBtn');
+  if (saveBtn) saveBtn.addEventListener('click', async () => {
+    const desc = val('f_description').trim();
+    if (!desc) { showToast('Item description is required.', 'err'); return; }
+    const existing = state.modal.payload.id;
+    const body = {
+      brand: val('f_brand'), partNo: val('f_partNo').trim(), description: desc,
+      location: val('f_location'), unit: val('f_unit'), minLevel: Number(val('f_minLevel') || 0),
+      openingQty: Number(val('f_openingQty') || 0),
+    };
+    if (can('editPricing')) { body.cost = Number(val('f_cost') || 0); body.price = Number(val('f_price') || 0); }
+    try {
+      if (existing) await api('PUT', '/api/items/' + existing, body);
+      else await api('POST', '/api/items', body);
+      await loadAll();
+      showToast(existing ? 'Item updated.' : 'Item added.', 'ok');
+      closeModal(); setTab('inventory');
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+  const delBtn = document.getElementById('deleteItemBtn');
+  if (delBtn) delBtn.addEventListener('click', async () => {
+    if (!confirm('Delete this item? Its movement history will remain but will no longer link to an item.')) return;
+    try {
+      await api('DELETE', '/api/items/' + state.modal.payload.id);
+      await loadAll();
+      showToast('Item deleted.', 'ok');
+      closeModal(); setTab('inventory');
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+}
+
+/* ---- Movement form ---- */
+function attachMovementFormHandlers() {
+  const saveMvBtn = document.getElementById('saveMvBtn');
+  if (saveMvBtn) saveMvBtn.addEventListener('click', async () => {
+    const itemId = val('mv_item'), action = val('mv_action'), qty = Number(val('mv_qty'));
+    if (!itemId) { showToast('Please select an item.', 'err'); return; }
+    if (!qty || (action !== 'ADJUSTMENT' && qty <= 0)) { showToast('Enter a valid quantity.', 'err'); return; }
+    const isEdit = !!state.modal.payload.id;
+    try {
+      const body = { itemId, action, qty, date: val('mv_date'), reference: val('mv_ref').trim(), by: val('mv_by').trim() };
+      if (isEdit) await api('PUT', '/api/movements/' + state.modal.payload.id, body);
+      else await api('POST', '/api/movements', body);
+      await loadAll();
+      showToast(isEdit ? 'Movement updated — Qty On Hand recalculated.' : 'Movement logged — Qty On Hand updated.', 'ok');
+      closeModal(); setTab('movements');
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+  const deleteMvBtn = document.getElementById('deleteMvBtn');
+  if (deleteMvBtn) deleteMvBtn.addEventListener('click', async () => {
+    if (!confirm('Permanently delete this stock movement entry? This directly rewrites stock history and cannot be undone.')) return;
+    try {
+      await api('DELETE', '/api/movements/' + state.modal.payload.id);
+      await loadAll();
+      showToast('Movement deleted — Qty On Hand recalculated.', 'ok');
+      closeModal(); setTab('movements');
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+}
+
+/* ---- DN form ---- */
+function syncDnPayload(p) {
+  p.location = val('dn_location'); p.date = val('dn_date');
+  p.clientId = val('dn_clientPick') || p.clientId || null;
+  p.clientCompany = val('dn_clientCompany'); p.clientContact = val('dn_clientContact');
+  p.clientPhone = val('dn_clientPhone'); p.clientEmail = val('dn_clientEmail'); p.clientAddress = val('dn_clientAddress');
+  p.project = val('dn_project'); p.lpoNumber = val('dn_lpoNumber'); p.invoiceNumber = val('dn_invoiceNumber');
+  p.issuedBy = getUserPickerValue('dnIssuedBy').name || val('dnIssuedBy_name') || state.user?.name; p.receivedBy = val('dn_receivedBy'); p.remarks = val('dn_remarks');
+}
+function attachDnFormHandlers() {
+  const addLineBtn = document.getElementById('addDnLineBtn');
+  if (addLineBtn) addLineBtn.addEventListener('click', () => {
+    const p = state.modal.payload; p.lines = collectDnLines(); p.lines.push({ itemId: '', qty: '' }); syncDnPayload(p); render();
+  });
+  document.querySelectorAll('.removeDnLine').forEach(b => b.addEventListener('click', e => {
+    const idx = Number(e.currentTarget.getAttribute('data-idx'));
+    const p = state.modal.payload; p.lines = collectDnLines(); p.lines.splice(idx, 1);
+    if (p.lines.length === 0) p.lines.push({ itemId: '', qty: '' });
+    syncDnPayload(p); render();
+  }));
+  document.querySelectorAll('.dnLineItem').forEach(s => s.addEventListener('change', () => {
+    const p = state.modal.payload; p.lines = collectDnLines(); syncDnPayload(p); render();
+  }));
+  const locSel = document.getElementById('dn_location');
+  if (locSel) locSel.addEventListener('change', () => {
+    const p = state.modal.payload; p.lines = [{ itemId: '', qty: '' }]; syncDnPayload(p); render();
+  });
+  const clientPick = document.getElementById('dn_clientPick');
+  if (clientPick) clientPick.addEventListener('change', e => {
+    const p = state.modal.payload; p.lines = collectDnLines(); syncDnPayload(p);
+    const c = state.clients.find(cl => cl.id === e.target.value);
+    if (c) { p.clientId = c.id; p.clientCompany = c.companyName; p.clientContact = c.contactPerson; p.clientPhone = c.phone; p.clientEmail = c.email; p.clientAddress = c.address; }
+    render();
+  });
+  const quickAddClientBtn = document.getElementById('quickAddClientBtn');
+  if (quickAddClientBtn) quickAddClientBtn.addEventListener('click', () => {
+    const p = state.modal.payload; p.lines = collectDnLines(); syncDnPayload(p);
+    openModal('client', { fromDn: p });
+  });
+  const saveDraftBtn = document.getElementById('saveDraftBtn');
+  if (saveDraftBtn) saveDraftBtn.addEventListener('click', () => submitDn(false));
+  const issueBtn = document.getElementById('issueDnBtn');
+  if (issueBtn) issueBtn.addEventListener('click', () => submitDn(true));
+}
+function collectDnLines() {
+  const lines = [];
+  document.querySelectorAll('.dnLineItem').forEach(sel => {
+    const idx = Number(sel.getAttribute('data-idx'));
+    const qtyEl = document.querySelector(`.dnLineQty[data-idx="${idx}"]`);
+    const raw = qtyEl ? qtyEl.value : '';
+    lines.push({ itemId: sel.value, qty: raw === '' ? '' : Number(raw) });
+  });
+  return lines;
+}
+async function submitDn(issue) {
+  const lines = collectDnLines().filter(l => l.itemId && l.qty > 0);
+  if (lines.length === 0) { showToast('Add at least one item line.', 'err'); return; }
+  const body = {
+    date: val('dn_date'), clientId: val('dn_clientPick') || state.modal.payload.clientId || null,
+    clientCompany: val('dn_clientCompany').trim(), clientContact: val('dn_clientContact').trim(),
+    clientPhone: val('dn_clientPhone').trim(), clientEmail: val('dn_clientEmail').trim(), clientAddress: val('dn_clientAddress').trim(),
+    project: val('dn_project').trim(), lpoNumber: val('dn_lpoNumber').trim(), invoiceNumber: val('dn_invoiceNumber').trim(),
+    location: val('dn_location'), issuedBy: (getUserPickerValue('dnIssuedBy').name || state.user?.name || '').trim(), receivedBy: val('dn_receivedBy').trim(),
+    remarks: val('dn_remarks').trim(), items: lines, issue,
+  };
+  try {
+    const existingId = state.modal.payload.id;
+    let dn;
+    if (existingId) {
+      await api('PUT', '/api/dns/' + existingId, body);
+      dn = (await api('GET', '/api/dns/' + existingId)).dn;
+      if (issue) dn = (await api('POST', `/api/dns/${existingId}/issue`)).dn;
+    } else {
+      dn = (await api('POST', '/api/dns', body)).dn;
+    }
+    await loadAll();
+    showToast(issue ? 'Delivery note issued — stock updated.' : 'Draft saved.', 'ok');
+    closeModal();
+    openModal('viewDn', state.dns.find(d => d.id === dn.id) || dn);
+  } catch (e) { showToast(e.message, 'err'); }
+}
+
+function attachDnViewHandlers() {
+  const printBtn = document.getElementById('printDnBtn');
+  if (printBtn) printBtn.addEventListener('click', printDocument);
+  const editBtn = document.getElementById('editDraftBtn');
+  if (editBtn) editBtn.addEventListener('click', () => {
+    const dn = state.modal.payload; openModal('newDn', { ...dn, lines: dn.items });
+  });
+  const issueFromViewBtn = document.getElementById('issueFromViewBtn');
+  if (issueFromViewBtn) issueFromViewBtn.addEventListener('click', async () => {
+    const dn = state.modal.payload;
+    try {
+      const res = await api('POST', `/api/dns/${dn.id}/issue`);
+      await loadAll();
+      showToast('Delivery note issued — stock updated.', 'ok');
+      openModal('viewDn', res.dn);
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+}
+
+/* ---- Client form ---- */
+function attachClientFormHandlers() {
+  const saveBtn = document.getElementById('saveClientBtn');
+  if (saveBtn) saveBtn.addEventListener('click', async () => {
+    const companyName = val('c_companyName').trim();
+    if (!companyName) { showToast('Company name is required.', 'err'); return; }
+    const existing = state.modal.payload.id;
+    const body = { companyName, contactPerson: val('c_contactPerson').trim(), phone: val('c_phone').trim(), email: val('c_email').trim(), address: val('c_address').trim(), trn: val('c_trn').trim(), notes: val('c_notes').trim() };
+    try {
+      let client;
+      if (existing) client = (await api('PUT', '/api/clients/' + existing, body)).client;
+      else client = (await api('POST', '/api/clients', body)).client;
+      await loadAll();
+      const fromDn = state.modal.payload.fromDn;
+      showToast(existing ? 'Client updated.' : 'Client added.', 'ok');
+      if (fromDn) {
+        fromDn.clientId = client.id; fromDn.clientCompany = client.companyName; fromDn.clientContact = client.contactPerson;
+        fromDn.clientPhone = client.phone; fromDn.clientEmail = client.email; fromDn.clientAddress = client.address;
+        openModal('newDn', fromDn);
+      } else { closeModal(); setTab('clients'); }
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+  const delBtn = document.getElementById('deleteClientBtn');
+  if (delBtn) delBtn.addEventListener('click', async () => {
+    if (!confirm('Delete this client? Past delivery notes keep their own copy of the client details.')) return;
+    try {
+      await api('DELETE', '/api/clients/' + state.modal.payload.id);
+      await loadAll();
+      showToast('Client deleted.', 'ok');
+      closeModal(); setTab('clients');
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+}
+
+function attachVendorFormHandlers() {
+  const saveBtn = document.getElementById('saveVendorBtn');
+  if (saveBtn) saveBtn.addEventListener('click', async () => {
+    const companyName = val('v_companyName').trim();
+    if (!companyName) { showToast('Company name is required.', 'err'); return; }
+    const existing = state.modal.payload.id;
+    const body = { companyName, contactPerson: val('v_contactPerson').trim(), phone: val('v_phone').trim(), email: val('v_email').trim(), address: val('v_address').trim(), poBox: val('v_pobox').trim(), trn: val('v_trn').trim(), tradeLicNo: val('v_tradeLicNo').trim(), tradeLicExpiry: val('v_tradeLicExpiry').trim(), category: val('v_category').trim() };
+    try {
+      if (existing) await api('PUT', '/api/vendors/' + existing, body);
+      else await api('POST', '/api/vendors', body);
+      await loadAll();
+      showToast(existing ? 'Vendor updated.' : 'Vendor added.', 'ok');
+      closeModal(); setTab('vendors');
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+  const delBtn = document.getElementById('deleteVendorBtn');
+  if (delBtn) delBtn.addEventListener('click', async () => {
+    if (!confirm('Delete this vendor?')) return;
+    try {
+      await api('DELETE', '/api/vendors/' + state.modal.payload.id);
+      await loadAll();
+      showToast('Vendor deleted.', 'ok');
+      closeModal(); setTab('vendors');
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+}
+
+/* ---- User form ---- */
+function attachUserFormHandlers() {
+  const saveBtn = document.getElementById('saveUserBtn');
+  if (saveBtn) saveBtn.addEventListener('click', async () => {
+    const name = val('u_name').trim();
+    if (!name) { showToast('Name is required.', 'err'); return; }
+    const existing = state.modal.payload.id;
+    const designation = val('u_designation').trim();
+    try {
+      if (existing) {
+        const body = { name, designation, role: val('u_role'), active: val('u_active') === 'true' };
+        const newPwd = val('u_newPassword');
+        if (newPwd) body.password = newPwd;
+        await api('PUT', '/api/users/' + existing, body);
+      } else {
+        const username = val('u_username').trim();
+        const password = val('u_password');
+        if (!username || !password) { showToast('Username and temporary password are required.', 'err'); return; }
+        await api('POST', '/api/users', { name, username, password, designation, role: val('u_role'), active: val('u_active') === 'true' });
+      }
+      await loadAll();
+      showToast(existing ? 'User updated.' : 'User added.', 'ok');
+      closeModal(); setTab('settings');
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+  const delBtn = document.getElementById('deleteUserBtn');
+  if (delBtn) delBtn.addEventListener('click', async () => {
+    if (!confirm('Delete this user? They will no longer be able to sign in.')) return;
+    try {
+      await api('DELETE', '/api/users/' + state.modal.payload.id);
+      await loadAll();
+      showToast('User deleted.', 'ok');
+      closeModal(); setTab('settings');
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+}
+
+/* ---- Password forms ---- */
+function attachPwdFormHandlers() {
+  const btn = document.getElementById('savePwdBtn');
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    const current = val('pwd_current'), next = val('pwd_new'), confirmPwd = val('pwd_confirm');
+    const errBox = document.getElementById('pwdErr');
+    errBox.innerHTML = '';
+    if (next.length < 6) { errBox.innerHTML = `<div class="login-err">New password must be at least 6 characters.</div>`; return; }
+    if (next !== confirmPwd) { errBox.innerHTML = `<div class="login-err">Passwords do not match.</div>`; return; }
+    try {
+      await api('POST', '/api/auth/change-password', { currentPassword: current, newPassword: next });
+      state.user.mustChangePassword = false;
+      showToast('Password updated.', 'ok');
+      closeModal();
+    } catch (e) { errBox.innerHTML = `<div class="login-err">${e.message}</div>`; }
+  });
+}
+
+/* ---- Quotation form handlers ---- */
+function currentQuotePayload() {
+  return state.modal.payload;
+}
+
+function readStandardLinesFromDom() {
+  const cards = document.querySelectorAll('[data-quote-line]');
+  const lines = [];
+  cards.forEach(card => {
+    const idx = card.getAttribute('data-quote-line');
+    const desc = card.querySelector('.qlDescription').value;
+    const category = card.querySelector('.qlCategory').value;
+    const itemId = card.querySelector('.qlInventoryPick').value || null;
+    const brand = card.querySelector('.qlBrand').value;
+    const unit = card.querySelector('.qlUnit').value;
+    const qty = Number(card.querySelector('.qlQty').value || 0);
+    const unitPrice = Number(card.querySelector('.qlPrice').value || 0);
+    lines.push({ description: desc, category, itemId, brand, unit, qty, unitPrice });
+  });
+  return lines;
+}
+function readSitesFromDom() {
+  const rows = document.querySelectorAll('[data-site-row]');
+  const sites = [];
+  rows.forEach(row => {
+    const idx = row.getAttribute('data-site-row');
+    const name = row.querySelector('.siteNameInput').value;
+    const reference = row.querySelector('.siteRefInput').value;
+    const notes = row.querySelector('.siteNotesInput').value;
+    if (name.trim()) sites.push({ id: uid('site'), name, reference, notes });
+  });
+  return sites;
+}
+function readAmcServicesFromDom() {
+  const rows = document.querySelectorAll('#amcServicesList > div');
+  const services = [];
+  rows.forEach(row => {
+    const description = row.querySelector('.amcSvcDesc')?.value;
+    const qty = Number(row.querySelector('.amcSvcQty')?.value || 0);
+    const unitPrice = Number(row.querySelector('.amcSvcPrice')?.value || 0);
+    if (description !== undefined) services.push({ description, qty, unitPrice });
+  });
+  return services;
+}
+function readAmcManpowerFromDom() {
+  const rows = document.querySelectorAll('#amcManpowerList > div');
+  const manpower = [];
+  rows.forEach(row => {
+    const role = row.querySelector('.amcMpRole')?.value;
+    const qty = Number(row.querySelector('.amcMpQty')?.value || 0);
+    if (role !== undefined) manpower.push({ role, qty });
+  });
+  return manpower;
+}
+
+// Pulls every editable field out of the current DOM into the modal payload — called before
+// any add/remove-row action or save, so in-progress edits are never lost on re-render.
+function syncQuoteFormIntoPayload() {
+  const p = state.modal.payload;
+  if (!p.type) return;
+  p.clientId = val('quoteClientPick') || p.clientId || null;
+  p.clientCompany = val('quoteClientCompany');
+  p.clientAttn = val('quoteClientAttn');
+  p.clientContact = val('quoteClientContact');
+  p.clientEmail = val('quoteClientEmail');
+  p.clientPoBox = val('quoteClientPoBox');
+  p.subject = val('quoteSubject');
+  p.siteDetail = val('quoteSiteDetail');
+  p.date = val('quoteDate') || p.date;
+  p.validityDays = Number(val('quoteValidityDays') || 15);
+  p.sitesCovered = readSitesFromDom();
+  p.paymentTerms = val('quotePaymentTerms');
+  p.notes = val('quoteNotes');
+  p.discount = Number(val('quoteDiscount') || 0);
+  // Prepared By / Approved By — Super Admin can override, others default to their own name
+  const prepVal = getUserPickerValue('quotePreparedBy');
+  const apprVal = getUserPickerValue('quoteApprovedBy');
+  // Only update if picker has a value — don't fall back to state.user which would override selection
+  if (prepVal.name) {
+    p.preparedByName        = prepVal.name;
+    p.preparedByDesignation = prepVal.designation;
+  } else if (!p.preparedByName) {
+    p.preparedByName        = state.user?.name        || '';
+    p.preparedByDesignation = state.user?.designation || '';
+  }
+  if (apprVal.name) {
+    p.approvedByName        = apprVal.name;
+    p.approvedByDesignation = apprVal.designation;
+  }
+  // exclusions are managed directly on p.exclusions via add/remove buttons — preserve them
+  if (!Array.isArray(p.exclusions)) p.exclusions = [];
+  if (p.type === 'AMC') {
+    p.amc = p.amc || {};
+    p.amc.scopeOfAgreement = val('amcScope');
+    p.amc.contractStart = val('amcStart');
+    p.amc.contractEnd = val('amcEnd');
+    p.amc.maintenanceSchedule = val('amcSchedule') || 'Quarterly';
+    p.amc.services = readAmcServicesFromDom();
+    p.amc.manpower = readAmcManpowerFromDom();
+  } else {
+    p.lineItems = readStandardLinesFromDom();
+  }
+}
+
+// Recomputes and patches ONLY the line-total and totals-box numbers directly in the DOM,
+// reading current input values live. Deliberately does not call render() or touch payload —
+// this runs on every keystroke, so it must never replace any DOM node the user might be
+// focused in or tabbing through.
+function updateQuoteLiveTotals() {
+  const cur = state.company.currency;
+  let subtotal = 0;
+  document.querySelectorAll('.quote-line-card').forEach(card => {
+    const qty = Number(card.querySelector('.qlQty')?.value || 0);
+    const price = Number(card.querySelector('.qlPrice')?.value || 0);
+    const t = qty * price;
+    subtotal += t;
+    const totalField = card.querySelector('.qlLineTotal');
+    if (totalField) totalField.value = `${cur} ${fmtMoney(t)}`;
+  });
+  document.querySelectorAll('#amcServicesList > div').forEach(row => {
+    const qty = Number(row.querySelector('.amcSvcQty')?.value || 0);
+    const price = Number(row.querySelector('.amcSvcPrice')?.value || 0);
+    subtotal += qty * price;
+  });
+  const discount = Number(document.getElementById('quoteDiscount')?.value || 0);
+  const taxable = Math.max(0, subtotal - discount);
+  const showVat = state.modal.payload.showVat !== false;
+  const vat = showVat ? taxable * 0.05 : 0;
+  const total = taxable + vat;
+  const setText = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+  setText('totSubtotal', `${cur} ${fmtMoney(subtotal)}`);
+  setText('totTaxable', `${cur} ${fmtMoney(taxable)}`);
+  setText('totVat', `${cur} ${fmtMoney(vat)}`);
+  setText('totTotal', `${cur} ${fmtMoney(total)}`);
+}
+
+function attachQuoteFormHandlers() {
+  if (!state.modal || (state.modal.type !== 'newQuote')) return;
+  const p = state.modal.payload;
+  if (!p.type) return; // type-chooser screen, nothing to wire yet
+
+  // Client quick-fill
+  const clientPick = document.getElementById('quoteClientPick');
+  if (clientPick) clientPick.addEventListener('change', e => {
+    syncQuoteFormIntoPayload();
+    const c = state.clients.find(cl => cl.id === e.target.value);
+    if (c) { p.clientId = c.id; p.clientCompany = c.companyName; p.clientAttn = c.contactPerson; p.clientContact = c.phone; p.clientEmail = c.email; }
+    render();
+  });
+
+  // Sites Covered
+  const addSiteBtn = document.getElementById('addSiteBtn');
+  if (addSiteBtn) addSiteBtn.addEventListener('click', () => {
+    syncQuoteFormIntoPayload();
+    p.sitesCovered = [...(p.sitesCovered || []), { id: uid('site'), name: '', reference: '', notes: '' }];
+    render();
+  });
+  document.querySelectorAll('.removeSiteBtn').forEach(b => b.addEventListener('click', e => {
+    syncQuoteFormIntoPayload();
+    const idx = Number(e.currentTarget.getAttribute('data-idx'));
+    p.sitesCovered.splice(idx, 1);
+    render();
+  }));
+
+  // Standard line items (SUP / PR / FO)
+  const addLineBtn = document.getElementById('addQuoteLineBtn');
+  if (addLineBtn) addLineBtn.addEventListener('click', () => {
+    syncQuoteFormIntoPayload();
+    p.lineItems = [...(p.lineItems || []), { description: '', category: state.quotationCategories[0], unit: state.units[0], qty: '', unitPrice: '' }];
+    render();
+  });
+  document.querySelectorAll('.removeQuoteLineBtn').forEach(b => b.addEventListener('click', e => {
+    syncQuoteFormIntoPayload();
+    const idx = Number(e.currentTarget.getAttribute('data-idx'));
+    p.lineItems.splice(idx, 1);
+    render();
+  }));
+  document.querySelectorAll('.qlInventoryPick').forEach(sel => sel.addEventListener('change', e => {
+    syncQuoteFormIntoPayload();
+    const idx = Number(e.currentTarget.getAttribute('data-idx'));
+    const it = findItem(e.target.value);
+    if (it) {
+      p.lineItems[idx].itemId = it.id; p.lineItems[idx].description = it.description;
+      p.lineItems[idx].brand = it.brand; p.lineItems[idx].unit = it.unit;
+      if (can('viewPricing') && it.price) p.lineItems[idx].unitPrice = it.price;
+    } else { p.lineItems[idx].itemId = null; }
+    render();
+  }));
+  // Qty/price/discount are live-typed fields — updating totals here must NEVER trigger a full
+  // render(), or a mid-render DOM swap can steal focus and drop keystrokes (verified bug: Tab
+  // navigation between fields lost input when this used to sync+render on every change).
+  // Instead we recompute and patch just the numbers that need to move, in place.
+  document.querySelectorAll('.qlQty, .qlPrice').forEach(el => {
+    el.addEventListener('input', updateQuoteLiveTotals);
+  });
+  document.querySelectorAll('.qlDescription, .qlBrand, .qlCategory, .qlUnit').forEach(el => {
+    el.addEventListener('change', () => { syncQuoteFormIntoPayload(); }); // sync only, no re-render needed — nothing else depends on these
+  });
+
+  // AMC services
+  const addAmcSvcBtn = document.getElementById('addAmcSvcBtn');
+  if (addAmcSvcBtn) addAmcSvcBtn.addEventListener('click', () => {
+    syncQuoteFormIntoPayload();
+    p.amc.services = [...(p.amc.services || []), { description: '', qty: '', unitPrice: '' }];
+    render();
+  });
+  document.querySelectorAll('.removeAmcSvcBtn').forEach(b => b.addEventListener('click', e => {
+    syncQuoteFormIntoPayload();
+    const idx = Number(e.currentTarget.getAttribute('data-idx'));
+    p.amc.services.splice(idx, 1);
+    render();
+  }));
+  document.querySelectorAll('.amcSvcQty, .amcSvcPrice').forEach(el => {
+    el.addEventListener('input', updateQuoteLiveTotals);
+  });
+  document.querySelectorAll('.amcSvcDesc').forEach(el => {
+    el.addEventListener('change', () => { syncQuoteFormIntoPayload(); });
+  });
+
+  // AMC manpower
+  const addAmcMpBtn = document.getElementById('addAmcMpBtn');
+  if (addAmcMpBtn) addAmcMpBtn.addEventListener('click', () => {
+    syncQuoteFormIntoPayload();
+    p.amc.manpower = [...(p.amc.manpower || []), { role: '', qty: '' }];
+    render();
+  });
+  document.querySelectorAll('.removeAmcMpBtn').forEach(b => b.addEventListener('click', e => {
+    syncQuoteFormIntoPayload();
+    const idx = Number(e.currentTarget.getAttribute('data-idx'));
+    p.amc.manpower.splice(idx, 1);
+    render();
+  }));
+
+  // Exclusions
+  const addExclFromLibBtn = document.getElementById('addExclFromLibBtn');
+  if (addExclFromLibBtn) addExclFromLibBtn.addEventListener('click', () => {
+    syncQuoteFormIntoPayload();
+    const id = val('exclusionLibraryPick');
+    const item = state.exclusionsLibrary.find(e => e.id === id);
+    if (item && !p.exclusions.includes(item.text)) p.exclusions = [...p.exclusions, item.text];
+    render();
+  });
+  const addCustomExclBtn = document.getElementById('addCustomExclBtn');
+  if (addCustomExclBtn) addCustomExclBtn.addEventListener('click', () => {
+    syncQuoteFormIntoPayload();
+    const text = val('customExclusionInput').trim();
+    if (text) p.exclusions = [...p.exclusions, text];
+    render();
+  });
+  document.querySelectorAll('.removeExclBtn').forEach(b => b.addEventListener('click', e => {
+    syncQuoteFormIntoPayload();
+    const idx = Number(e.currentTarget.getAttribute('data-idx'));
+    p.exclusions.splice(idx, 1);
+    render();
+  }));
+
+  // Discount live update (recalculate totals box on change)
+  const discountInput = document.getElementById('quoteDiscount');
+  if (discountInput) discountInput.addEventListener('input', updateQuoteLiveTotals);
+
+  // Save / Delete
+  const saveDraftBtn = document.getElementById('saveQuoteDraftBtn');
+  if (saveDraftBtn) saveDraftBtn.addEventListener('click', async () => {
+    syncQuoteFormIntoPayload();
+    // Read picker values directly at save time
+    const prepVal = getUserPickerValue('quotePreparedBy');
+    const apprVal = getUserPickerValue('quoteApprovedBy');
+    if (prepVal.name) { p.preparedByName = prepVal.name; p.preparedByDesignation = prepVal.designation; }
+    else if (!p.preparedByName) { p.preparedByName = state.user?.name || ''; p.preparedByDesignation = state.user?.designation || ''; }
+    if (apprVal.name) { p.approvedByName = apprVal.name; p.approvedByDesignation = apprVal.designation; }
+    if (!p.clientCompany || !p.clientCompany.trim()) { showToast('Client company name is required.', 'err'); return; }
+    const body = { ...p };
+    try {
+      let saved;
+      if (p.id) saved = (await api('PUT', '/api/quotations/' + p.id, body)).quotation;
+      else saved = (await api('POST', '/api/quotations', body)).quotation;
+      await loadAll();
+      showToast('Draft saved.', 'ok');
+      closeModal();
+      openModal('viewQuote', findQuote(saved.id));
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+  const deleteQuoteBtn = document.getElementById('deleteQuoteBtn');
+  if (deleteQuoteBtn) deleteQuoteBtn.addEventListener('click', async () => {
+    if (!confirm('Delete this draft quotation? This cannot be undone.')) return;
+    try {
+      await api('DELETE', '/api/quotations/' + p.id);
+      await loadAll();
+      showToast('Draft deleted.', 'ok');
+      closeModal(); setTab('quotations');
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+}
+
+/* ---- Quotation view / workflow action handlers ---- */
+function attachQuoteViewHandlers() {
+  if (!state.modal || state.modal.type !== 'viewQuote') return;
+  const q = state.modal.payload;
+
+  const printBtn = document.getElementById('downloadQuotePdfBtn');
+  if (printBtn) printBtn.addEventListener('click', () => {
+    apiDownload(`/api/quotations/${q.id}/pdf`)
+      .then(() => showToast('PDF downloaded.', 'ok'))
+      .catch(err => showToast(err.message, 'err'));
+  });
+
+  const editBtn = document.getElementById('editQuoteBtn');
+  if (editBtn) editBtn.addEventListener('click', () => openModal('newQuote', { ...q }));
+
+  const submitBtn = document.getElementById('submitQuoteBtn');
+  if (submitBtn) submitBtn.addEventListener('click', async () => {
+    try {
+      const res = await api('POST', `/api/quotations/${q.id}/submit`);
+      await loadAll();
+      showToast('Submitted for approval.', 'ok');
+      openModal('viewQuote', res.quotation);
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+
+  const approveBtn = document.getElementById('approveQuoteBtn');
+  if (approveBtn) approveBtn.addEventListener('click', async () => {
+    try {
+      const res = await api('POST', `/api/quotations/${q.id}/approve`);
+      await loadAll();
+      showToast('Quotation approved.', 'ok');
+      openModal('viewQuote', res.quotation);
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+  const rejectBtn = document.getElementById('rejectQuoteBtn');
+  if (rejectBtn) rejectBtn.addEventListener('click', async () => {
+    const reason = prompt('Reason for rejecting this quotation (visible to the person who created it):');
+    if (reason === null) return;
+    try {
+      const res = await api('POST', `/api/quotations/${q.id}/reject`, { reason });
+      await loadAll();
+      showToast('Quotation rejected.', 'ok');
+      openModal('viewQuote', res.quotation);
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+
+  const sendBtn = document.getElementById('sendQuoteBtn');
+  if (sendBtn) sendBtn.addEventListener('click', async () => {
+    if (!confirm('Send this quotation? A permanent reference number will be assigned.')) return;
+    try {
+      const res = await api('POST', `/api/quotations/${q.id}/send`);
+      await loadAll();
+      showToast('Quotation sent — number ' + res.quotation.quotationNumber, 'ok');
+      openModal('viewQuote', res.quotation);
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+
+  const acceptBtn = document.getElementById('acceptQuoteBtn');
+  if (acceptBtn) acceptBtn.addEventListener('click', async () => {
+    try {
+      const res = await api('POST', `/api/quotations/${q.id}/client-decision`, { decision: 'Accepted' });
+      await loadAll();
+      showToast('Marked as accepted by client.', 'ok');
+      openModal('viewQuote', res.quotation);
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+  const declineBtn = document.getElementById('declineQuoteBtn');
+  if (declineBtn) declineBtn.addEventListener('click', async () => {
+    const note = prompt('Any note about why the client declined? (optional)') || '';
+    try {
+      const res = await api('POST', `/api/quotations/${q.id}/client-decision`, { decision: 'Declined', note });
+      await loadAll();
+      showToast('Marked as declined by client.', 'ok');
+      openModal('viewQuote', res.quotation);
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+
+  const convertBtn = document.getElementById('convertQuoteBtn');
+  if (convertBtn) convertBtn.addEventListener('click', async () => {
+    if (!confirm('Create a Job Order from this accepted quotation?')) return;
+    try {
+      const res = await api('POST', `/api/quotations/${q.id}/convert-to-job-order`);
+      await loadAll();
+      showToast('Job Order ' + res.jobOrder.jobOrderNumber + ' created.', 'ok');
+      openModal('viewQuote', res.quotation);
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+
+  const reviseBtn = document.getElementById('reviseQuoteBtn');
+  if (reviseBtn) reviseBtn.addEventListener('click', async () => {
+    if (!confirm('Create a new revision of this quotation? You\'ll be able to edit the discount, items, or terms, and it will go through approval again before sending.')) return;
+    try {
+      const res = await api('POST', `/api/quotations/${q.id}/revise`);
+      await loadAll();
+      showToast('Revision created — edit it and resubmit for approval when ready.', 'ok');
+      openModal('newQuote', { ...res.quotation });
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+}
+
+/* ---- Exclusions library (Settings) ---- */
+function attachExclusionsLibraryHandlers() {
+  if (!state.modal || state.modal.type !== 'exclusionsLib') return;
+  const addBtn = document.getElementById('addLibExclBtn');
+  if (addBtn) addBtn.addEventListener('click', async () => {
+    const text = val('newLibExclText').trim();
+    if (!text) return;
+    try {
+      await api('POST', '/api/exclusions', { text });
+      await loadAll();
+      showToast('Added to library.', 'ok');
+      openModal('exclusionsLib', {});
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+  document.querySelectorAll('.removeLibExclBtn').forEach(b => b.addEventListener('click', async e => {
+    const id = e.currentTarget.getAttribute('data-id');
+    try {
+      await api('DELETE', '/api/exclusions/' + id);
+      await loadAll();
+      showToast('Removed.', 'ok');
+      openModal('exclusionsLib', {});
+    } catch (err) { showToast(err.message, 'err'); }
+  }));
+}
+
+/* ---- Material Request form handlers ---- */
+function readMrLinesFromDom() {
+  const lines = [];
+  document.querySelectorAll('[data-mr-line]').forEach(row => {
+    const idx = row.getAttribute('data-mr-line');
+    const isCustomEl = row.querySelector('.mrLineIsCustom');
+    const isCustom = isCustomEl ? isCustomEl.value === 'true' : false;
+    const qty = Number(row.querySelector('.mrLineQty')?.value || 0);
+    if (isCustom) {
+      lines.push({
+        itemId:      null,
+        isCustom:    true,
+        description: row.querySelector('.mrLineDesc')?.value    || '',
+        brand:       row.querySelector('.mrLineBrand')?.value   || '',
+        partNo:      row.querySelector('.mrLinePartNo')?.value  || '',
+        unit:        row.querySelector('.mrLineUnit')?.value    || 'Pcs',
+        qty,
+        qtyRequested: qty,
+      });
+    } else {
+      const itemId = row.querySelector('.mrLineItemPick')?.value || '';
+      lines.push({ itemId, qty, qtyRequested: qty, isCustom: false });
+    }
+  });
+  return lines;
+}
+function syncMrFormIntoPayload() {
+  const p = state.modal.payload;
+  p.jobOrderId = val('mrJobOrderPick') || p.jobOrderId;
+  p.date = val('mrDate') || p.date;
+  p.neededBy = val('mrNeededBy');
+  p.notes = val('mrNotes');
+  p.lineItems = readMrLinesFromDom();
+}
+
+function onMrClientSelect() {
+  const clientId = document.getElementById('mr_clientPick')?.value;
+  const joSel    = document.getElementById('mrJobOrderPick');
+  if (!joSel) return;
+  if (!clientId) { joSel.innerHTML = '<option value="">— Select client first —</option>'; joSel.disabled = true; return; }
+  const client = state.clients.find(c => c.id === clientId);
+  const jos    = state.jobOrders.filter(j => j.clientId === clientId || j.clientCompany === client?.companyName);
+  joSel.innerHTML = `<option value="">— Select Job Order —</option>` +
+    jos.map(j=>`<option value="${j.id}">${j.jobOrderNumber} — ${j.subject||j.siteDetail||'No subject'}</option>`).join('');
+  joSel.disabled = false;
+}
+
+function onMrQuotationSelect() {
+  const sel = document.getElementById('mrQuotationPick');
+  if (!sel || !sel.value) return;
+  const q = (state.quotations || []).find(x => x.id === sel.value);
+  if (!q) return;
+  const lines = (q.lineItems || []).map(l => ({
+    itemId: l.itemId || null, description: l.description || '',
+    brand: l.brand || '', partNo: l.partNo || '', unit: l.unit || 'Pcs',
+    qty: l.qty || 1, qtyRequested: l.qty || 1, isCustom: !l.itemId,
+  }));
+  if (q.type === 'AMC' && q.amc && q.amc.services) {
+    q.amc.services.forEach(s => lines.push({
+      itemId: null, description: s.description || '', brand: '', partNo: '',
+      unit: 'Pcs', qty: s.qty || 1, qtyRequested: s.qty || 1, isCustom: true,
+    }));
+  }
+  if (state.modal && state.modal.payload) {
+    state.modal.payload.lineItems   = lines;
+    state.modal.payload.quotationId = q.id;
+  }
+  const listEl = document.getElementById('mrLinesList');
+  if (listEl) listEl.innerHTML = lines.map((l, idx) => renderMrLineRow(l, idx)).join('');
+  showToast(`${lines.length} line(s) imported from ${q.quotationNumber||'quotation'}.`, 'ok');
+}
+
+function attachMrFormHandlers() {
+  if (!state.modal || state.modal.type !== 'newMr') return;
+  const p = state.modal.payload;
+
+  const addLineBtn = document.getElementById('addMrLineBtn');
+  if (addLineBtn) addLineBtn.addEventListener('click', () => {
+    syncMrFormIntoPayload();
+    p.lineItems = [...(p.lineItems || []), { itemId: '', qty: '', isCustom: false }];
+    render();
+  });
+
+  const addCustomBtn = document.getElementById('addMrCustomLineBtn');
+  if (addCustomBtn) addCustomBtn.addEventListener('click', () => {
+    syncMrFormIntoPayload();
+    p.lineItems = [...(p.lineItems || []), { itemId: null, description: '', brand: '', partNo: '', unit: 'Pcs', qty: '', isCustom: true }];
+    render();
+  });
+
+  document.querySelectorAll('.removeMrLineBtn').forEach(b => b.addEventListener('click', e => {
+    syncMrFormIntoPayload();
+    const idx = Number(e.currentTarget.getAttribute('data-idx'));
+    p.lineItems.splice(idx, 1);
+    render();
+  }));
+
+  document.querySelectorAll('.mrLineItemPick').forEach(sel => sel.addEventListener('change', () => {
+    syncMrFormIntoPayload();
+    render();
+  }));
+
+  const saveBtn = document.getElementById('saveMrBtn');
+  if (saveBtn) saveBtn.addEventListener('click', async () => {
+    syncMrFormIntoPayload();
+    const p2 = state.modal.payload;
+    const requestedByVal = getUserPickerValue('mr_requestedBy');
+    if (requestedByVal.name) { p2.requestedByName = requestedByVal.name; p2.requestedByDesignation = requestedByVal.designation; }
+    if (!p2.jobOrderId) { showToast('Please select a Job Order.', 'err'); return; }
+    if (!p2.lineItems || p2.lineItems.length === 0) { showToast('Add at least one line item.', 'err'); return; }
+    for (const l of p2.lineItems) {
+      if (l.isCustom) {
+        if (!l.description || !String(l.description).trim()) { showToast('Custom items need a description.', 'err'); return; }
+      } else {
+        if (!l.itemId) { showToast('Every stock line needs an item selected.', 'err'); return; }
+      }
+    }
+    try {
+      const payload = {
+        ...p2,
+        lineItems: p2.lineItems.map(l => ({
+          ...l,
+          qty: Number(l.qty || l.qtyRequested || 0),
+          qtyRequested: Number(l.qty || l.qtyRequested || 0),
+        })),
+      };
+      let saved;
+      if (p2.id) saved = (await api('PUT', '/api/material-requests/' + p2.id, payload)).materialRequest;
+      else saved = (await api('POST', '/api/material-requests', payload)).materialRequest;
+      await loadAll();
+      showToast('Material Request saved.', 'ok');
+      closeModal();
+      openModal('viewMr', findMaterialRequest(saved.id));
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+}
+function attachMrViewHandlers() {
+  if (!state.modal || state.modal.type !== 'viewMr') return;
+  const mr = state.modal.payload;
+
+  document.querySelectorAll('[data-fulfill-line]').forEach(b => b.addEventListener('click', async e => {
+    const [mrId, lineId, remaining] = e.currentTarget.getAttribute('data-fulfill-line').split('|');
+    const input = prompt(`Fulfill how many? (up to ${remaining} remaining)`, remaining);
+    if (input === null) return;
+    const qty = Number(input);
+    if (!qty || qty <= 0) { showToast('Enter a valid quantity.', 'err'); return; }
+    try {
+      const res = await api('POST', `/api/material-requests/${mrId}/fulfill-line`, { lineId, qty });
+      await loadAll();
+      showToast('Stock released.', 'ok');
+      openModal('viewMr', res.materialRequest);
+    } catch (err) { showToast(err.message, 'err'); }
+  }));
+
+  const cancelBtn = document.getElementById('cancelMrBtn');
+  if (cancelBtn) cancelBtn.addEventListener('click', async () => {
+    if (!confirm('Cancel this Material Request?')) return;
+    try {
+      await api('POST', `/api/material-requests/${mr.id}/cancel`);
+      await loadAll();
+      showToast('Request cancelled.', 'ok');
+      closeModal(); setTab('materialRequests');
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+}
+
+/* ---- Purchase Request form + view handlers ---- */
+function attachPrFormHandlers() {
+  if (!state.modal || state.modal.type !== 'newPr') return;
+  const saveBtn = document.getElementById('savePrBtn');
+  if (saveBtn) saveBtn.addEventListener('click', async () => {
+    const p = state.modal.payload;
+    const qtyInputs = document.querySelectorAll('.prLineQty');
+    const lineItems = p.lineItems.map((l, idx) => ({ mrLineId: l.mrLineId, qty: Number(qtyInputs[idx].value) }));
+    if (lineItems.some(l => !l.qty || l.qty <= 0)) { showToast('Every line needs a quantity greater than zero.', 'err'); return; }
+    const requestedByVal = getUserPickerValue('pr_requestedBy');
+    try {
+      const res = await api('POST', '/api/purchase-requests', {
+        materialRequestId: p.materialRequestId, lineItems, notes: val('prNotes'),
+        requestedByName: requestedByVal.name, requestedByDesignation: requestedByVal.designation,
+      });
+      await loadAll();
+      showToast('Purchase Request raised.', 'ok');
+      closeModal();
+      openModal('viewPr', res.purchaseRequest);
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+}
+
+function attachPrViewHandlers() {
+  if (!state.modal || state.modal.type !== 'viewPr') return;
+  const pr = state.modal.payload;
+
+  const approveBtn = document.getElementById('approvePrBtn');
+  if (approveBtn) approveBtn.addEventListener('click', async () => {
+    try {
+      const res = await api('POST', `/api/purchase-requests/${pr.id}/approve`);
+      await loadAll();
+      showToast('Purchase Request approved.', 'ok');
+      openModal('viewPr', res.purchaseRequest);
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+  const rejectBtn = document.getElementById('rejectPrBtn');
+  if (rejectBtn) rejectBtn.addEventListener('click', async () => {
+    const reason = prompt('Reason for rejecting this purchase request:');
+    if (reason === null) return;
+    try {
+      const res = await api('POST', `/api/purchase-requests/${pr.id}/reject`, { reason });
+      await loadAll();
+      showToast('Purchase Request rejected.', 'ok');
+      openModal('viewPr', res.purchaseRequest);
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+  const convertBtn = document.getElementById('convertPrToPoBtn');
+  if (convertBtn) convertBtn.addEventListener('click', () => {
+    closeModal();
+    openModal('newPo', { purchaseRequestId: pr.id, unitCosts: {} });
+  });
+}
+
+/* ---- Purchase Order form + view handlers ---- */
+function attachPoFormHandlers() {
+  if (!state.modal || state.modal.type !== 'newPo') return;
+  const createBtn = document.getElementById('createPoBtn');
+  if (createBtn) createBtn.addEventListener('click', async () => {
+    const p = state.modal.payload;
+    const vendorId = val('poVendorPick');
+    if (!vendorId) { showToast('Please select a vendor.', 'err'); return; }
+    const unitCosts = {};
+    document.querySelectorAll('.poUnitCost').forEach(el => { unitCosts[el.getAttribute('data-prlineid')] = Number(el.value || 0); });
+    const createdByVal = getUserPickerValue('po_createdBy');
+    try {
+      const res = await api('POST', '/api/purchase-orders', {
+        purchaseRequestId: p.purchaseRequestId, vendorId, unitCosts,
+        expectedDate: val('poExpectedDate'), notes: val('poNotes'),
+        createdByName: createdByVal.name, createdByDesignation: createdByVal.designation,
+      });
+      await loadAll();
+      showToast('Purchase Order created.', 'ok');
+      closeModal();
+      openModal('viewPo', res.purchaseOrder);
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+}
+
+function attachPoViewHandlers() {
+  if (!state.modal || state.modal.type !== 'viewPo') return;
+  const po = state.modal.payload;
+
+  const sendBtn = document.getElementById('sendPoBtn');
+  if (sendBtn) sendBtn.addEventListener('click', async () => {
+    if (!confirm('Send this Purchase Order to the vendor?')) return;
+    try {
+      const res = await api('POST', `/api/purchase-orders/${po.id}/send`);
+      await loadAll();
+      showToast('Purchase Order marked as sent.', 'ok');
+      openModal('viewPo', res.purchaseOrder);
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+  const cancelBtn = document.getElementById('cancelPoBtn');
+  if (cancelBtn) cancelBtn.addEventListener('click', async () => {
+    if (!confirm('Cancel this Purchase Order?')) return;
+    try {
+      await api('POST', `/api/purchase-orders/${po.id}/cancel`);
+      await loadAll();
+      showToast('Purchase Order cancelled.', 'ok');
+      closeModal(); setTab('procurement');
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+  document.querySelectorAll('[data-receive-line]').forEach(b => b.addEventListener('click', async e => {
+    const [poId, lineId, remaining] = e.currentTarget.getAttribute('data-receive-line').split('|');
+    const input = prompt(`Receive how many? (up to ${remaining} remaining)`, remaining);
+    if (input === null) return;
+    const qty = Number(input);
+    if (!qty || qty <= 0) { showToast('Enter a valid quantity.', 'err'); return; }
+    try {
+      const res = await api('POST', `/api/purchase-orders/${poId}/receive-line`, { lineId, qty });
+      await loadAll();
+      showToast('Stock received.', 'ok');
+      openModal('viewPo', res.purchaseOrder);
+    } catch (err) { showToast(err.message, 'err'); }
+  }));
+}
+
+/* ---- Site Team form handler ---- */
+function attachSiteTeamFormHandlers() {
+  if (!state.modal || state.modal.type !== 'siteTeam') return;
+  const jo = state.modal.payload;
+  const saveBtn = document.getElementById('saveSiteTeamBtn');
+  if (saveBtn) saveBtn.addEventListener('click', async () => {
+    try {
+      const res = await api('PUT', `/api/job-orders/${jo.id}/site-team`, {
+        siteEngineer:     val('st_siteEngineer').trim(),
+        projectManager:   val('st_projectManager').trim(),
+        siteSupervisor:   val('st_siteSupervisor').trim(),
+        projectsIncharge: val('st_projectsIncharge').trim(),
+        preparedBy:       val('st_preparedBy').trim(),
+      });
+      await loadAll();
+      showToast('Site team saved.', 'ok');
+      closeModal();
+      openModal('viewJobOrder', findJobOrder(res.jobOrder.id));
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+}
+
+/* ---- Job Order quotation auto-fill ---- */
+function onJoQuotationSelect() {
+  const sel = document.getElementById('jo_quotationId');
+  const opt = sel.options[sel.selectedIndex];
+  const ref = document.getElementById('jo_qtn_ref_display');
+  if (!sel.value) { if (ref) ref.style.display = 'none'; return; }
+  // Auto-fill client, subject, siteDetail from selected quotation
+  const client  = opt.dataset.client  || '';
+  const subject = opt.dataset.subject || '';
+  const site    = opt.dataset.site    || '';
+  const number  = opt.dataset.number  || '';
+  if (client  && document.getElementById('jo_clientCompany')) document.getElementById('jo_clientCompany').value = client;
+  if (subject && document.getElementById('jo_subject'))        document.getElementById('jo_subject').value       = subject;
+  if (site    && document.getElementById('jo_siteDetail'))     document.getElementById('jo_siteDetail').value    = site;
+  if (ref) { ref.textContent = `✓ Linked: ${number}`; ref.style.display = ''; }
+}
+
+/* ---- Job Order create/edit form handler ---- */
+function attachJoFormHandlers() {
+  if (!state.modal || state.modal.type !== 'newJo') return;
+  const p = state.modal.payload;
+  const clientPick = document.getElementById('jo_clientPick');
+  if (clientPick) clientPick.addEventListener('change', e => {
+    const c = state.clients.find(cl => cl.id === e.target.value);
+    if (c) document.getElementById('jo_clientCompany').value = c.companyName;
+  });
+  const saveBtn = document.getElementById('saveJoBtn');
+  if (saveBtn) saveBtn.addEventListener('click', async () => {
+    const clientCompany = val('jo_clientCompany').trim();
+    if (!clientCompany) { showToast('Client company name is required.', 'err'); return; }
+
+    const fd = new FormData();
+    fd.append('clientId',       val('jo_clientPick') || '');
+    fd.append('clientCompany',  clientCompany);
+    fd.append('jobOrderNumber', val('jo_number').trim());
+    fd.append('type',           val('jo_type'));
+    fd.append('subject',        val('jo_subject'));
+    fd.append('siteDetail',     val('jo_siteDetail'));
+    fd.append('location',       val('jo_location'));
+    fd.append('value',          val('jo_value') || 0);
+    fd.append('status',         val('jo_status'));
+    fd.append('quotationId',    val('jo_quotationId') || '');
+    const createdByVal = getUserPickerValue('jo_createdBy');
+    if (createdByVal.name)        fd.append('createdByName', createdByVal.name);
+    if (createdByVal.designation) fd.append('createdByDesignation', createdByVal.designation);
+
+    const lpoInput   = document.getElementById('jo_lpoFile');
+    const quoteInput = document.getElementById('jo_quoteFile');
+    if (lpoInput?.files[0])   fd.append('lpoFile',   lpoInput.files[0]);
+    if (quoteInput?.files[0]) fd.append('quoteFile', quoteInput.files[0]);
+
+    try {
+      let saved;
+      const headers = { 'Authorization': `Bearer ${authToken}` };
+      if (p.id) {
+        const r = await fetch('/api/job-orders/' + p.id, { method: 'PUT', headers, body: fd });
+        const d = await r.json(); if (!r.ok) throw new Error(d.error); saved = d.jobOrder;
+      } else {
+        const r = await fetch('/api/job-orders', { method: 'POST', headers, body: fd });
+        const d = await r.json(); if (!r.ok) throw new Error(d.error); saved = d.jobOrder;
+      }
+      await loadAll();
+      showToast(p.id ? 'Job Order updated.' : 'Job Order created.', 'ok');
+      closeModal();
+      openModal('viewJobOrder', findJobOrder(saved.id));
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+}
+
+/* ---- Delay Report form handler ---- */
+function syncDrFormIntoPayload() {
+  const p = state.modal.payload;
+  p.jobOrderId = val('drJobOrderPick') || p.jobOrderId;
+  p.date = val('drDate') || p.date;
+  p.reportedBy = val('drReportedBy');
+  p.delayItems = [];
+  document.querySelectorAll('[data-dr-item]').forEach(row => {
+    const idx = row.getAttribute('data-dr-item');
+    p.delayItems.push({
+      floor: row.querySelector('.drFloor').value,
+      areaZone: row.querySelector('.drAreaZone').value,
+      targetDate: row.querySelector('.drTargetDate').value,
+      description: row.querySelector('.drDescription').value,
+      reasonOfDelay: row.querySelector('.drReason').value,
+      actionBy: row.querySelector('.drActionBy').value,
+      status: row.querySelector('.drStatus').value,
+      remarks: row.querySelector('.drRemarks').value,
+      // File inputs can't be serialized into plain payload state — read directly at submit time instead.
+    });
+  });
+}
+
+function attachDrFormHandlers() {
+  if (!state.modal || (state.modal.type !== 'newDr' && state.modal.type !== 'editDr')) return;
+  const p = state.modal.payload;
+
+  const jobOrderPick = document.getElementById('drJobOrderPick');
+  if (jobOrderPick) jobOrderPick.addEventListener('change', () => {
+    syncDrFormIntoPayload();
+    render(); // discrete select action — safe to re-render, refreshes the auto-filled project/site-team preview
+  });
+
+  const addItemBtn = document.getElementById('addDrItemBtn');
+  if (addItemBtn) addItemBtn.addEventListener('click', () => {
+    syncDrFormIntoPayload();
+    p.delayItems = [...p.delayItems, { status: 'Open' }];
+    render();
+  });
+  document.querySelectorAll('.removeDrItemBtn').forEach(b => b.addEventListener('click', e => {
+    syncDrFormIntoPayload();
+    const idx = Number(e.currentTarget.getAttribute('data-idx'));
+    p.delayItems.splice(idx, 1);
+    render();
+  }));
+  // Text/select fields inside each row are read live via syncDrFormIntoPayload() at
+  // add/remove/submit time — no per-keystroke render(), matching the lesson learned
+  // from every other form in this app (mid-type re-renders drop focus and keystrokes).
+
+  const saveBtn = document.getElementById('saveDrBtn');
+  if (saveBtn) saveBtn.addEventListener('click', async () => {
+    const jobOrderId = val('drJobOrderPick') || p.jobOrderId;
+    if (!jobOrderId) { showToast('Please select a Job Order.', 'err'); return; }
+    const rows = document.querySelectorAll('[data-dr-item]');
+    if (rows.length === 0) { showToast('Add at least one delay item.', 'err'); return; }
+
+    const delayItems = [];
+    const fd = new FormData();
+    rows.forEach((row, idx) => {
+      delayItems.push({
+        floor: row.querySelector('.drFloor').value,
+        areaZone: row.querySelector('.drAreaZone').value,
+        targetDate: row.querySelector('.drTargetDate').value,
+        description: row.querySelector('.drDescription').value,
+        reasonOfDelay: row.querySelector('.drReason').value,
+        actionBy: row.querySelector('.drActionBy').value,
+        status: row.querySelector('.drStatus').value,
+        remarks: row.querySelector('.drRemarks').value,
+      });
+      const siteFile = row.querySelector('.drSitePhoto').files[0];
+      const drawingFile = row.querySelector('.drDrawingPhoto').files[0];
+      if (siteFile) fd.append('sitePhotos', siteFile);
+      if (drawingFile) fd.append('drawingPhotos', drawingFile);
+    });
+
+    fd.append('jobOrderId', jobOrderId);
+    fd.append('date', val('drDate'));
+    fd.append('reportedBy', val('drReportedBy'));
+    fd.append('delayItems', JSON.stringify(delayItems));
+    fd.append('sigRamadasu',  document.getElementById('sig_reportedBy').checked);
+    fd.append('sigNazir',     document.getElementById('sig_projectsIncharge').checked);
+    fd.append('sigIbrahim',   document.getElementById('sig_siteEngineer').checked);
+    fd.append('sigHussein',   document.getElementById('sig_projectManager').checked);
+
+    try {
+      const isEdit = state.modal.type === 'editDr' && !!p.id;
+      const res = isEdit
+        ? await api('PUT', '/api/delay-reports/' + p.id, fd, true)
+        : await api('POST', '/api/delay-reports', fd, true);
+      await loadAll();
+      showToast(isEdit ? 'Delay report updated.' : 'Delay report submitted.', 'ok');
+      closeModal();
+      openModal('viewDr', res.delayReport);
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+}
+
+/* ---- Delay Report PDF builder ---- */
+function buildDrPdfHtml(d) {
+  const dateFmt = (d.date||'').split('-').reverse().join('-') || '—';
+  const afSigs  = d.signatures?.afSide    || [];
+  const clSigs  = d.signatures?.clientSide || [];
+  // Always show Al Fitr side with real names — fallback to stored report fields
+  const afSignatories = afSigs.length ? afSigs : [
+    { name: d.reportedBy    || d.preparedBy || '—',          role: 'Prepared By'      },
+    { name: d.projectsIncharge || 'Engr. Nazir Hussain',     role: 'Project In-Charge' },
+  ];
+  const rowsHtml = (d.delayItems||[]).map((item,i) => {
+    const sc = item.status==='Open' ? 'background:#FEE2E2;color:#991B1B' : item.status==='In Progress' ? 'background:#FEF3C7;color:#92400E' : 'background:#D1FAE5;color:#065F46';
+    const si = item.sitePhotoUrl    ? `<img src="${item.sitePhotoUrl}"    style="width:100%;height:50px;object-fit:cover;border-radius:2px;border:1px solid #ddd;display:block;">` : `<div style="width:100%;height:50px;background:#f5f5f5;border:1px dashed #ddd;border-radius:2px;display:flex;align-items:center;justify-content:center;font-size:7px;color:#ccc;">No photo</div>`;
+    const di = item.drawingPhotoUrl ? `<img src="${item.drawingPhotoUrl}" style="width:100%;height:50px;object-fit:cover;border-radius:2px;border:1px solid #ddd;display:block;">` : `<div style="width:100%;height:50px;background:#f5f5f5;border:1px dashed #ddd;border-radius:2px;display:flex;align-items:center;justify-content:center;font-size:7px;color:#ccc;">Not uploaded</div>`;
+    return `<tr>
+      <td class="tc" style="font-weight:700;color:#555;font-size:8px;border:1px solid #ddd;padding:4px 3px;">${String(i+1).padStart(2,'0')}</td>
+      <td class="tc" style="font-size:8px;border:1px solid #ddd;padding:4px 3px;">${item.floor||'—'}</td>
+      <td class="tc" style="font-size:7.5px;border:1px solid #ddd;padding:4px 3px;">${item.areaZone||'—'}</td>
+      <td class="tl" style="font-size:7.5px;border:1px solid #ddd;padding:4px 3px;">${item.description||'—'}</td>
+      <td class="tc" style="border:1px solid #ddd;padding:4px 3px;">${si}</td>
+      <td class="tc" style="border:1px solid #ddd;padding:4px 3px;">${di}</td>
+      <td class="tc" style="font-size:7.5px;border:1px solid #ddd;padding:4px 3px;">${item.reasonOfDelay||'—'}</td>
+      <td class="tc" style="font-size:7.5px;border:1px solid #ddd;padding:4px 3px;"><strong>${item.actionBy||'—'}</strong></td>
+      <td class="tc" style="border:1px solid #ddd;padding:4px 3px;"><span style="border-radius:2px;padding:2px 4px;font-size:6.5px;font-weight:700;${sc};">${item.status||'Open'}</span></td>
+      <td class="tl" style="font-size:7px;color:#555;border:1px solid #ddd;padding:4px 3px;">${item.remarks||'—'}</td>
+      <td class="tc" style="font-size:8px;color:#E8520A;font-weight:700;border:1px solid #ddd;padding:4px 3px;">${item.targetDate||'—'}</td>
+    </tr>`;
+  }).join('');
+
+  const afBlocks = afSignatories.map(s=>`<div style="flex:1;text-align:center;padding:0 8px;"><div style="border-bottom:1px solid #555;height:20px;margin-bottom:3px;"></div><div style="font-size:7.5px;font-weight:700;">${s.name||'—'}</div><div style="font-size:7px;color:#1D9E75;">${s.role}</div></div>`).join('');
+  const clBlocks = clSigs.map(s=>`<div style="flex:1;text-align:center;padding:0 8px;"><div style="border-bottom:1px solid #555;height:20px;margin-bottom:3px;"></div><div style="font-size:7.5px;font-weight:700;">${s.name||'—'}</div><div style="font-size:7px;color:#185FA5;">${s.role}</div></div>`).join('');
+  const sigHtml = `<div style="border-top:2px solid #E8520A;display:flex;">
+    <div style="background:#f0faf5;flex:1;padding:8px 14px;${clSigs.length?'border-right:1px solid #ddd;':''}">
+      <span style="font-size:7px;font-weight:700;text-transform:uppercase;background:#e1f5ee;color:#085041;padding:2px 7px;border-radius:3px;display:inline-block;margin-bottom:6px;">Al Fitr Electromechanical Works LLC</span>
+      <div style="display:flex;">${afBlocks}</div>
+    </div>
+    ${clSigs.length ? `<div style="background:#f0f5fb;flex:1;padding:8px 14px;">
+      <span style="font-size:7px;font-weight:700;text-transform:uppercase;background:#e6f1fb;color:#185FA5;padding:2px 7px;border-radius:3px;display:inline-block;margin-bottom:6px;">Client — ${d.clientCompany||''}</span>
+      <div style="display:flex;">${clBlocks}</div>
+    </div>` : ''}
+  </div>`;
+  const co = state.company || {};
+  const logoHeight = co.logoSize === 'large' ? 64 : co.logoSize === 'small' ? 36 : 52;
+  const logoHtml = co.logoPath
+    ? `<img src="${co.logoPath}" style="height:${logoHeight}px;max-width:120px;object-fit:contain;display:block;" alt="logo">`
+    : `<div style="display:flex;flex-direction:column;align-items:center;"><div style="width:42px;height:42px;border-radius:50%;border:2px solid #1D9E75;display:flex;align-items:center;justify-content:center;"><div style="width:26px;height:26px;border-radius:50%;background:#1D9E75;color:#fff;font-weight:700;font-size:8px;display:flex;align-items:center;justify-content:center;">AF</div></div><div style="font-size:7px;font-weight:700;color:#1D9E75;text-align:center;margin-top:2px;">AL FITR</div></div>`;
+
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${d.refNumber}</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:Arial,sans-serif;font-size:9px;color:#1a1a1a;}
+    @page{size:A4 landscape;margin:8mm;}
+    table{border-collapse:collapse;width:100%;}
+    td,th{vertical-align:middle;word-wrap:break-word;overflow-wrap:break-word;}
+    .tc{text-align:center !important;vertical-align:middle !important;}
+    .tl{text-align:left !important;vertical-align:middle !important;}
+  </style>
+  </head><body>
+  <div style="border-bottom:3px solid #E8520A;display:grid;grid-template-columns:90px 1fr auto;align-items:center;padding:8px 14px;gap:10px;">
+    <div style="display:flex;align-items:center;justify-content:center;">${logoHtml}</div>
+    <div style="text-align:center;font-size:13px;font-weight:700;color:#E8520A;letter-spacing:0.4px;">AL FITR ELECTROMECHANICAL WORKS LLC</div>
+    <div style="text-align:right;font-size:7.5px;color:#555;line-height:1.7;">
+      <div><strong>Ref No:</strong> ${d.refNumber||'—'}</div>
+      <div><strong>Date:</strong> ${dateFmt}</div>
+      <div><strong>Job Order:</strong> ${d.jobOrderNumber||'—'}</div>
+      ${d.quotationNumber ? `<div><strong>Quote Ref:</strong> ${d.quotationNumber}</div>` : ''}
+      <div><strong>Page:</strong> 1 of 1</div>
+    </div>
+  </div>
+  <div style="background:#f5f5f5;border-bottom:1px solid #ddd;text-align:center;padding:5px;font-size:10px;font-weight:700;letter-spacing:0.5px;">SITE DELAY ANALYSIS REPORT</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;border-bottom:1px solid #ddd;">
+    <div style="padding:5px 10px;border-right:1px solid #ddd;">
+      <div style="display:flex;gap:4px;margin-bottom:2px;"><span style="font-weight:700;color:#333;min-width:88px;font-size:7.5px;">Project Name:</span><span style="font-size:8px;">${d.projectName||'—'}</span></div>
+      <div style="display:flex;gap:4px;margin-bottom:2px;"><span style="font-weight:700;color:#333;min-width:88px;font-size:7.5px;">Fire Contractor:</span><span style="font-size:8px;">${d.clientCompany||'—'}</span></div>
+      <div style="display:flex;gap:4px;"><span style="font-weight:700;color:#333;min-width:88px;font-size:7.5px;">Scope of Work:</span><span style="font-size:8px;">${d.scopeOfWork||d.siteDetail||'—'}</span></div>
+    </div>
+    <div style="padding:5px 10px;border-right:1px solid #ddd;">
+      <div style="display:flex;gap:4px;margin-bottom:2px;"><span style="font-weight:700;color:#333;min-width:88px;font-size:7.5px;">Location:</span><span style="font-size:8px;">${d.location||'—'}</span></div>
+      <div style="display:flex;gap:4px;margin-bottom:2px;"><span style="font-weight:700;color:#333;min-width:88px;font-size:7.5px;">Project Manager:</span><span style="font-size:8px;">${d.projectManager||'—'} <span style="font-size:7px;color:#aaa;">(Client)</span></span></div>
+      <div style="display:flex;gap:4px;"><span style="font-weight:700;color:#333;min-width:88px;font-size:7.5px;">Client Engineer:</span><span style="font-size:8px;">${d.siteEngineer||'—'} <span style="font-size:7px;color:#aaa;">(Client)</span></span></div>
+    </div>
+    <div style="padding:5px 10px;">
+      <div style="display:flex;gap:4px;margin-bottom:2px;"><span style="font-weight:700;color:#333;min-width:88px;font-size:7.5px;">Date:</span><span style="font-size:8px;color:#E8520A;font-weight:700;">${dateFmt}</span></div>
+      <div style="display:flex;gap:4px;margin-bottom:2px;"><span style="font-weight:700;color:#333;min-width:88px;font-size:7.5px;">Reported By:</span><span style="font-size:8px;">${d.reportedBy||'—'} <span style="font-size:7px;color:#aaa;">(Al Fitr)</span></span></div>
+      <div style="display:flex;gap:4px;"><span style="font-weight:700;color:#333;min-width:88px;font-size:7.5px;">Projects Incharge:</span><span style="font-size:8px;">${d.projectsIncharge||'—'} <span style="font-size:7px;color:#aaa;">(Al Fitr)</span></span></div>
+    </div>
+  </div>
+  <table style="width:100%;border-collapse:collapse;table-layout:fixed;">
+    <colgroup><col style="width:3%"><col style="width:5%"><col style="width:8%"><col style="width:14%"><col style="width:9%"><col style="width:9%"><col style="width:10%"><col style="width:10%"><col style="width:6%"><col style="width:13%"><col style="width:13%"></colgroup>
+    <thead><tr style="background:#2c2c2c;">
+      ${[
+        {h:'SR.<br>No',c:true},{h:'Floor',c:false},{h:'Area /<br>Zone',c:true},
+        {h:'Description',c:false},{h:'Site Actual<br>Picture',c:true},{h:'Drawing Ref.<br>Picture',c:true},
+        {h:'Reason of<br>Delay',c:true},{h:'Action By',c:true},{h:'Status',c:true},
+        {h:'Remarks',c:false},{h:'Target<br>Resolution',c:true}
+      ].map(({h,c})=>`<th style="color:#fff;font-size:7px;font-weight:700;padding:5px 3px;text-align:${c?'center':'left'};border:1px solid #444;line-height:1.3;">${h}</th>`).join('')}
+    </tr></thead>
+    <tbody>${rowsHtml}</tbody>
+  </table>
+  ${sigHtml}
+  <div style="background:#2c2c2c;color:#aaa;display:flex;justify-content:space-between;padding:4px 14px;font-size:6.5px;">
+    <span>Al Fitr Electromechanical Works LLC — Sharjah, UAE</span>
+    <span><strong style="color:#E8520A;">${d.refNumber||'—'}</strong> — Site Delay Analysis Report — ${d.projectName||''}</span>
+    <span>Generated: ${dateFmt} — Confidential</span>
+  </div>
+  </body></html>`;
+}
+
+/* ---- Settings ---- */
+function attachSettingsHandlers() {
+  const saveCompanyBtn = document.getElementById('saveCompanyBtn');
+  if (saveCompanyBtn) saveCompanyBtn.addEventListener('click', async () => {
+    try {
+      await api('PUT', '/api/company', {
+        name: val('setCompanyName'), address: val('setCompanyAddress'), phone: val('setCompanyPhone'),
+        email: val('setCompanyEmail'), website: val('setCompanyWebsite'), vatNumber: val('setCompanyVat'), logoSize: val('setLogoSize'),
+      });
+      await loadAll();
+      showToast('Company details saved.', 'ok'); render();
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+
+  const logoUpload = document.getElementById('logoUpload');
+  if (logoUpload) logoUpload.addEventListener('change', async e => {
+    const file = e.target.files[0]; if (!file) return;
+    const form = new FormData(); form.append('logo', file);
+    try {
+      await api('POST', '/api/company/logo', form, true);
+      await loadAll();
+      showToast('Logo updated.', 'ok'); render();
+    } catch (err) { showToast(err.message, 'err'); }
+  });
+  const removeLogoBtn = document.getElementById('removeLogoBtn');
+  if (removeLogoBtn) removeLogoBtn.addEventListener('click', async () => {
+    try { await api('DELETE', '/api/company/logo'); await loadAll(); showToast('Logo removed.', 'ok'); render(); }
+    catch (e) { showToast(e.message, 'err'); }
+  });
+
+  const saveDnSettingsBtn = document.getElementById('saveDnSettingsBtn');
+  if (saveDnSettingsBtn) saveDnSettingsBtn.addEventListener('click', async () => {
+    try {
+      await api('PUT', '/api/company', {
+        dnPrefix: val('setDnPrefix').trim() || 'DN-', currency: val('setCurrency'), paperSize: val('setPaperSize'), reportFooter: val('setReportFooter'),
+      });
+      await loadAll();
+      showToast('Delivery note & report settings saved.', 'ok'); render();
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+
+  const addBranchBtn = document.getElementById('addBranchBtn');
+  if (addBranchBtn) addBranchBtn.addEventListener('click', async () => {
+    const v = val('newBranchInput').trim(); if (!v) return;
+    try { await api('POST', '/api/meta/branches', { value: v }); await loadAll(); render(); } catch (e) { showToast(e.message, 'err'); }
+  });
+  document.querySelectorAll('[data-del-branch]').forEach(b => b.addEventListener('click', async e => {
+    try { await api('DELETE', '/api/meta/branches/' + encodeURIComponent(e.currentTarget.getAttribute('data-del-branch'))); await loadAll(); render(); } catch (err) { showToast(err.message, 'err'); }
+  }));
+  const addBrandBtn = document.getElementById('addBrandBtn');
+  if (addBrandBtn) addBrandBtn.addEventListener('click', async () => {
+    const v = val('newBrandInput').trim(); if (!v) return;
+    try { await api('POST', '/api/meta/brands', { value: v }); await loadAll(); render(); } catch (e) { showToast(e.message, 'err'); }
+  });
+  document.querySelectorAll('[data-del-brand]').forEach(b => b.addEventListener('click', async e => {
+    try { await api('DELETE', '/api/meta/brands/' + encodeURIComponent(e.currentTarget.getAttribute('data-del-brand'))); await loadAll(); render(); } catch (err) { showToast(err.message, 'err'); }
+  }));
+  const addUnitBtn = document.getElementById('addUnitBtn');
+  if (addUnitBtn) addUnitBtn.addEventListener('click', async () => {
+    const v = val('newUnitInput').trim(); if (!v) return;
+    try { await api('POST', '/api/meta/units', { value: v }); await loadAll(); render(); } catch (e) { showToast(e.message, 'err'); }
+  });
+  document.querySelectorAll('[data-del-unit]').forEach(b => b.addEventListener('click', async e => {
+    try { await api('DELETE', '/api/meta/units/' + encodeURIComponent(e.currentTarget.getAttribute('data-del-unit'))); await loadAll(); render(); } catch (err) { showToast(err.message, 'err'); }
+  }));
+
+  const seedRolesBtn = document.getElementById('seedRolesBtn');
+  if (seedRolesBtn) seedRolesBtn.addEventListener('click', async () => {
+    try {
+      const res = await api('POST', '/api/users/roles/seed', {});
+      await loadAll();
+      showToast(`Added roles: ${res.added.length > 0 ? res.added.join(', ') : 'None new (all already exist)'}`, 'ok');
+      render();
+    } catch(e) { showToast(e.message, 'err'); }
+  });
+
+  const addUserBtn = document.getElementById('addUserBtn');
+  if (addUserBtn) addUserBtn.addEventListener('click', () => {
+    const firstNonSuper = Object.keys(state.roles).find(r => r !== 'Super Admin') || 'Viewer';
+    openModal('userEdit', { role: firstNonSuper, active: true });
+  });
+  document.querySelectorAll('[data-edit-user]').forEach(b => b.addEventListener('click', e => {
+    openModal('userEdit', { ...state.users.find(u => u.id === e.currentTarget.getAttribute('data-edit-user')) });
+  }));
+
+  document.querySelectorAll('.permCheck').forEach(cb => cb.addEventListener('change', async e => {
+    const role = e.target.getAttribute('data-role'), perm = e.target.getAttribute('data-perm');
+    try {
+      await api('PUT', '/api/users/roles/' + encodeURIComponent(role), { [perm]: e.target.checked });
+      await loadAll();
+      showToast(`Updated ${role} permissions.`, 'ok');
+    } catch (err) { showToast(err.message, 'err'); render(); }
+  }));
+
+  const saveQuoteCounterBtn = document.getElementById('saveQuoteCounterBtn');
+  if (saveQuoteCounterBtn) saveQuoteCounterBtn.addEventListener('click', async () => {
+    const value = Number(val('setQuoteCounter'));
+    try {
+      await api('PUT', '/api/company/quotation-counter', { value });
+      await loadAll();
+      showToast('Quotation numbering updated.', 'ok'); render();
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+  const addQuoteCatBtn = document.getElementById('addQuoteCatBtn');
+  if (addQuoteCatBtn) addQuoteCatBtn.addEventListener('click', async () => {
+    const v = val('newQuoteCatInput').trim(); if (!v) return;
+    try { await api('POST', '/api/meta/quotationCategories', { value: v }); await loadAll(); render(); } catch (e) { showToast(e.message, 'err'); }
+  });
+  document.querySelectorAll('[data-del-quotecat]').forEach(b => b.addEventListener('click', async e => {
+    try { await api('DELETE', '/api/meta/quotationCategories/' + encodeURIComponent(e.currentTarget.getAttribute('data-del-quotecat'))); await loadAll(); render(); } catch (err) { showToast(err.message, 'err'); }
+  }));
+  const saveApproversBtn = document.getElementById('saveApproversBtn');
+  if (saveApproversBtn) saveApproversBtn.addEventListener('click', async () => {
+    const userIds = [...document.querySelectorAll('.approverCheck:checked')].map(cb => cb.getAttribute('data-uid'));
+    try {
+      await api('PUT', '/api/company/quotation-approvers', { userIds });
+      await loadAll();
+      showToast('Approvers updated.', 'ok'); render();
+    } catch (e) { showToast(e.message, 'err'); }
+  });
+  const openExclusionsLibBtn = document.getElementById('openExclusionsLibBtn');
+  if (openExclusionsLibBtn) openExclusionsLibBtn.addEventListener('click', () => openModal('exclusionsLib', {}));
+
+  const pushToggleBtn = document.getElementById('pushToggleBtn');
+  if (pushToggleBtn) {
+    refreshPushToggleUI();
+    pushToggleBtn.addEventListener('click', async () => {
+      pushToggleBtn.disabled = true;
+      const action = pushToggleBtn.dataset.action;
+      pushToggleBtn.textContent = action === 'unsubscribe' ? 'Turning off…' : 'Enabling…';
+      const ok = action === 'unsubscribe' ? await unsubscribeFromPush() : await subscribeToPush();
+      if (ok) showToast(action === 'unsubscribe' ? 'Push notifications turned off.' : 'Push notifications enabled.', 'ok');
+      await refreshPushToggleUI();
+    });
+  }
+}
+
+/* ================= PUSH NOTIFICATIONS ================= */
+// Converts the VAPID public key (base64url string from the server) into the raw byte
+// array format the browser's PushManager API requires — this is boilerplate every
+// Web Push implementation needs, not something specific to this app.
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(base64);
+  const arr = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+  return arr;
+}
+
+async function registerServiceWorker() {
+  if (!('serviceWorker' in navigator)) return null;
+  try {
+    return await navigator.serviceWorker.register('/sw.js');
+  } catch (e) {
+    console.error('Service worker registration failed:', e);
+    return null;
+  }
+}
+
+async function getPushSubscriptionStatus() {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return 'unsupported';
+  if (Notification.permission === 'denied') return 'blocked';
+  try {
+    const res = await api('GET', '/api/push/status');
+    return res.subscribed ? 'subscribed' : 'not-subscribed';
+  } catch (e) {
+    return 'not-subscribed';
+  }
+}
+
+async function subscribeToPush() {
+  const reg = await registerServiceWorker();
+  if (!reg) { showToast('Push notifications are not supported in this browser.', 'err'); return false; }
+
+  const permission = await Notification.requestPermission();
+  if (permission !== 'granted') {
+    showToast(permission === 'denied' ? 'Notifications are blocked — enable them in your browser settings to turn this on.' : 'Permission was not granted.', 'err');
+    return false;
+  }
+
+  try {
+    const { publicKey } = await api('GET', '/api/push/vapid-public-key');
+    const subscription = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(publicKey),
+    });
+    await api('POST', '/api/push/subscribe', { subscription: subscription.toJSON() });
+    return true;
+  } catch (e) {
+    console.error('Push subscribe failed:', e);
+    showToast('Could not enable push notifications: ' + e.message, 'err');
+    return false;
+  }
+}
+
+async function unsubscribeFromPush() {
+  if (!('serviceWorker' in navigator)) return true;
+  try {
+    const reg = await navigator.serviceWorker.getRegistration();
+    if (!reg) return true;
+    const sub = await reg.pushManager.getSubscription();
+    if (sub) {
+      await api('POST', '/api/push/unsubscribe', { endpoint: sub.endpoint });
+      await sub.unsubscribe();
+    }
+    return true;
+  } catch (e) {
+    console.error('Push unsubscribe failed:', e);
+    return false;
+  }
+}
+
+async function refreshPushToggleUI() {
+  const btn = document.getElementById('pushToggleBtn');
+  if (!btn) return;
+  const status = await getPushSubscriptionStatus();
+  if (status === 'unsupported') {
+    btn.textContent = 'Not supported in this browser';
+    btn.disabled = true;
+  } else if (status === 'blocked') {
+    btn.textContent = 'Blocked — enable in browser settings';
+    btn.disabled = true;
+  } else if (status === 'subscribed') {
+    btn.textContent = 'Turn Off Push Notifications';
+    btn.disabled = false;
+    btn.dataset.action = 'unsubscribe';
+  } else {
+    btn.textContent = 'Enable Push Notifications';
+    btn.disabled = false;
+    btn.dataset.action = 'subscribe';
+  }
+}
+
+/* ================= INIT ================= */
+(async function init() {
+  render();
+  registerServiceWorker();
+  if (authToken) {
+    try { await loadAll(); } catch (e) { console.error(e); }
+  } else {
+    loadPublicBranding();
+  }
+  render();
+})();
+
 function renderDirectPoForm(existing) {
   const p = existing || {};
   const isSA = state.user?.role === 'Super Admin' || can('manageProcurement');

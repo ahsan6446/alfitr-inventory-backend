@@ -5358,6 +5358,7 @@ function attachHandlers() {
       render();
     } catch(e) { showToast(e.message, 'err'); }
   });
+  const procViewBtns = document.querySelectorAll('[data-proc-view]');
   procViewBtns.forEach(b => b.addEventListener('click', e => { state.procView = e.currentTarget.getAttribute('data-proc-view'); render(); }));
 
   document.querySelectorAll('[data-view-pr]').forEach(b => b.addEventListener('click', e => {

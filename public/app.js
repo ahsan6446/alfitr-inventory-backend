@@ -7314,9 +7314,17 @@ function renderDirectPoForm(existing) {
   <div class="field"><label>Notes</label>
     <textarea id="dpo_notes" rows="2" ${isLocked?'disabled':''}>${p.notes||''}</textarea>
   </div>
-  <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">
-    <button class="btn btn-ghost" id="modalCancel">Cancel</button>
-    ${!isLocked?`<button class="btn btn-primary" id="saveDirectPoBtn" data-id="${p.id||''}">${p.id?'Save Changes':'Create LPO'}</button>`:''}
+  <div style="display:flex;justify-content:space-between;gap:8px;margin-top:14px;">
+    <div>
+      ${p.id?`<button class="btn btn-danger btn-sm" id="deleteLpoBtn" data-id="${p.id||''}">🗑 Delete</button>`:''}
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-ghost" id="modalCancel">Cancel</button>
+      ${!isLocked?`
+        <button class="btn btn-outline" id="saveDraftLpoBtn" data-id="${p.id||''}">💾 Save Draft</button>
+        <button class="btn btn-primary" id="saveDirectPoBtn" data-id="${p.id||''}">${p.id?'Save Changes':'Create LPO'}</button>
+      `:''}
+    </div>
   </div>`;
 }
 
@@ -7328,6 +7336,26 @@ function renumberTerms() {
 }
 
 function onDpoVendorSelect() {}
+
+function updateDpoTotal(el) {
+  let sub = 0;
+  document.querySelectorAll('.dpo-line-row').forEach(r => {
+    const q = parseFloat(r.querySelector('.dpo_qty')?.value)||0;
+    const c = parseFloat(r.querySelector('.dpo_cost')?.value)||0;
+    const t = q*c;
+    const tot = r.querySelector('.dpo_line_total');
+    if (tot) tot.textContent = fmtMoney(t);
+    sub += t;
+  });
+  const vat   = sub * 0.05;
+  const grand = sub + vat;
+  const st = document.getElementById('dpoSubTotal');
+  const vt = document.getElementById('dpoVat');
+  const gt = document.getElementById('dpoGrandTotal');
+  if (st) st.textContent = 'AED ' + fmtMoney(sub);
+  if (vt) vt.textContent = 'AED ' + fmtMoney(vat);
+  if (gt) gt.textContent = 'AED ' + fmtMoney(grand);
+}
 
 function renderPoView(po) {
   const canProcure = can('manageProcurement');

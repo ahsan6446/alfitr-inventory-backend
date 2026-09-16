@@ -164,39 +164,85 @@ router.post('/direct', requirePermission('manageProcurement'), async (req, res) 
   if (!Array.isArray(body.lineItems) || body.lineItems.length === 0) {
     return res.status(400).json({ error: 'At least one line item is required.' });
   }
-
+  const jo = body.jobOrderId ? (state.jobOrders||[]).find(j=>j.id===body.jobOrderId) : null;
   const po = {
-    id:                  db.uuid(),
-    poNumber:            nextPoNumber(state),
-    direct:              true,
-    reference:           body.reference || '',
-    vendorId:            vendor.id,
-    vendorName:          vendor.companyName,
-    jobOrderId:          body.jobOrderId || null,
-    jobOrderNumber:      body.jobOrderId ? (state.jobOrders||[]).find(j=>j.id===body.jobOrderId)?.jobOrderNumber||'' : '',
-    purchaseRequestId:   null,
-    purchaseRequestNumber: null,
-    date:                body.date || new Date().toISOString().slice(0,10),
-    expectedDate:        body.expectedDate || '',
-    notes:               body.notes || '',
-    createdByName:       body.createdByName || req.user.name,
-    createdByDesignation:body.createdByDesignation || '',
+    id:                   db.uuid(),
+    poNumber:             nextPoNumber(state),
+    direct:               true,
+    reference:            body.reference || '',
+    vendorId:             vendor.id,
+    vendorName:           vendor.companyName,
+    jobOrderId:           jo?.id || null,
+    jobOrderNumber:       jo?.jobOrderNumber || '',
+    purchaseRequestId:    null,
+    purchaseRequestNumber:null,
+    date:                 body.date || new Date().toISOString().slice(0,10),
+    expectedDate:         body.expectedDate || '',
+    deliveryAddress:      body.deliveryAddress || '',
+    paymentTerms:         body.paymentTerms || '30 Days Credit',
+    notes:                body.notes || '',
+    preparedByName:       body.preparedByName  || req.user.name,
+    preparedByDesig:      body.preparedByDesig || '',
+    checkedByName:        body.checkedByName   || '',
+    checkedByDesig:       body.checkedByDesig  || 'Procurement Engineer',
+    approvedByName:       body.approvedByName  || '',
+    approvedByDesig:      body.approvedByDesig || 'Procurement Manager',
     lineItems: body.lineItems.map((l, i) => ({
-      id:           String(i + 1),
-      description:  l.description || '',
-      unit:         l.unit || 'pcs',
-      qtyOrdered:   Number(l.qty) || 1,
-      unitCost:     Number(l.unitCost) || 0,
-      qtyReceived:  0,
+      id:          String(i + 1),
+      description: l.description || '',
+      brand:       l.brand || '',
+      unit:        l.unit  || 'pcs',
+      qtyOrdered:  Number(l.qty) || 1,
+      unitCost:    Number(l.unitCost) || 0,
+      qtyReceived: 0,
     })),
-    status:   'Draft',
+    status:    'Draft',
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
-
   state.purchaseOrders.push(po);
   await db.persist();
   res.status(201).json({ purchaseOrder: withComputed(po) });
+});
+
+// PUT — edit Direct LPO
+router.put('/:id/direct', requirePermission('manageProcurement'), async (req, res) => {
+  const state = db.get();
+  const po    = state.purchaseOrders.find(p => p.id === req.params.id);
+  if (!po) return res.status(404).json({ error: 'LPO not found.' });
+  if (!po.direct) return res.status(400).json({ error: 'Only Direct LPOs can be edited this way.' });
+  const body   = req.body || {};
+  const vendor = state.vendors.find(v => v.id === body.vendorId);
+  if (vendor) { po.vendorId = vendor.id; po.vendorName = vendor.companyName; }
+  const jo = body.jobOrderId ? (state.jobOrders||[]).find(j=>j.id===body.jobOrderId) : null;
+  po.reference        = body.reference        || po.reference;
+  po.date             = body.date             || po.date;
+  po.expectedDate     = body.expectedDate     !== undefined ? body.expectedDate : po.expectedDate;
+  po.deliveryAddress  = body.deliveryAddress  || po.deliveryAddress;
+  po.paymentTerms     = body.paymentTerms     || po.paymentTerms;
+  po.notes            = body.notes            !== undefined ? body.notes : po.notes;
+  po.jobOrderId       = jo?.id       || null;
+  po.jobOrderNumber   = jo?.jobOrderNumber || '';
+  po.preparedByName   = body.preparedByName   || po.preparedByName;
+  po.preparedByDesig  = body.preparedByDesig  || po.preparedByDesig;
+  po.checkedByName    = body.checkedByName    !== undefined ? body.checkedByName  : po.checkedByName;
+  po.checkedByDesig   = body.checkedByDesig   || po.checkedByDesig;
+  po.approvedByName   = body.approvedByName   !== undefined ? body.approvedByName : po.approvedByName;
+  po.approvedByDesig  = body.approvedByDesig  || po.approvedByDesig;
+  if (Array.isArray(body.lineItems) && body.lineItems.length > 0) {
+    po.lineItems = body.lineItems.map((l, i) => ({
+      id:          String(i+1),
+      description: l.description || '',
+      brand:       l.brand || '',
+      unit:        l.unit  || 'pcs',
+      qtyOrdered:  Number(l.qty) || 1,
+      unitCost:    Number(l.unitCost) || 0,
+      qtyReceived: po.lineItems.find(x=>x.id===String(i+1))?.qtyReceived || 0,
+    }));
+  }
+  po.updatedAt = Date.now();
+  await db.persist();
+  res.json({ purchaseOrder: withComputed(po) });
 });
 
 module.exports = router;

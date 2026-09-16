@@ -169,6 +169,7 @@ router.post('/direct', requirePermission('manageProcurement'), async (req, res) 
     id:                   db.uuid(),
     poNumber:             nextPoNumber(state),
     direct:               true,
+    attentionTo:          body.attentionTo || '',
     reference:            body.reference || '',
     vendorId:             vendor.id,
     vendorName:           vendor.companyName,
@@ -196,7 +197,11 @@ router.post('/direct', requirePermission('manageProcurement'), async (req, res) 
       unitCost:    Number(l.unitCost) || 0,
       qtyReceived: 0,
     })),
-    status:    'Draft',
+    terms:             Array.isArray(body.terms) ? body.terms : [],
+    lpoStatus:         'Draft',
+    revision:          0,
+    revisionHistory:   [],
+    status:            'Draft',
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
@@ -240,6 +245,88 @@ router.put('/:id/direct', requirePermission('manageProcurement'), async (req, re
       qtyReceived: po.lineItems.find(x=>x.id===String(i+1))?.qtyReceived || 0,
     }));
   }
+  po.attentionTo = body.attentionTo !== undefined ? body.attentionTo : po.attentionTo;
+  if (Array.isArray(body.terms)) po.terms = body.terms;
+  po.updatedAt = Date.now();
+  await db.persist();
+  res.json({ purchaseOrder: withComputed(po) });
+});
+
+// POST submit for approval
+router.post('/:id/submit', requirePermission('manageProcurement'), async (req, res) => {
+  const state = db.get();
+  const po = state.purchaseOrders.find(p=>p.id===req.params.id);
+  if (!po) return res.status(404).json({ error: 'Not found.' });
+  po.lpoStatus = 'Submitted';
+  po.submittedAt = Date.now();
+  po.submittedByName = req.user.name;
+  po.updatedAt = Date.now();
+  await db.persist();
+  res.json({ purchaseOrder: withComputed(po) });
+});
+
+// POST approve
+router.post('/:id/approve', requirePermission('manageProcurement'), async (req, res) => {
+  const state = db.get();
+  const po = state.purchaseOrders.find(p=>p.id===req.params.id);
+  if (!po) return res.status(404).json({ error: 'Not found.' });
+  const body = req.body || {};
+  if (!po.revisionHistory) po.revisionHistory = [];
+  po.revisionHistory.push({ rev: po.revision||0, at: Date.now(), by: req.user.name, action: 'Approved', reason: '' });
+  po.lpoStatus = 'Approved';
+  po.approvedAt = Date.now();
+  po.approvedByActionName = body.approvedByName || req.user.name;
+  po.approvedByActionDesig = body.approvedByDesig || '';
+  po.updatedAt = Date.now();
+  await db.persist();
+  res.json({ purchaseOrder: withComputed(po) });
+});
+
+// POST reject
+router.post('/:id/reject', requirePermission('manageProcurement'), async (req, res) => {
+  const state = db.get();
+  const po = state.purchaseOrders.find(p=>p.id===req.params.id);
+  if (!po) return res.status(404).json({ error: 'Not found.' });
+  const body = req.body || {};
+  if (!body.reason || !body.reason.trim()) return res.status(400).json({ error: 'Rejection reason is required.' });
+  if (!po.revisionHistory) po.revisionHistory = [];
+  po.revisionHistory.push({ rev: po.revision||0, at: Date.now(), by: req.user.name, action: 'Rejected', reason: body.reason });
+  po.lpoStatus = 'Rejected';
+  po.rejectedAt = Date.now();
+  po.rejectedByName = body.rejectedByName || req.user.name;
+  po.rejectionReason = body.reason;
+  po.updatedAt = Date.now();
+  await db.persist();
+  res.json({ purchaseOrder: withComputed(po) });
+});
+
+// POST request-revision
+router.post('/:id/request-revision', requirePermission('manageProcurement'), async (req, res) => {
+  const state = db.get();
+  const po = state.purchaseOrders.find(p=>p.id===req.params.id);
+  if (!po) return res.status(404).json({ error: 'Not found.' });
+  const body = req.body || {};
+  if (!body.comments || !body.comments.trim()) return res.status(400).json({ error: 'Revision comments are required.' });
+  if (!po.revisionHistory) po.revisionHistory = [];
+  po.revisionHistory.push({ rev: po.revision||0, at: Date.now(), by: req.user.name, action: 'Revision Required', reason: body.comments });
+  po.lpoStatus = 'Revision Required';
+  po.revisionRequestedAt = Date.now();
+  po.revisionRequestedByName = body.requestedByName || req.user.name;
+  po.revisionComments = body.comments;
+  po.updatedAt = Date.now();
+  await db.persist();
+  res.json({ purchaseOrder: withComputed(po) });
+});
+
+// POST revise — create new revision from approved LPO
+router.post('/:id/revise', requirePermission('manageProcurement'), async (req, res) => {
+  const state = db.get();
+  const po = state.purchaseOrders.find(p=>p.id===req.params.id);
+  if (!po) return res.status(404).json({ error: 'Not found.' });
+  if (!po.revisionHistory) po.revisionHistory = [];
+  po.revisionHistory.push({ rev: po.revision||0, at: Date.now(), by: req.user.name, action: 'Revision Started', reason: 'Approved LPO revision' });
+  po.revision = (po.revision||0) + 1;
+  po.lpoStatus = 'Revised';
   po.updatedAt = Date.now();
   await db.persist();
   res.json({ purchaseOrder: withComputed(po) });

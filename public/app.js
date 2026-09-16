@@ -3491,88 +3491,100 @@ function renderPoList() {
 
 function renderDirectPoForm(existing) {
   const p = existing || {};
+  const isSA = state.user?.role === 'Super Admin' || can('manageProcurement');
   const vendorOptions = [...state.vendors].sort((a,b)=>a.companyName.localeCompare(b.companyName))
     .map(v=>`<option value="${v.id}" ${p.vendorId===v.id?'selected':''}>${v.companyName}${v.category?' ('+v.category+')':''}</option>`).join('');
-  const lines = p.lineItems || [{ description:'', unit:'pcs', qty:1, unitCost:0, brand:'' }];
+  const lines = p.lineItems && p.lineItems.length>0 ? p.lineItems : [{ description:'', brand:'', unit:'pcs', qty:1, unitCost:0 }];
+  const defaultTerms = p.terms || [
+    'This LPO is valid for 30 days from the date of issue.',
+    'Please quote this LPO number on all invoices, delivery notes and correspondence.',
+    'Goods must be delivered as per specifications and within the delivery date mentioned above.',
+    'Al Fitr Electromechanical Works LLC reserves the right to return goods that do not meet specifications.',
+    'Payment will be made within the agreed terms upon receipt of tax invoice and delivery note.',
+  ];
+  const isLocked = p.status === 'Submitted' || p.status === 'Approved';
+  const lockMsg  = isLocked ? `<div style="background:#fff8f0;border:1px solid #fbbf24;border-radius:6px;padding:8px 12px;margin-bottom:12px;font-size:12px;color:#92400E;">⚠️ This LPO is <strong>${p.status}</strong> — ${p.status==='Approved'?'create a revision to make changes':'return for revision to edit'}</div>` : '';
+
   return `
+  ${lockMsg}
   <div class="grid2">
     <div class="field"><label>Vendor *</label>
-      <select id="dpo_vendor" onchange="onDpoVendorSelect()">
+      <select id="dpo_vendor" ${isLocked?'disabled':''}>
         <option value="">— Select Vendor —</option>
         ${vendorOptions}
       </select>
     </div>
-    <div class="field"><label>Date</label><input type="date" id="dpo_date" value="${p.date||new Date().toISOString().slice(0,10)}"></div>
+    <div class="field"><label>Date</label><input type="date" id="dpo_date" value="${p.date||new Date().toISOString().slice(0,10)}" ${isLocked?'disabled':''}></div>
   </div>
   <div class="grid2">
-    <div class="field"><label>Purpose / Reference</label><input id="dpo_ref" value="${p.reference||''}" placeholder="e.g. Stock replenishment, Fire alarm materials"></div>
-    <div class="field"><label>Expected Delivery</label><input type="date" id="dpo_delivery" value="${p.expectedDate||''}"></div>
+    <div class="field"><label>Attention To (Vendor Rep)</label><input id="dpo_attn" value="${p.attentionTo||''}" placeholder="e.g. Mr. Ahmed Hassan" ${isLocked?'disabled':''}></div>
+    <div class="field"><label>Purpose / Reference</label><input id="dpo_ref" value="${p.reference||''}" placeholder="e.g. Fire alarm materials" ${isLocked?'disabled':''}></div>
+  </div>
+  <div class="grid2">
+    <div class="field"><label>Expected Delivery Date</label><input type="date" id="dpo_delivery" value="${p.expectedDate||''}" ${isLocked?'disabled':''}></div>
+    <div class="field"><label>Delivery Address</label><input id="dpo_delivery_addr" value="${p.deliveryAddress||'Al Fitr Store, Sharjah UAE'}" ${isLocked?'disabled':''}></div>
   </div>
   <div class="grid2">
     <div class="field"><label>Job Order (optional)</label>
-      <select id="dpo_jo">
-        <option value="">— No Job Order (General Purchase) —</option>
+      <select id="dpo_jo" ${isLocked?'disabled':''}>
+        <option value="">— No Job Order —</option>
         ${state.jobOrders.map(j=>`<option value="${j.id}" ${p.jobOrderId===j.id?'selected':''}>${j.jobOrderNumber}</option>`).join('')}
       </select>
     </div>
     <div class="field"><label>Payment Terms</label>
-      <select id="dpo_payterms">
-        <option value="30 Days Credit" ${(p.paymentTerms||'')===('30 Days Credit')?'selected':''}>30 Days Credit</option>
-        <option value="60 Days Credit" ${(p.paymentTerms||'')===('60 Days Credit')?'selected':''}>60 Days Credit</option>
-        <option value="Cash on Delivery" ${(p.paymentTerms||'')===('Cash on Delivery')?'selected':''}>Cash on Delivery</option>
-        <option value="Advance Payment" ${(p.paymentTerms||'')===('Advance Payment')?'selected':''}>Advance Payment</option>
-        <option value="LC" ${(p.paymentTerms||'')===('LC')?'selected':''}>Letter of Credit</option>
+      <select id="dpo_payterms" ${isLocked?'disabled':''}>
+        ${['30 Days Credit','60 Days Credit','Cash on Delivery','Advance Payment','Letter of Credit'].map(t=>`<option value="${t}" ${(p.paymentTerms||'30 Days Credit')===t?'selected':''}>${t}</option>`).join('')}
       </select>
     </div>
-  </div>
-  <div class="field"><label>Delivery Address</label>
-    <input id="dpo_delivery_addr" value="${p.deliveryAddress||'Al Fitr Store, Sharjah UAE'}" placeholder="Delivery address">
   </div>
 
   <div style="border-top:1px solid var(--rule);margin:12px 0 10px;padding-top:10px;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
       <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;">Line Items *</div>
-      <button class="btn btn-ghost btn-sm" type="button" id="addDpoLineBtn">+ Add Item</button>
+      ${!isLocked?`<button class="btn btn-ghost btn-sm" type="button" id="addDpoLineBtn">+ Add Item</button>`:''}
     </div>
     <div class="tbl-wrap"><table id="dpoLinesTable">
       <thead><tr>
-        <th>Description</th><th style="width:100px;">Brand (optional)</th>
+        <th>Description</th><th style="width:100px;">Brand</th>
         <th style="width:60px;">Unit</th>
         <th style="width:70px;text-align:right;">Qty</th>
         <th style="width:100px;text-align:right;">Unit Cost</th>
         <th style="width:90px;text-align:right;">Total</th>
-        <th style="width:30px;"></th>
+        ${!isLocked?'<th style="width:30px;"></th>':''}
       </tr></thead>
       <tbody id="dpoLinesBody">
         ${lines.map((l,i)=>`
         <tr class="dpo-line-row">
-          <td><input class="dpo_desc" placeholder="Item description..." style="width:100%;font-size:12px;" value="${l.description||''}"></td>
-          <td><input class="dpo_brand" placeholder="Brand..." style="width:100%;font-size:12px;" value="${l.brand||''}"></td>
-          <td><input class="dpo_unit" placeholder="pcs" style="width:55px;font-size:12px;" value="${l.unit||'pcs'}"></td>
-          <td style="text-align:right;"><input class="dpo_qty" type="number" value="${l.qty||1}" min="1" style="width:60px;text-align:right;font-size:12px;" oninput="updateDpoTotal(this)"></td>
-          <td style="text-align:right;"><input class="dpo_cost" type="number" placeholder="0.00" value="${l.unitCost||''}" style="width:90px;text-align:right;font-size:12px;" oninput="updateDpoTotal(this)"></td>
-          <td style="text-align:right;font-family:var(--mono);font-size:12px;" class="dpo_line_total">${fmtMoney((l.qty||0)*(l.unitCost||0))}</td>
-          <td>${i>0?`<button type="button" onclick="this.closest('.dpo-line-row').remove();updateDpoTotal(this);" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:16px;">✕</button>`:''}</td>
+          <td><input class="dpo_desc" placeholder="Item description..." style="width:100%;font-size:12px;" value="${l.description||''}" ${isLocked?'disabled':''}></td>
+          <td><input class="dpo_brand" placeholder="Brand" style="width:100%;font-size:12px;" value="${l.brand||''}" ${isLocked?'disabled':''}></td>
+          <td><input class="dpo_unit" placeholder="pcs" style="width:55px;font-size:12px;" value="${l.unit||'pcs'}" ${isLocked?'disabled':''}></td>
+          <td style="text-align:right;"><input class="dpo_qty" type="number" value="${l.qty||l.qtyOrdered||1}" min="1" style="width:60px;text-align:right;font-size:12px;" oninput="updateDpoTotal(this)" ${isLocked?'disabled':''}></td>
+          <td style="text-align:right;"><input class="dpo_cost" type="number" placeholder="0.00" value="${l.unitCost||''}" style="width:90px;text-align:right;font-size:12px;" oninput="updateDpoTotal(this)" ${isLocked?'disabled':''}></td>
+          <td style="text-align:right;font-family:var(--mono);font-size:12px;" class="dpo_line_total">${fmtMoney((l.qty||l.qtyOrdered||0)*(l.unitCost||0))}</td>
+          ${!isLocked?`<td>${i>0?`<button type="button" onclick="this.closest('.dpo-line-row').remove();updateDpoTotal(this);" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:16px;">✕</button>`:''}</td>`:''  }
         </tr>`).join('')}
       </tbody>
       <tfoot>
-        <tr>
-          <td colspan="4" style="text-align:right;padding:8px 4px;font-size:12px;color:#555;">Sub Total</td>
-          <td colspan="2" style="text-align:right;font-family:var(--mono);font-weight:600;" id="dpoSubTotal">AED 0.00</td>
-          <td></td>
-        </tr>
-        <tr>
-          <td colspan="4" style="text-align:right;padding:4px;font-size:12px;color:#555;">VAT 5%</td>
-          <td colspan="2" style="text-align:right;font-family:var(--mono);" id="dpoVat">AED 0.00</td>
-          <td></td>
-        </tr>
-        <tr>
-          <td colspan="4" style="text-align:right;padding:8px 4px;font-size:13px;font-weight:700;">Total (incl. VAT)</td>
-          <td colspan="2" style="text-align:right;font-family:var(--mono);font-weight:700;font-size:13px;color:#E8520A;" id="dpoGrandTotal">AED 0.00</td>
-          <td></td>
-        </tr>
+        <tr><td colspan="${isLocked?5:6}" style="text-align:right;padding:6px 4px;font-size:12px;color:#555;">Sub Total</td><td style="text-align:right;font-family:var(--mono);font-weight:600;" id="dpoSubTotal">AED 0.00</td>${!isLocked?'<td></td>':''}</tr>
+        <tr><td colspan="${isLocked?5:6}" style="text-align:right;padding:3px 4px;font-size:12px;color:#555;">VAT 5%</td><td style="text-align:right;font-family:var(--mono);" id="dpoVat">AED 0.00</td>${!isLocked?'<td></td>':''}</tr>
+        <tr><td colspan="${isLocked?5:6}" style="text-align:right;padding:6px 4px;font-size:13px;font-weight:700;">Total (incl. VAT)</td><td style="text-align:right;font-family:var(--mono);font-weight:700;font-size:13px;color:#E8520A;" id="dpoGrandTotal">AED 0.00</td>${!isLocked?'<td></td>':''}</tr>
       </tfoot>
     </table></div>
+  </div>
+
+  <div style="border-top:1px solid var(--rule);margin:12px 0 10px;padding-top:10px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+      <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;">Terms & Conditions</div>
+      ${!isLocked?`<button class="btn btn-ghost btn-sm" type="button" id="addTermBtn">+ Add Term</button>`:''}
+    </div>
+    <div id="termsList">
+      ${defaultTerms.map((t,i)=>`
+      <div class="terms-row" style="display:flex;gap:6px;align-items:flex-start;margin-bottom:6px;">
+        <span style="font-size:12px;color:#888;padding-top:7px;min-width:18px;">${i+1}.</span>
+        <input class="term_input" value="${t}" style="flex:1;font-size:12px;" ${isLocked?'disabled':''}>
+        ${!isLocked?`<button type="button" onclick="this.closest('.terms-row').remove();renumberTerms();" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:16px;padding-top:4px;">✕</button>`:''}
+      </div>`).join('')}
+    </div>
   </div>
 
   <div style="border-top:1px solid var(--rule);margin:12px 0 10px;padding-top:10px;">
@@ -3584,129 +3596,23 @@ function renderDirectPoForm(existing) {
     </div>
   </div>
 
-  <div class="field"><label>Notes / Special Instructions</label>
-    <textarea id="dpo_notes" rows="2" placeholder="Any special instructions for the vendor...">${p.notes||''}</textarea>
+  <div class="field"><label>Notes</label>
+    <textarea id="dpo_notes" rows="2" ${isLocked?'disabled':''}>${p.notes||''}</textarea>
   </div>
   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">
     <button class="btn btn-ghost" id="modalCancel">Cancel</button>
-    <button class="btn btn-primary" id="saveDirectPoBtn" data-id="${p.id||''}">
-      ${p.id ? 'Save Changes' : 'Create LPO'}
-    </button>
+    ${!isLocked?`<button class="btn btn-primary" id="saveDirectPoBtn" data-id="${p.id||''}">${p.id?'Save Changes':'Create LPO'}</button>`:''}
   </div>`;
 }
 
-function onDpoVendorSelect() {
-  // future: could auto-fill delivery terms from vendor
-}
-
-
-function updateDpoTotal(el) {
-  let sub = 0;
-  document.querySelectorAll('.dpo-line-row').forEach(r => {
-    const q = parseFloat(r.querySelector('.dpo_qty')?.value)||0;
-    const c = parseFloat(r.querySelector('.dpo_cost')?.value)||0;
-    const t = q*c;
-    r.querySelector('.dpo_line_total').textContent = fmtMoney(t);
-    sub += t;
+function renumberTerms() {
+  document.querySelectorAll('.terms-row').forEach((row, i) => {
+    const span = row.querySelector('span');
+    if (span) span.textContent = (i+1) + '.';
   });
-  const vat   = sub * 0.05;
-  const grand = sub + vat;
-  const st = document.getElementById('dpoSubTotal');
-  const vt = document.getElementById('dpoVat');
-  const gt = document.getElementById('dpoGrandTotal');
-  if (st) st.textContent = 'AED ' + fmtMoney(sub);
-  if (vt) vt.textContent = 'AED ' + fmtMoney(vat);
-  if (gt) gt.textContent = 'AED ' + fmtMoney(grand);
 }
 
-function renderPrView(pr) {
-  const canProcure = can('manageProcurement');
-  return `
-  <div class="grid3">
-    <div><div class="k muted">Material Request</div><div style="font-weight:600;font-family:var(--mono);font-size:12px;">${pr.materialRequestNumber}</div></div>
-    <div><div class="k muted">Job Order</div><div style="font-weight:600;font-family:var(--mono);font-size:12px;">${pr.jobOrderNumber}</div></div>
-    <div><div class="k muted">Requested By</div><div style="font-weight:600;">${pr.requestedByName}${pr.requestedByDesignation ? ' <span class="muted" style="font-weight:400;">— ' + pr.requestedByDesignation + '</span>' : ''}</div></div>
-  </div>
-  <div class="grid2" style="margin-top:10px;">
-    <div><div class="k muted">Date</div><div>${fmtDate(pr.date)}</div></div>
-    <div><div class="k muted">Status</div><div>${prStatusBadge(pr.status)}</div></div>
-  </div>
-  ${pr.status === 'Rejected' ? `<div class="banner-warn" style="margin-top:10px;">Rejected: ${pr.rejectionReason || 'No reason given'}</div>` : ''}
-  ${pr.notes ? `<div style="margin-top:12px;"><strong>Notes:</strong> ${pr.notes}</div>` : ''}
-  <div class="tbl-wrap" style="margin-top:16px;"><table>
-    <thead><tr><th>Description</th><th>Brand</th><th>Unit</th><th style="text-align:right;">Qty</th></tr></thead>
-    <tbody>
-    ${pr.lineItems.map(l => `<tr><td>${l.description}</td><td>${l.brand || '—'}</td><td>${l.unit}</td><td style="text-align:right;font-family:var(--mono);">${l.qty}</td></tr>`).join('')}
-    </tbody>
-  </table></div>
-  <div style="display:flex;justify-content:space-between;margin-top:18px;">
-    <div style="display:flex;gap:8px;">
-      ${pr.status === 'Requested' && canProcure ? `<button class="btn btn-primary btn-sm" id="approvePrBtn">Approve</button><button class="btn btn-danger btn-sm" id="rejectPrBtn">Reject</button>` : ''}
-      ${pr.status === 'Approved' && canProcure ? `<button class="btn btn-primary btn-sm" id="convertPrToPoBtn">Create Purchase Order</button>` : ''}
-      ${pr.status === 'Converted' && pr.purchaseOrderId ? `<button class="btn btn-outline btn-sm" data-view-po="${pr.purchaseOrderId}">View Purchase Order</button>` : ''}
-    </div>
-    <button class="btn btn-ghost" id="modalCancel">Close</button>
-  </div>
-  `;
-}
-
-function renderPrForm(payload) {
-  const mr = findMaterialRequest(payload.materialRequestId);
-  const lines = payload.lineItems || [];
-  return `
-  <div class="muted" style="margin-bottom:10px;font-size:12px;">Raising against <strong>${mr.mrNumber}</strong> (${mr.jobOrderNumber})</div>
-  <label>Shortfall Line Items <span class="muted" style="font-weight:500;text-transform:none;">(pre-filled with what's short — adjust if you want to order more)</span></label>
-  <div class="tbl-wrap" style="margin-bottom:14px;"><table>
-    <thead><tr><th>Description</th><th>Unit</th><th style="text-align:right;">Qty to Order</th></tr></thead>
-    <tbody>
-    ${lines.map((l, idx) => `
-      <tr>
-        <td>${l.description}</td><td>${l.unit}</td>
-        <td style="text-align:right;"><input class="prLineQty" data-idx="${idx}" type="number" style="width:100px;text-align:right;" value="${l.qty}"></td>
-      </tr>`).join('')}
-    </tbody>
-  </table></div>
-  ${userPickerHtml('pr_requestedBy', payload.requestedByName || state.user?.name, payload.requestedByDesignation || state.user?.designation, 'Requested By', 'requestedBy')}
-  <div class="field"><label>Notes</label><textarea id="prNotes" rows="2">${payload.notes || ''}</textarea></div>
-  <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">
-    <button class="btn btn-ghost" id="modalCancel">Cancel</button>
-    <button class="btn btn-primary" id="savePrBtn">Raise Purchase Request</button>
-  </div>
-  `;
-}
-
-function renderPoForm(payload) {
-  // payload.purchaseRequestId is the approved PR being converted
-  const pr = findPurchaseRequest(payload.purchaseRequestId);
-  const vendorOptions = state.vendors.map(v => `<option value="${v.id}" ${payload.vendorId === v.id ? 'selected' : ''}>${v.companyName}</option>`).join('');
-  return `
-  <div class="muted" style="margin-bottom:10px;font-size:12px;">Converting <strong>${pr.prNumber}</strong> (from ${pr.materialRequestNumber}, ${pr.jobOrderNumber})</div>
-  <div class="field"><label>Vendor</label>
-    <select id="poVendorPick">
-      <option value="">— Select vendor —</option>
-      ${vendorOptions}
-    </select>
-  </div>
-  <div class="field"><label>Expected Delivery Date <span class="muted" style="font-weight:500;text-transform:none;">(optional)</span></label><input type="date" id="poExpectedDate" value="${payload.expectedDate || ''}"></div>
-  <label>Line Items &amp; Unit Cost</label>
-  <div class="tbl-wrap" style="margin-bottom:14px;"><table>
-    <thead><tr><th>Description</th><th>Unit</th><th style="text-align:right;">Qty</th><th style="text-align:right;">Unit Cost</th></tr></thead>
-    <tbody>
-    ${pr.lineItems.map(l => `
-      <tr>
-        <td>${l.description}</td><td>${l.unit}</td><td style="text-align:right;font-family:var(--mono);">${l.qty}</td>
-        <td style="text-align:right;"><input class="poUnitCost" data-prlineid="${l.id}" type="number" style="width:100px;text-align:right;" value="${(payload.unitCosts && payload.unitCosts[l.id]) || ''}"></td>
-      </tr>`).join('')}
-    </tbody>
-  </table></div>
-  ${userPickerHtml('po_createdBy', payload.createdByName || state.user?.name, payload.createdByDesignation || state.user?.designation, 'Created By', 'createdBy')}
-  <div class="field"><label>Notes</label><textarea id="poNotes" rows="2">${payload.notes || ''}</textarea></div>
-  <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">
-    <button class="btn btn-ghost" id="modalCancel">Cancel</button>
-    <button class="btn btn-primary" id="createPoBtn">Create Purchase Order</button>
-  </div>
-  `;
-}
+function onDpoVendorSelect() {}
 
 function renderPoView(po) {
   const canProcure = can('manageProcurement');
@@ -3716,70 +3622,89 @@ function renderPoView(po) {
   const vat  = sub * 0.05;
   const total= sub + vat;
   const vendor = state.vendors.find(v=>v.id===po.vendorId)||{};
+  const status = po.lpoStatus || po.status || 'Draft';
+
+  const statusColor = {
+    Draft:'#888', Submitted:'#E8520A', Approved:'#1D9E75',
+    Rejected:'#dc2626', 'Revision Required':'#7F77DD', Revised:'#00627B', Cancelled:'#888'
+  }[status]||'#888';
 
   return `
-  <!-- LPO Header bar -->
   <div class="fm-cl-title-bar" style="border-left:5px solid #00627B;margin-bottom:12px;">
     <div style="flex:1;">
-      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#00627B;">${isDirect?'Direct LPO':'Purchase Order'}</div>
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#00627B;">${isDirect?'Direct LPO':'Purchase Order'}${po.revision>0?' — Rev.'+po.revision:''}</div>
       <div style="font-size:20px;font-weight:700;color:var(--ink);">${po.poNumber}</div>
       <div style="font-size:12px;color:var(--ink-soft);margin-top:3px;">${po.vendorName} · ${fmtDate(po.date)}</div>
     </div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-      ${poStatusBadge(po.status)}
-      ${canProcure&&isDirect?`<button class="btn btn-outline btn-sm" id="editDirectPoBtn" data-id="${po.id}">✏ Edit</button>`:''}
+      <span style="background:${statusColor}20;color:${statusColor};padding:3px 10px;border-radius:4px;font-size:12px;font-weight:700;">${status}</span>
+      ${canProcure&&isDirect&&(status==='Draft'||status==='Revision Required'||status==='Revised')?`<button class="btn btn-outline btn-sm" id="editDirectPoBtn" data-id="${po.id}">✏ Edit</button>`:''}
+      ${canProcure&&isDirect&&status==='Approved'?`<button class="btn btn-outline btn-sm" id="createRevisionBtn" data-id="${po.id}">Create Revision</button>`:''}
       <button class="btn btn-teal btn-sm" id="printLpoBtn" data-id="${po.id}">🖨 Download PDF</button>
-      ${po.status === 'Draft' && canProcure ? `<button class="btn btn-primary btn-sm" id="sendPoBtn">Send to Vendor</button><button class="btn btn-danger btn-sm" id="cancelPoBtn">Cancel</button>` : ''}
+      ${canProcure&&status==='Draft'?`<button class="btn btn-primary btn-sm" id="submitLpoBtn" data-id="${po.id}">Submit for Approval</button>`:''}
+      ${canProcure&&status==='Submitted'?`
+        <button class="btn btn-primary btn-sm" id="approveLpoBtn" data-id="${po.id}" style="background:#1D9E75;border-color:#1D9E75;">✓ Approve</button>
+        <button class="btn btn-outline btn-sm" id="revisionLpoBtn" data-id="${po.id}" style="color:#7F77DD;border-color:#7F77DD;">↩ Request Revision</button>
+        <button class="btn btn-outline btn-sm" id="rejectLpoBtn" data-id="${po.id}" style="color:#dc2626;border-color:#fca5a5;">✕ Reject</button>
+      `:''}
+      ${status==='Revised'&&canProcure?`<button class="btn btn-primary btn-sm" id="submitLpoBtn" data-id="${po.id}">Resubmit for Approval</button>`:''}
+      ${canProcure&&(status==='Draft'||status==='Submitted')&&!isDirect?`<button class="btn btn-danger btn-sm" id="cancelPoBtn">Cancel</button>`:''}
     </div>
   </div>
 
-  <!-- Info -->
+  ${status==='Rejected'?`<div style="background:#fff5f5;border:1px solid #fecaca;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:12px;">
+    <strong style="color:#dc2626;">Rejected</strong> by ${po.rejectedByName||'—'} on ${po.rejectedAt?new Date(po.rejectedAt).toLocaleString():'—'}<br>
+    <strong>Reason:</strong> ${po.rejectionReason||'—'}
+  </div>`:''}
+  ${status==='Revision Required'?`<div style="background:#fdf4ff;border:1px solid #e9d5ff;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:12px;">
+    <strong style="color:#7F77DD;">Revision Required</strong> by ${po.revisionRequestedByName||'—'} on ${po.revisionRequestedAt?new Date(po.revisionRequestedAt).toLocaleString():'—'}<br>
+    <strong>Comments:</strong> ${po.revisionComments||'—'}
+  </div>`:''}
+  ${status==='Approved'?`<div style="background:#f0faf5;border:1px solid #d1fae5;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:12px;">
+    <strong style="color:#1D9E75;">Approved</strong> by ${po.approvedByActionName||po.approvedByName||'—'} on ${po.approvedAt?new Date(po.approvedAt).toLocaleString():'—'}
+  </div>`:''}
+
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
     <div class="card">
       <div class="card-head"><div class="card-title">Vendor Details</div></div>
       <div class="card-body" style="font-size:12px;line-height:2;">
         <div><strong>${po.vendorName}</strong></div>
+        ${po.attentionTo?`<div>Attn: ${po.attentionTo}</div>`:''}
         ${vendor.address?`<div style="color:var(--ink-soft);">${vendor.address}</div>`:''}
         ${vendor.poBox?`<div style="color:var(--ink-soft);">${vendor.poBox}</div>`:''}
         ${vendor.phone?`<div>📞 ${vendor.phone}</div>`:''}
         ${vendor.email?`<div>✉️ ${vendor.email}</div>`:''}
         ${vendor.trn?`<div style="color:#00627B;font-weight:600;">TRN: ${vendor.trn}</div>`:''}
-        ${vendor.tradeLicNo?`<div style="font-size:11px;color:var(--ink-soft);">Trade Lic: ${vendor.tradeLicNo}${vendor.tradeLicExpiry?' (Exp: '+fmtDate(vendor.tradeLicExpiry)+')':''}</div>`:''}
       </div>
     </div>
     <div class="card">
       <div class="card-head"><div class="card-title">Order Details</div></div>
       <div class="card-body" style="font-size:12px;line-height:2;">
-        <div><span style="color:var(--ink-soft);">LPO No.:</span> <strong style="font-family:var(--mono);">${po.poNumber}</strong></div>
+        <div><span style="color:var(--ink-soft);">LPO No.:</span> <strong style="font-family:var(--mono);color:#E8520A;">${po.poNumber}${po.revision>0?' Rev.'+po.revision:''}</strong></div>
         <div><span style="color:var(--ink-soft);">Date:</span> ${fmtDate(po.date)}</div>
         ${po.expectedDate?`<div><span style="color:var(--ink-soft);">Delivery By:</span> ${fmtDate(po.expectedDate)}</div>`:''}
         ${po.deliveryAddress?`<div><span style="color:var(--ink-soft);">Deliver To:</span> ${po.deliveryAddress}</div>`:''}
-        ${isDirect&&po.reference?`<div><span style="color:var(--ink-soft);">Purpose:</span> ${po.reference}</div>`:''}
+        ${po.reference?`<div><span style="color:var(--ink-soft);">Purpose:</span> ${po.reference}</div>`:''}
         ${po.jobOrderNumber?`<div><span style="color:var(--ink-soft);">Job Order:</span> <span style="font-family:var(--mono);">${po.jobOrderNumber}</span></div>`:''}
         ${po.paymentTerms?`<div><span style="color:var(--ink-soft);">Payment:</span> ${po.paymentTerms}</div>`:''}
-        ${!isDirect?`<div><span style="color:var(--ink-soft);">From PR:</span> <span style="font-family:var(--mono);">${po.purchaseRequestNumber||'—'}</span></div>`:''}
       </div>
     </div>
   </div>
 
-  <!-- Line Items -->
   <div class="card" style="margin-bottom:12px;">
     <div class="card-head"><div class="card-title">Line Items</div></div>
     <div class="tbl-wrap"><table>
       <thead><tr>
-        <th>#</th><th>Description</th>
-        ${isDirect?'<th>Brand</th>':''}
-        <th>Unit</th>
-        <th style="text-align:right;">Qty</th>
-        <th style="text-align:right;">Unit Cost</th>
-        <th style="text-align:right;">Total</th>
+        <th>#</th><th>Description</th>${isDirect?'<th>Brand</th>':''}
+        <th>Unit</th><th style="text-align:right;">Qty</th>
+        <th style="text-align:right;">Unit Cost (AED)</th>
+        <th style="text-align:right;">Total (AED)</th>
         ${canReceive?'<th></th>':''}
       </tr></thead>
       <tbody>
       ${(po.lineItems||[]).map((l,i) => {
         const qty = l.qtyOrdered||l.qty||0;
-        const remaining = qty - (l.qtyReceived||0);
-        const lineDone  = remaining <= 0;
+        const remaining = qty-(l.qtyReceived||0);
         const lineTotal = qty*(l.unitCost||0);
         return `<tr>
           <td style="font-size:12px;color:#888;">${i+1}</td>
@@ -3788,29 +3713,48 @@ function renderPoView(po) {
           <td style="font-size:12px;">${l.unit}</td>
           <td style="text-align:right;font-family:var(--mono);">${qty}</td>
           <td style="text-align:right;font-family:var(--mono);">${fmtMoney(l.unitCost||0)}</td>
-          <td style="text-align:right;font-family:var(--mono);font-weight:600;">AED ${fmtMoney(lineTotal)}</td>
-          ${canReceive?`<td>${po.status==='Draft'?'':lineDone?'<span style="color:#1D9E75;font-size:11px;font-weight:700;">✓</span>':(po.status==='Cancelled'?'':
-            `<button class="btn btn-outline btn-sm" data-receive-line="${po.id}|${l.id}|${remaining}">Receive ${remaining}</button>`)}</td>`:''}
+          <td style="text-align:right;font-family:var(--mono);font-weight:600;">${fmtMoney(lineTotal)}</td>
+          ${canReceive?`<td>${remaining<=0?'<span style="color:#1D9E75;font-size:11px;font-weight:700;">✓</span>':(status==='Approved'?`<button class="btn btn-outline btn-sm" data-receive-line="${po.id}|${l.id}|${remaining}">Receive ${remaining}</button>`:'')}</td>`:''}
         </tr>`;
       }).join('')}
       </tbody>
       <tfoot>
-        <tr><td colspan="${isDirect?(canReceive?7:6):(canReceive?6:5)}" style="text-align:right;padding:8px 10px;font-size:12px;color:#555;">Sub Total</td><td style="text-align:right;font-family:var(--mono);padding:8px 10px;">AED ${fmtMoney(sub)}</td>${canReceive?'<td></td>':''}</tr>
+        <tr><td colspan="${isDirect?(canReceive?7:6):(canReceive?6:5)}" style="text-align:right;padding:7px 10px;font-size:12px;color:#555;">Sub Total</td><td style="text-align:right;font-family:var(--mono);padding:7px 10px;">AED ${fmtMoney(sub)}</td>${canReceive?'<td></td>':''}</tr>
         <tr><td colspan="${isDirect?(canReceive?7:6):(canReceive?6:5)}" style="text-align:right;padding:4px 10px;font-size:12px;color:#555;">VAT 5%</td><td style="text-align:right;font-family:var(--mono);padding:4px 10px;">AED ${fmtMoney(vat)}</td>${canReceive?'<td></td>':''}</tr>
         <tr><td colspan="${isDirect?(canReceive?7:6):(canReceive?6:5)}" style="text-align:right;padding:8px 10px;font-size:13px;font-weight:700;">Total (incl. VAT)</td><td style="text-align:right;font-family:var(--mono);font-weight:700;font-size:13px;color:#E8520A;padding:8px 10px;">AED ${fmtMoney(total)}</td>${canReceive?'<td></td>':''}</tr>
       </tfoot>
     </table></div>
   </div>
 
-  <!-- Signatures -->
-  <div class="card" style="margin-bottom:12px;">
+  ${(po.terms||[]).length>0?`<div class="card" style="margin-bottom:12px;">
+    <div class="card-head"><div class="card-title">Terms & Conditions</div></div>
+    <div class="card-body"><ol style="padding-left:18px;font-size:12px;line-height:1.8;">
+      ${(po.terms||[]).map(t=>`<li>${t}</li>`).join('')}
+    </ol></div>
+  </div>`:''}
+
+  ${po.revisionHistory&&po.revisionHistory.length>0?`<div class="card" style="margin-bottom:12px;">
+    <div class="card-head"><div class="card-title">Revision History</div></div>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Rev.</th><th>Date</th><th>By</th><th>Action</th><th>Reason</th></tr></thead>
+      <tbody>${po.revisionHistory.map(r=>`<tr>
+        <td style="font-size:12px;font-family:var(--mono);">Rev.${r.rev}</td>
+        <td style="font-size:12px;">${new Date(r.at).toLocaleDateString()}</td>
+        <td style="font-size:12px;">${r.by||'—'}</td>
+        <td style="font-size:12px;">${r.action||'—'}</td>
+        <td style="font-size:12px;">${r.reason||'—'}</td>
+      </tr>`).join('')}</tbody>
+    </table></div>
+  </div>`:''}
+
+  <div class="card">
     <div class="card-head"><div class="card-title">Signatures</div></div>
     <div class="card-body">
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;">
         <div style="text-align:center;">
           <div style="border-bottom:1px solid #555;height:28px;margin-bottom:5px;"></div>
           <div style="font-size:12px;font-weight:700;">${po.preparedByName||po.createdByName||'—'}</div>
-          <div style="font-size:10px;color:#1D9E75;">${po.preparedByDesig||po.createdByDesignation||'Prepared By'}</div>
+          <div style="font-size:10px;color:#1D9E75;">${po.preparedByDesig||'Prepared By'}</div>
         </div>
         <div style="text-align:center;">
           <div style="border-bottom:1px solid #555;height:28px;margin-bottom:5px;"></div>
@@ -3825,12 +3769,9 @@ function renderPoView(po) {
       </div>
     </div>
   </div>
-
-  ${po.notes?`<div class="card"><div class="card-body"><strong>Notes:</strong> ${po.notes}</div></div>`:''}
   <div style="display:flex;justify-content:flex-end;margin-top:8px;">
     <button class="btn btn-ghost" id="modalCancel">Close</button>
-  </div>
-  `;
+  </div>`;
 }
 
 function buildLpoPdf(po) {
@@ -3840,12 +3781,31 @@ function buildLpoPdf(po) {
   const sub    = (po.lineItems||[]).reduce((s,l)=>s+(l.qtyOrdered||l.qty||0)*(l.unitCost||0),0);
   const vat    = sub*0.05;
   const total  = sub+vat;
-  const logo   = co.logoPath?`<img src="${co.logoPath}" style="height:52px;object-fit:contain;" alt="logo">`:`<div style="width:52px;height:52px;background:#f0faf5;border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:700;color:#1D9E75;font-size:16px;">AF</div>`;
+  const coName = co.name||'Al Fitr Electromechanical Works LLC';
+  const coAddr = 'Makateb Building, Office 604, Port Saeed, Deira, Dubai UAE';
+  const coTel  = '+971 4 328 1442';
+  const coEmail= 'sales@alfitr.ae';
+  const coTrn  = '104291520500003';
+  const logo   = co.logoPath?`<img src="${co.logoPath}" style="height:52px;object-fit:contain;" alt="logo">`
+    :`<div style="width:52px;height:52px;background:#f0faf5;border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:700;color:#1D9E75;font-size:16px;border:1px solid #d1fae5;">AF</div>`;
 
-  const rows = (po.lineItems||[]).map((l,i) => {
+  function numToWords(n) {
+    const ones=['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten','Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen'];
+    const tens=['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];
+    if(n===0) return 'Zero';
+    if(n<20) return ones[n];
+    if(n<100) return tens[Math.floor(n/10)]+(n%10?' '+ones[n%10]:'');
+    if(n<1000) return ones[Math.floor(n/100)]+' Hundred'+(n%100?' and '+numToWords(n%100):'');
+    if(n<1000000) return numToWords(Math.floor(n/1000))+' Thousand'+(n%1000?' '+numToWords(n%1000):'');
+    return numToWords(Math.floor(n/1000000))+' Million'+(n%1000000?' '+numToWords(n%1000000):'');
+  }
+  const fils  = Math.round((total%1)*100);
+  const words = `UAE Dirhams ${numToWords(Math.floor(total))}${fils>0?' and Fils '+numToWords(fils):''} Only`;
+
+  const rows = (po.lineItems||[]).map((l,i)=>{
     const qty = l.qtyOrdered||l.qty||0;
     const t   = qty*(l.unitCost||0);
-    return `<tr style="background:${i%2===0?'#fff':'#fafafa'}">
+    return `<tr style="background:${i%2===0?'#fff':'#fafafa'};">
       <td style="padding:7px 8px;border:1px solid #e5e7eb;text-align:center;font-size:11px;color:#888;">${i+1}</td>
       <td style="padding:7px 8px;border:1px solid #e5e7eb;font-size:11px;">${l.description}</td>
       ${isDirect?`<td style="padding:7px 8px;border:1px solid #e5e7eb;font-size:11px;color:#555;">${l.brand||'—'}</td>`:''}
@@ -3856,50 +3816,69 @@ function buildLpoPdf(po) {
     </tr>`;
   }).join('');
 
-  // Amount in words (simple)
-  function numToWords(n) {
-    const ones=['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten','Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen'];
-    const tens=['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];
-    if(n===0) return 'Zero';
-    if(n<20) return ones[n];
-    if(n<100) return tens[Math.floor(n/10)]+(n%10?' '+ones[n%10]:'');
-    if(n<1000) return ones[Math.floor(n/100)]+' Hundred'+(n%100?' '+numToWords(n%100):'');
-    if(n<100000) return numToWords(Math.floor(n/1000))+' Thousand'+(n%1000?' '+numToWords(n%1000):'');
-    return numToWords(Math.floor(n/100000))+' Lakh'+(n%100000?' '+numToWords(n%100000):'');
-  }
-  const fils = Math.round((total%1)*100);
-  const words = `UAE Dirhams ${numToWords(Math.floor(total))}${fils>0?' and Fils '+numToWords(fils):''} Only`;
+  const terms = (po.terms||[
+    'This LPO is valid for 30 days from the date of issue.',
+    'Please quote this LPO number on all invoices, delivery notes and correspondence.',
+    'Goods must be delivered as per specifications and within the delivery date mentioned above.',
+    'Al Fitr Electromechanical Works LLC reserves the right to return goods that do not meet specifications.',
+    'Payment will be made within the agreed terms upon receipt of tax invoice and delivery note.',
+  ]);
 
-  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${po.poNumber}</title>
-  <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:Arial,sans-serif;font-size:11px;color:#1a1a1a;}@page{size:A4 portrait;margin:12mm;}table{border-collapse:collapse;}</style>
+  const lpoRef = `${po.poNumber}${po.revision>0?' Rev.'+po.revision:''}`;
+
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${lpoRef}</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:Arial,sans-serif;font-size:11px;color:#1a1a1a;}
+    @page{size:A4 portrait;margin:12mm 12mm 20mm 12mm;}
+    .page-footer{position:fixed;bottom:0;left:0;right:0;height:16mm;display:flex;align-items:flex-end;padding-bottom:2mm;}
+    .footer-left{flex:1;font-size:9px;color:#aaa;text-align:left;}
+    .footer-center{flex:2;font-size:9px;color:#aaa;text-align:center;}
+    .footer-right{flex:1;font-size:9px;color:#aaa;text-align:right;}
+    .content-area{margin-bottom:20mm;}
+    .sig-section{page-break-inside:avoid;}
+    table{border-collapse:collapse;}
+    tr{page-break-inside:avoid;}
+  </style>
   </head><body>
+
+  <!-- Fixed Footer — every page -->
+  <div class="page-footer">
+    <div class="footer-left">${coName}</div>
+    <div class="footer-center">${coAddr}</div>
+    <div class="footer-right">${lpoRef} · Page <span class="page-num"></span></div>
+  </div>
+
+  <div class="content-area">
 
   <!-- Header -->
   <div style="border-bottom:3px solid #E8520A;display:flex;align-items:flex-start;justify-content:space-between;padding-bottom:12px;margin-bottom:16px;">
     <div style="display:flex;align-items:center;gap:12px;">
       ${logo}
       <div>
-        <div style="font-size:15px;font-weight:700;color:#E8520A;">${co.name||'Al Fitr Electromechanical Works LLC'}</div>
-        <div style="font-size:10px;color:#555;margin-top:2px;">Makateb Building, Office 604, Port Saeed, Deira, Dubai UAE</div>
-        <div style="font-size:10px;color:#555;">Tel: +971 4 328 1442 · sales@alfitr.ae</div>
-        <div style="font-size:10px;color:#1D9E75;font-weight:600;">TRN: ${co.trn||'XXXXXXXXXXXXXXX'}</div>
+        <div style="font-size:15px;font-weight:700;color:#E8520A;">${coName}</div>
+        <div style="font-size:10px;color:#555;margin-top:2px;">${coAddr}</div>
+        <div style="font-size:10px;color:#555;">Tel: ${coTel} · ${coEmail}</div>
+        <div style="font-size:10px;color:#1D9E75;font-weight:600;">TRN: ${coTrn}</div>
       </div>
     </div>
     <div style="text-align:right;">
       <div style="background:#00627B;color:#fff;font-size:13px;font-weight:700;padding:5px 14px;border-radius:4px;letter-spacing:.5px;display:inline-block;">LOCAL PURCHASE ORDER</div>
-      <div style="font-size:20px;font-weight:700;color:#E8520A;margin-top:6px;font-family:monospace;">${po.poNumber}</div>
+      <div style="font-size:20px;font-weight:700;color:#E8520A;margin-top:6px;font-family:monospace;">${lpoRef}</div>
       <div style="font-size:10px;color:#888;margin-top:2px;">Date: ${fmtDate(po.date)}</div>
       ${po.expectedDate?`<div style="font-size:10px;color:#888;">Deliver By: ${fmtDate(po.expectedDate)}</div>`:''}
+      ${po.revision>0?`<div style="font-size:10px;color:#7F77DD;font-weight:700;">Revision ${po.revision}</div>`:''}
     </div>
   </div>
 
-  <!-- Vendor + Order Details -->
+  <!-- Vendor + Order -->
   <table style="width:100%;margin-bottom:14px;">
     <tr>
       <td style="width:50%;vertical-align:top;padding-right:8px;">
         <div style="background:#2c2c2c;color:#fff;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:5px 8px;margin-bottom:1px;">Vendor / Supplier</div>
         <table style="width:100%;border:1px solid #e5e7eb;font-size:11px;">
           <tr><td style="padding:5px 8px;font-weight:700;background:#f5f5f5;width:35%;">Company</td><td style="padding:5px 8px;font-weight:700;">${po.vendorName}</td></tr>
+          ${po.attentionTo?`<tr><td style="padding:4px 8px;background:#f5f5f5;font-weight:700;">Attention</td><td style="padding:4px 8px;">${po.attentionTo}</td></tr>`:''}
           ${vendor.address?`<tr><td style="padding:4px 8px;background:#f5f5f5;font-weight:700;">Address</td><td style="padding:4px 8px;">${vendor.address}</td></tr>`:''}
           ${vendor.poBox?`<tr><td style="padding:4px 8px;background:#f5f5f5;font-weight:700;">PO Box</td><td style="padding:4px 8px;">${vendor.poBox}</td></tr>`:''}
           ${vendor.phone?`<tr><td style="padding:4px 8px;background:#f5f5f5;font-weight:700;">Tel</td><td style="padding:4px 8px;">${vendor.phone}</td></tr>`:''}
@@ -3910,7 +3889,7 @@ function buildLpoPdf(po) {
       <td style="width:50%;vertical-align:top;padding-left:8px;">
         <div style="background:#2c2c2c;color:#fff;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:5px 8px;margin-bottom:1px;">Order Details</div>
         <table style="width:100%;border:1px solid #e5e7eb;font-size:11px;">
-          <tr><td style="padding:5px 8px;font-weight:700;background:#f5f5f5;width:40%;">LPO No.</td><td style="padding:5px 8px;font-family:monospace;font-weight:700;color:#E8520A;">${po.poNumber}</td></tr>
+          <tr><td style="padding:5px 8px;font-weight:700;background:#f5f5f5;width:40%;">LPO No.</td><td style="padding:5px 8px;font-family:monospace;font-weight:700;color:#E8520A;">${lpoRef}</td></tr>
           <tr><td style="padding:4px 8px;background:#f5f5f5;font-weight:700;">Date</td><td style="padding:4px 8px;">${fmtDate(po.date)}</td></tr>
           ${po.expectedDate?`<tr><td style="padding:4px 8px;background:#f5f5f5;font-weight:700;">Deliver By</td><td style="padding:4px 8px;">${fmtDate(po.expectedDate)}</td></tr>`:''}
           <tr><td style="padding:4px 8px;background:#f5f5f5;font-weight:700;">Deliver To</td><td style="padding:4px 8px;">${po.deliveryAddress||'Al Fitr Store, Sharjah UAE'}</td></tr>
@@ -3922,8 +3901,8 @@ function buildLpoPdf(po) {
     </tr>
   </table>
 
-  <!-- Items Table -->
-  <table style="width:100%;border-collapse:collapse;margin-bottom:6px;">
+  <!-- Items -->
+  <table style="width:100%;border-collapse:collapse;margin-bottom:8px;">
     <thead>
       <tr style="background:#2c2c2c;">
         <th style="padding:7px 8px;color:#fff;font-size:10px;text-align:center;border:1px solid #444;width:4%;">#</th>
@@ -3939,57 +3918,52 @@ function buildLpoPdf(po) {
   </table>
 
   <!-- Totals -->
-  <div style="display:flex;justify-content:flex-end;margin-bottom:12px;">
-    <table style="width:260px;border:1px solid #e5e7eb;border-radius:4px;overflow:hidden;">
+  <div style="display:flex;justify-content:flex-end;margin-bottom:10px;">
+    <table style="width:250px;border:1px solid #e5e7eb;border-radius:4px;overflow:hidden;">
       <tr><td style="padding:6px 12px;font-size:12px;color:#555;border-bottom:1px solid #f0f0f0;">Sub Total</td><td style="padding:6px 12px;text-align:right;font-family:monospace;font-size:12px;border-bottom:1px solid #f0f0f0;">AED ${fmtMoney(sub)}</td></tr>
       <tr><td style="padding:6px 12px;font-size:12px;color:#555;border-bottom:1px solid #f0f0f0;">VAT 5%</td><td style="padding:6px 12px;text-align:right;font-family:monospace;font-size:12px;border-bottom:1px solid #f0f0f0;">AED ${fmtMoney(vat)}</td></tr>
       <tr style="background:#f0faf5;"><td style="padding:8px 12px;font-size:13px;font-weight:700;">Total (incl. VAT)</td><td style="padding:8px 12px;text-align:right;font-family:monospace;font-size:13px;font-weight:700;color:#E8520A;">AED ${fmtMoney(total)}</td></tr>
     </table>
   </div>
 
-  <!-- Amount in Words -->
-  <div style="border-left:3px solid #E8520A;background:#fff8f0;padding:6px 12px;font-size:11px;margin-bottom:14px;border-radius:0 4px 4px 0;">
+  <!-- Amount in words -->
+  <div style="border-left:3px solid #E8520A;background:#fff8f0;padding:6px 12px;font-size:11px;margin-bottom:12px;border-radius:0 4px 4px 0;">
     <strong>Amount in Words:</strong> ${words}
   </div>
 
   <!-- Terms -->
-  <div style="background:#f8f9fa;border:1px solid #e5e7eb;border-radius:4px;padding:10px 12px;margin-bottom:14px;">
-    <div style="font-size:10px;font-weight:700;color:#0B2B36;text-transform:uppercase;letter-spacing:.4px;margin-bottom:5px;">Terms & Conditions</div>
-    <div style="font-size:10px;color:#555;line-height:1.7;">
-      1. This LPO is valid for 30 days from the date of issue.<br>
-      2. Please quote this LPO number on all invoices, delivery notes and correspondence.<br>
-      3. Goods must be delivered as per specifications and within the delivery date mentioned above.<br>
-      4. Al Fitr Electromechanical Works LLC reserves the right to return goods that do not meet specifications.<br>
-      5. Payment will be made within the agreed terms upon receipt of tax invoice and delivery note.
+  <div style="background:#f8f9fa;border:1px solid #e5e7eb;border-radius:4px;padding:10px 12px;margin-bottom:16px;">
+    <div style="font-size:10px;font-weight:700;color:#0B2B36;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px;">Terms & Conditions</div>
+    <ol style="padding-left:16px;font-size:10px;color:#555;line-height:1.8;">
+      ${terms.map(t=>`<li>${t}</li>`).join('')}
+    </ol>
+  </div>
+
+  <!-- Signatures — kept together, near bottom of last page -->
+  <div class="sig-section" style="margin-top:auto;">
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-top:10px;">
+      <div style="text-align:center;">
+        <div style="border-bottom:1px solid #555;height:32px;margin-bottom:5px;"></div>
+        <div style="font-size:11px;font-weight:700;">${po.preparedByName||po.createdByName||'Prepared By'}</div>
+        <div style="font-size:9px;color:#1D9E75;">${po.preparedByDesig||po.createdByDesignation||'Office Coordinator'}</div>
+        <div style="font-size:9px;color:#888;">Signature & Date</div>
+      </div>
+      <div style="text-align:center;">
+        <div style="border-bottom:1px solid #555;height:32px;margin-bottom:5px;"></div>
+        <div style="font-size:11px;font-weight:700;">${po.checkedByName||'Checked By'}</div>
+        <div style="font-size:9px;color:#1D9E75;">${po.checkedByDesig||'Procurement Engineer'}</div>
+        <div style="font-size:9px;color:#888;">Signature & Date</div>
+      </div>
+      <div style="text-align:center;">
+        <div style="border-bottom:1px solid #555;height:32px;margin-bottom:5px;"></div>
+        <div style="font-size:11px;font-weight:700;">${po.approvedByName||'Approved By'}</div>
+        <div style="font-size:9px;color:#1D9E75;">${po.approvedByDesig||'Procurement Manager'}</div>
+        <div style="font-size:9px;color:#888;">Signature & Date</div>
+      </div>
     </div>
   </div>
 
-  <!-- Signatures -->
-  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-top:10px;">
-    <div style="text-align:center;">
-      <div style="border-bottom:1px solid #555;height:28px;margin-bottom:5px;"></div>
-      <div style="font-size:11px;font-weight:700;">${po.preparedByName||po.createdByName||'Prepared By'}</div>
-      <div style="font-size:9px;color:#1D9E75;">${po.preparedByDesig||po.createdByDesignation||'Prepared By'}</div>
-      <div style="font-size:9px;color:#888;">Signature & Date</div>
-    </div>
-    <div style="text-align:center;">
-      <div style="border-bottom:1px solid #555;height:28px;margin-bottom:5px;"></div>
-      <div style="font-size:11px;font-weight:700;">${po.checkedByName||'Checked By'}</div>
-      <div style="font-size:9px;color:#1D9E75;">${po.checkedByDesig||'Procurement Engineer'}</div>
-      <div style="font-size:9px;color:#888;">Signature & Date</div>
-    </div>
-    <div style="text-align:center;">
-      <div style="border-bottom:1px solid #555;height:28px;margin-bottom:5px;"></div>
-      <div style="font-size:11px;font-weight:700;">${po.approvedByName||'Approved By'}</div>
-      <div style="font-size:9px;color:#1D9E75;">${po.approvedByDesig||'Procurement Manager'}</div>
-      <div style="font-size:9px;color:#888;">Signature & Date</div>
-    </div>
-  </div>
-
-  <div style="margin-top:14px;border-top:1px solid #e5e7eb;padding-top:6px;display:flex;justify-content:space-between;font-size:9px;color:#aaa;">
-    <span>${co.name||'Al Fitr Electromechanical Works LLC'} · Makateb Building, Office 604, Port Saeed, Deira, Dubai UAE</span>
-    <span>${po.poNumber} · Page 1</span>
-  </div>
+  </div><!-- end content-area -->
   </body></html>`;
 }
 
@@ -5611,6 +5585,75 @@ function attachHandlers() {
     setTimeout(() => openModal('directPo', po), 100);
   });
 
+  const createRevisionBtn = document.getElementById('createRevisionBtn');
+  if (createRevisionBtn) createRevisionBtn.addEventListener('click', async () => {
+    const id = createRevisionBtn.getAttribute('data-id');
+    if (!confirm('Create a new revision of this LPO? The approved version will be preserved.')) return;
+    try {
+      await api('POST', '/api/purchase-orders/'+id+'/revise', {});
+      await loadAll();
+      const updated = state.purchaseOrders.find(p=>p.id===id);
+      showToast('Revision created — LPO is now editable.', 'ok');
+      closeModal();
+      setTimeout(() => openModal('viewPo', updated), 100);
+    } catch(e) { showToast(e.message,'err'); }
+  });
+
+  const submitLpoBtn = document.getElementById('submitLpoBtn');
+  if (submitLpoBtn) submitLpoBtn.addEventListener('click', async () => {
+    const id = submitLpoBtn.getAttribute('data-id');
+    try {
+      await api('POST', '/api/purchase-orders/'+id+'/submit', {});
+      await loadAll();
+      showToast('LPO submitted for approval.', 'ok');
+      closeModal();
+    } catch(e) { showToast(e.message,'err'); }
+  });
+
+  const approveLpoBtn = document.getElementById('approveLpoBtn');
+  if (approveLpoBtn) approveLpoBtn.addEventListener('click', async () => {
+    const id = approveLpoBtn.getAttribute('data-id');
+    const prepVal = getUserPickerValue('dpo_approvedBy') || {};
+    try {
+      await api('POST', '/api/purchase-orders/'+id+'/approve', {
+        approvedByName: state.user?.name, approvedByDesig: state.user?.designation||'Procurement Manager'
+      });
+      await loadAll();
+      showToast('LPO approved!', 'ok');
+      closeModal();
+    } catch(e) { showToast(e.message,'err'); }
+  });
+
+  const rejectLpoBtn = document.getElementById('rejectLpoBtn');
+  if (rejectLpoBtn) rejectLpoBtn.addEventListener('click', async () => {
+    const id = rejectLpoBtn.getAttribute('data-id');
+    const reason = prompt('Rejection reason (required):');
+    if (!reason || !reason.trim()) { showToast('Rejection reason is required.', 'err'); return; }
+    try {
+      await api('POST', '/api/purchase-orders/'+id+'/reject', {
+        reason: reason.trim(), rejectedByName: state.user?.name
+      });
+      await loadAll();
+      showToast('LPO rejected.', 'ok');
+      closeModal();
+    } catch(e) { showToast(e.message,'err'); }
+  });
+
+  const revisionLpoBtn = document.getElementById('revisionLpoBtn');
+  if (revisionLpoBtn) revisionLpoBtn.addEventListener('click', async () => {
+    const id = revisionLpoBtn.getAttribute('data-id');
+    const comments = prompt('Revision comments (required):');
+    if (!comments || !comments.trim()) { showToast('Revision comments are required.', 'err'); return; }
+    try {
+      await api('POST', '/api/purchase-orders/'+id+'/request-revision', {
+        comments: comments.trim(), requestedByName: state.user?.name
+      });
+      await loadAll();
+      showToast('Revision requested.', 'ok');
+      closeModal();
+    } catch(e) { showToast(e.message,'err'); }
+  });
+
   const printLpoBtn = document.getElementById('printLpoBtn');
   if (printLpoBtn) printLpoBtn.addEventListener('click', () => {
     const id = printLpoBtn.getAttribute('data-id');
@@ -5620,6 +5663,21 @@ function attachHandlers() {
     win.document.write(buildLpoPdf(po));
     win.document.close();
     setTimeout(() => win.print(), 800);
+  });
+
+  const addTermBtn = document.getElementById('addTermBtn');
+  if (addTermBtn) addTermBtn.addEventListener('click', () => {
+    const list = document.getElementById('termsList');
+    if (!list) return;
+    const count = list.querySelectorAll('.terms-row').length + 1;
+    const row = document.createElement('div');
+    row.className = 'terms-row';
+    row.style.cssText = 'display:flex;gap:6px;align-items:flex-start;margin-bottom:6px;';
+    row.innerHTML = `
+      <span style="font-size:12px;color:#888;padding-top:7px;min-width:18px;">${count}.</span>
+      <input class="term_input" style="flex:1;font-size:12px;" placeholder="Enter term...">
+      <button type="button" onclick="this.closest('.terms-row').remove();renumberTerms();" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:16px;padding-top:4px;">✕</button>`;
+    list.appendChild(row);
   });
 
   const addDpoLineBtn = document.getElementById('addDpoLineBtn');
@@ -5654,6 +5712,11 @@ function attachHandlers() {
       });
     });
     if (lines.length===0) { showToast('Add at least one line item.', 'err'); return; }
+    // Collect terms
+    const terms = [];
+    document.querySelectorAll('.term_input').forEach(inp => {
+      if (inp.value.trim()) terms.push(inp.value.trim());
+    });
     const prepVal = getUserPickerValue('dpo_preparedBy');
     const chkVal  = getUserPickerValue('dpo_checkedBy');
     const apprVal = getUserPickerValue('dpo_approvedBy');
@@ -5662,6 +5725,7 @@ function attachHandlers() {
       vendorId,
       direct:          true,
       reference:       document.getElementById('dpo_ref')?.value?.trim()||'',
+      attentionTo:     document.getElementById('dpo_attn')?.value?.trim()||'',
       date:            document.getElementById('dpo_date')?.value||'',
       expectedDate:    document.getElementById('dpo_delivery')?.value||'',
       deliveryAddress: document.getElementById('dpo_delivery_addr')?.value?.trim()||'',
@@ -5674,14 +5738,14 @@ function attachHandlers() {
       checkedByDesig:  chkVal.designation||'Procurement Engineer',
       approvedByName:  apprVal.name||'',
       approvedByDesig: apprVal.designation||'Procurement Manager',
+      terms,
       lineItems: lines,
     };
     try {
-      let res;
       if (existingId) {
-        res = await api('PUT', '/api/purchase-orders/'+existingId+'/direct', body);
+        await api('PUT', '/api/purchase-orders/'+existingId+'/direct', body);
       } else {
-        res = await api('POST', '/api/purchase-orders/direct', body);
+        await api('POST', '/api/purchase-orders/direct', body);
       }
       await loadAll();
       showToast(existingId?'LPO updated.':'Direct LPO created.', 'ok');

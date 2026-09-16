@@ -252,6 +252,17 @@ router.put('/:id/direct', requirePermission('manageProcurement'), async (req, re
   res.json({ purchaseOrder: withComputed(po) });
 });
 
+// DELETE direct LPO
+router.delete('/:id/direct', requirePermission('manageProcurement'), async (req, res) => {
+  const state = db.get();
+  const po = state.purchaseOrders.find(p=>p.id===req.params.id);
+  if (!po) return res.status(404).json({ error: 'Not found.' });
+  if (po.lpoStatus === 'Approved') return res.status(400).json({ error: 'Approved LPOs cannot be deleted.' });
+  state.purchaseOrders = state.purchaseOrders.filter(p=>p.id!==req.params.id);
+  await db.persist();
+  res.json({ ok: true });
+});
+
 // POST submit for approval
 router.post('/:id/submit', requirePermission('manageProcurement'), async (req, res) => {
   const state = db.get();

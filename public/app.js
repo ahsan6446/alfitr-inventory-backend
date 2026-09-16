@@ -5500,12 +5500,32 @@ function attachHandlers() {
     row.className = 'dpo-line-row';
     row.innerHTML = `
       <td><input class="dpo_desc" placeholder="Item description..." style="width:100%;font-size:12px;"></td>
-      <td><input class="dpo_unit" placeholder="pcs" style="width:60px;font-size:12px;"></td>
-      <td style="text-align:right;"><input class="dpo_qty" type="number" value="1" min="1" style="width:70px;text-align:right;font-size:12px;" oninput="updateDpoTotal(this)"></td>
+      <td><input class="dpo_brand" placeholder="Brand" style="width:100%;font-size:12px;"></td>
+      <td><input class="dpo_unit" placeholder="pcs" style="width:55px;font-size:12px;"></td>
+      <td style="text-align:right;"><input class="dpo_qty" type="number" value="1" min="1" style="width:60px;text-align:right;font-size:12px;" oninput="updateDpoTotal(this)"></td>
       <td style="text-align:right;"><input class="dpo_cost" type="number" placeholder="0.00" style="width:90px;text-align:right;font-size:12px;" oninput="updateDpoTotal(this)"></td>
       <td style="text-align:right;font-family:var(--mono);font-size:12px;" class="dpo_line_total">0.00</td>
       <td><button type="button" onclick="this.closest('.dpo-line-row').remove();updateDpoTotal(this);" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:16px;">✕</button></td>`;
     tbody.appendChild(row);
+  });
+
+  const deleteLpoBtn = document.getElementById('deleteLpoBtn');
+  if (deleteLpoBtn) deleteLpoBtn.addEventListener('click', async () => {
+    const id = deleteLpoBtn.getAttribute('data-id');
+    if (!confirm('Delete this LPO? This cannot be undone.')) return;
+    try {
+      await api('DELETE', '/api/purchase-orders/'+id+'/direct');
+      await loadAll();
+      showToast('LPO deleted.', 'ok');
+      closeModal();
+      state.procView = 'orders';
+      render();
+    } catch(e) { showToast(e.message,'err'); }
+  });
+
+  const saveDraftLpoBtn = document.getElementById('saveDraftLpoBtn');
+  if (saveDraftLpoBtn) saveDraftLpoBtn.addEventListener('click', () => {
+    document.getElementById('saveDirectPoBtn')?.click();
   });
 
   const saveDirectPoBtn = document.getElementById('saveDirectPoBtn');
@@ -9431,8 +9451,9 @@ function attachHandlers() {
     row.className = 'dpo-line-row';
     row.innerHTML = `
       <td><input class="dpo_desc" placeholder="Item description..." style="width:100%;font-size:12px;"></td>
-      <td><input class="dpo_unit" placeholder="pcs" style="width:60px;font-size:12px;"></td>
-      <td style="text-align:right;"><input class="dpo_qty" type="number" value="1" min="1" style="width:70px;text-align:right;font-size:12px;" oninput="updateDpoTotal(this)"></td>
+      <td><input class="dpo_brand" placeholder="Brand" style="width:100%;font-size:12px;"></td>
+      <td><input class="dpo_unit" placeholder="pcs" style="width:55px;font-size:12px;"></td>
+      <td style="text-align:right;"><input class="dpo_qty" type="number" value="1" min="1" style="width:60px;text-align:right;font-size:12px;" oninput="updateDpoTotal(this)"></td>
       <td style="text-align:right;"><input class="dpo_cost" type="number" placeholder="0.00" style="width:90px;text-align:right;font-size:12px;" oninput="updateDpoTotal(this)"></td>
       <td style="text-align:right;font-family:var(--mono);font-size:12px;" class="dpo_line_total">0.00</td>
       <td><button type="button" onclick="this.closest('.dpo-line-row').remove();updateDpoTotal(this);" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:16px;">✕</button></td>`;
